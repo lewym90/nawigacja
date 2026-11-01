@@ -851,6 +851,16 @@ document.querySelectorAll('#seg-theme button').forEach((b) => (b.onclick = () =>
 setMode('idle');
 startGeo();
 $('app-ver').textContent = APP_VERSION;
+let voiceErrShown = false;
+voice.onError = (e) => { if (voiceErrShown) return; voiceErrShown = true; toast(`Głos: błąd (${e}). Sprawdź menu, Sprawdź głos`, 4500); };
+$('btn-voice-test').onclick = () => {
+  voice.unlock();
+  const i = voice.test();
+  const msg = !i.supported ? 'Ta przeglądarka nie ma syntezatora mowy'
+    : i.pl ? `Głos polski: ${i.pl}. Jeśli nic nie słychać: sprawdź przełącznik wyciszenia i głośność.`
+    : `Brak polskiego głosu (głosów: ${i.voices}). Dodaj go: Ustawienia, Dostępność, Treści czytane, Głosy.`;
+  toast(msg, 7000);
+};
 $('btn-refresh').onclick = async () => {
   try {
     const regs = (await navigator.serviceWorker?.getRegistrations()) || [];
