@@ -45,3 +45,32 @@ export function arrow(name = 'straight', size = 46) {
   const g = left ? `<g transform="translate(46,0) scale(-1,1)">${path}</g>` : path;
   return `<svg width="${size}" height="${size}" viewBox="0 0 46 46" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${g}</svg>`;
 }
+
+// ---------- Pinezki zagrożeń na mapie (kolory z gradientów w index.html: #g-cam, #g-red, #g-sec, #g-end) ----------
+
+const GLYPH = {
+  // fotoradar: obudowa z obiektywem i lampą
+  camera: '<rect x="11.5" y="13.5" width="21" height="13.5" rx="4" fill="#fff"/><circle cx="21.5" cy="20.3" r="4.4" fill="url(#g-cam)"/><circle cx="21.5" cy="20.3" r="1.7" fill="#fff"/><circle cx="29" cy="16.6" r="1.5" fill="url(#g-cam)"/>',
+  // kamera na światłach: sygnalizator
+  redlight: '<rect x="15.5" y="9.5" width="13" height="22" rx="4.5" fill="#fff"/><circle cx="22" cy="15.2" r="2.7" fill="url(#g-red)"/><circle cx="22" cy="20.5" r="2.7" fill="#d9a21b"/><circle cx="22" cy="25.8" r="2.7" fill="#3aa86b"/>',
+  // początek odcinka: flaga na maszcie
+  start: '<rect x="14" y="9.5" width="2.6" height="22" rx="1.3" fill="#fff"/><path d="M16.6 10.5h14.2l-3.6 5.2 3.6 5.2H16.6z" fill="#fff"/>',
+  // koniec odcinka: flaga w szachownicę
+  end: '<rect x="14" y="9.5" width="2.6" height="22" rx="1.3" fill="#fff"/><path d="M16.6 10.5h14.4v10.4H16.6z" fill="#fff"/><g fill="url(#g-end)"><rect x="16.6" y="10.5" width="3.6" height="3.47"/><rect x="23.8" y="10.5" width="3.6" height="3.47"/><rect x="20.2" y="13.97" width="3.6" height="3.47"/><rect x="27.4" y="13.97" width="3.6" height="3.47"/><rect x="16.6" y="17.43" width="3.6" height="3.47"/><rect x="23.8" y="17.43" width="3.6" height="3.47"/></g>',
+};
+const FILL = { camera: 'g-cam', redlight: 'g-red', start: 'g-sec', end: 'g-end' };
+
+/**
+ * Pinezka 44x54 (czubek na dole). kind: camera | redlight | start | end.
+ * limit: opcjonalna tarcza z ograniczeniem w prawym górnym rogu.
+ */
+export function hazardPin(kind, { limit = null } = {}) {
+  const badge = limit
+    ? `<g transform="translate(35 9)"><circle r="9.4" fill="#fff" stroke="#d93636" stroke-width="3.2"/><text y="3.4" text-anchor="middle" font-family="-apple-system,Helvetica,Arial,sans-serif" font-weight="800" font-size="${String(limit).length > 2 ? 8.6 : 10.5}" fill="#111">${limit}</text></g>`
+    : '';
+  return `<svg class="pin" width="44" height="54" viewBox="0 0 44 54" aria-hidden="true">
+    <path d="M22 52.5 12.8 37.2h18.4z" fill="url(#${FILL[kind]})" stroke="#fff" stroke-width="2.4" stroke-linejoin="round"/>
+    <rect x="4" y="2.5" width="36" height="36" rx="11.5" fill="url(#${FILL[kind]})" stroke="#fff" stroke-width="2.4"/>
+    <path d="M17 37.6h10" stroke="url(#${FILL[kind]})" stroke-width="4"/>
+    ${GLYPH[kind]}${badge}</svg>`;
+}

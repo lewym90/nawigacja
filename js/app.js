@@ -2,14 +2,16 @@ import { CONFIG, APP_VERSION, loadSettings, saveSettings, STORAGE } from './conf
 import { buildStyle, isNight } from './mapstyle.js';
 import { fetchRoutes, fmtDist, fmtDuration, limitAt } from './routing.js';
 import { Guidance } from './guidance.js';
+import { SpeedFilter } from './speed.js';
+import { loadRouteLimits } from './limits.js';
 import {
-  parseOverpass, overpassQuery, mergeHazards, onRoute, sectionsOnRoute,
+  parseOverpass, overpassQuery, mergeHazards, mergeSources, onRoute, sectionsOnRoute,
   HazardWatch, SectionTracker, ReportStore, TYPES,
 } from './hazards.js';
-import { corridorBoxesRange, haversine, bearing } from './geo.js';
+import { corridorBoxesRange, haversine, bearing, sliceLine } from './geo.js';
 import { Voice, qualityLabel } from './voice.js';
 import { Simulator } from './sim.js';
-import { icon, arrow } from './icons.js';
+import { icon, arrow, hazardPin } from './icons.js';
 
 const $ = (id) => document.getElementById(id);
 const settings = loadSettings();
@@ -94,6 +96,7 @@ function installLayers() {
     map.addSource('alt', { type: 'geojson', data: emptyFC() });
     map.addSource('sel', { type: 'geojson', data: emptyFC() });
   }
+  if (!map.getSource('secs')) map.addSource('secs', { type: 'geojson', data: emptyFC() });
   const before = map.getLayer('road-label') ? 'road-label' : undefined;
   const route = night ? '#4c9bff' : '#1f6fe0';
   const routeCase = night ? '#0a2a52' : '#ffffff';
@@ -101,7 +104,9 @@ function installLayers() {
   add({ id: 'alt-line', type: 'line', source: 'alt', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': night ? '#5a5a66' : '#9a9588', 'line-width': 6, 'line-opacity': 0.9 } });
   add({ id: 'sel-case', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': routeCase, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 8, 16, 20] } });
   add({ id: 'sel-line', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': route, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 4.5, 16, 11] } });
+  add({ id: 'sec-line', type: 'line', source: 'secs', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#ffcf3a', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.5, 16, 6], 'line-dasharray': [2, 1.3] } });
   drawRoutes();
+  drawSections(S.routes[S.sel]);
 }
 const emptyFC = () => ({ type: 'FeatureCollection', features: [] });
 map.on('style.load', installLayers);
@@ -138,19 +143,15 @@ function meEl() {
   return d;
 }
 
+const speedFilter = new SpeedFilter();
 function startGeo() {
   if (!navigator.geolocation) { toast('Ta przeglądarka nie ma GPS'); return; }
   navigator.geolocation.watchPosition(
     (p) => {
       if (S.sim) return; // w symulacji ignorujemy prawdziwy GPS
       const c = p.coords;
-      let speed = c.speed;
-      const prev = S.lastFix;
-      if ((speed == null || !isFinite(speed)) && prev) {
-        const dt = (p.timestamp - prev.t) / 1000;
-        speed = dt > 0.5 ? haversine([prev.lng, prev.lat], [c.longitude, c.latitude]) / dt : prev.speed || 0;
-      }
-      onFix({ lng: c.longitude, lat: c.latitude, speed: speed || 0, accuracy: c.accuracy, heading: c.heading, t: p.timestamp });
+      const speed = speedFilter.update({ lng: c.longitude, lat: c.latitude, speed: c.speed, accuracy: c.accuracy, t: p.timestamp });
+      onFix({ lng: c.longitude, lat: c.latitude, speed, accuracy: c.accuracy, heading: c.heading, t: p.timestamp });
     },
     (e) => toast(e.code === 1 ? 'Zezwól na lokalizację w ustawieniach' : 'Brak sygnału GPS', 4000),
     { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 }
@@ -266,12 +267,19 @@ async function planRoute() {
   pin.innerHTML = icon.pin(40);
   destMarker = new maplibregl.Marker({ element: pin, anchor: 'bottom' }).setLngLat([d.lng, d.lat]).addTo(map);
   S.osm = { cameras: [], sections: [] };
-  loadHazards(S.routes).then(() => {
-    if (S.mode !== 'preview') return;
+  const routesNow = S.routes;
+  loadHazards(routesNow).then(({ live }) => {
+    if (S.mode !== 'preview' || S.routes !== routesNow) return;
     S.hazardsReady = true;
-    applyHazards(S.routes);
+    applyHazards(routesNow);
     renderRouteCards();
-    renderHazardMarkers(S.routes[S.sel]);
+    renderHazardMarkers(routesNow[S.sel]);
+    // Overpass na żywo dopełnia dane po chwili.
+    live.then(() => {
+      if (S.routes !== routesNow) return;
+      applyHazards(routesNow);
+      if (S.mode === 'preview') { renderRouteCards(); renderHazardMarkers(routesNow[S.sel]); }
+    });
   });
 }
 
@@ -300,7 +308,6 @@ function renderRouteCards() {
       if (cams) tags += `<span class="tag cam">${cams} ${plural(cams, 'fotoradar', 'fotoradary', 'fotoradarów')}</span>`;
       if (secs) tags += `<span class="tag sec">${secs} ${plural(secs, 'odcinkowy', 'odcinkowe', 'odcinkowych')}</span>`;
       if (other) tags += `<span class="tag sec">${other} ${plural(other, 'zgłoszenie', 'zgłoszenia', 'zgłoszeń')}</span>`;
-      if (!tags) tags = '<span class="tag ok">brak znanych ostrzeżeń</span>';
     }
     return `<button class="route-card ${i === S.sel ? 'sel' : ''}" data-i="${i}">
       <div class="rc-top"><span class="rc-time">${fmtDuration(r.duration)}</span><span class="rc-dist">${fmtDist(r.distance)}</span></div>
@@ -332,6 +339,18 @@ async function loadLocal() {
     const r = await fetch(CONFIG.localHazardsUrl, { cache: 'no-cache' });
     if (r.ok) S.local = await r.json();
   } catch { /* brak pliku: pracujemy na samym OSM */ }
+}
+
+async function loadStatic() {
+  if (S.staticLoaded) return;
+  S.staticLoaded = true;
+  const get = async (u) => {
+    try { const r = await fetch(u, { cache: 'no-cache' }); return r.ok ? await r.json() : null; } catch { return null; }
+  };
+  const [osm, gitd] = await Promise.all([get(CONFIG.staticOsmUrl), get(CONFIG.staticGitdUrl)]);
+  S.static = { osm, gitd };
+  const n = (x) => (x ? (x.cameras || []).length + (x.sections || []).length : 0);
+  S.hzStatus = { ...(S.hzStatus || {}), osmFile: n(osm), gitd: n(gitd) };
 }
 
 // Publiczny Overpass odrzuca zbyt wiele zapytań naraz: dwa równoległe, z ponowieniami.
@@ -378,21 +397,31 @@ function addOsm(parts) {
 }
 
 /** Trasy krótkie: jedno zapytanie na obwiednię. Długie (>80 km): okno [fromM, toM] wzdłuż trasy. */
+// Trzy źródła: plik OSM (cała Polska), plik GITD i Overpass na żywo. Pliki są dostępne od razu;
+// Overpass dochodzi w tle i niepowodzenie niczego nie psuje (nie pokazujemy o nim komunikatów).
 async function loadHazards(routes, { fromM = 0, toM = WINDOW_M } = {}) {
-  await loadLocal();
-  const boxes = new Map();
-  const long = routes.some((r) => r.distance > 80000);
-  if (!long) {
-    const all = routes.flatMap((r) => r.coords);
-    const ub = all.reduce((a, [x, y]) => [Math.min(a[0], x), Math.min(a[1], y), Math.max(a[2], x), Math.max(a[3], y)], [180, 90, -180, -90]);
-    boxes.set('u', [ub[0] - 0.005, ub[1] - 0.004, ub[2] + 0.005, ub[3] + 0.004]);
-  } else {
-    for (const r of routes) corridorBoxesRange(r.line, fromM, toM).forEach((b) => boxes.set(b.map((v) => v.toFixed(3)).join(), b));
-  }
-  const { parts, failed } = await fetchBoxes([...boxes.values()]);
-  if (failed) toast('Część danych o fotoradarach nie wczytała się. Spróbuję ponownie dalej na trasie.', 4000);
-  addOsm(parts);
-  return { failed };
+  await Promise.all([loadLocal(), loadStatic()]);
+  const live = (async () => {
+    const boxes = new Map();
+    const long = routes.some((r) => r.distance > 80000);
+    if (!long) {
+      const all = routes.flatMap((r) => r.coords);
+      const ub = all.reduce((a, [x, y]) => [Math.min(a[0], x), Math.min(a[1], y), Math.max(a[2], x), Math.max(a[3], y)], [180, 90, -180, -90]);
+      boxes.set('u', [ub[0] - 0.005, ub[1] - 0.004, ub[2] + 0.005, ub[3] + 0.004]);
+    } else {
+      for (const r of routes) corridorBoxesRange(r.line, fromM, toM).forEach((b) => boxes.set(b.map((v) => v.toFixed(3)).join(), b));
+    }
+    try {
+      const { parts, failed } = await fetchBoxes([...boxes.values()]);
+      addOsm(parts);
+      S.hzStatus = { ...(S.hzStatus || {}), live: failed ? (parts.length ? 'częściowo' : 'niedostępne') : 'ok' };
+      return { failed };
+    } catch {
+      S.hzStatus = { ...(S.hzStatus || {}), live: 'niedostępne' };
+      return { failed: 1 };
+    }
+  })();
+  return { live };
 }
 
 function itemsFor(route) {
@@ -420,7 +449,7 @@ function maybeExtendHazards(N, along) {
   N.loading = true;
   const from = N.loadedTo;
   const to = Math.min(route.distance, from + WINDOW_M);
-  loadHazards([route], { fromM: from, toM: to }).then(({ failed }) => {
+  loadHazards([route], { fromM: from, toM: to }).then(({ live }) => live).then(({ failed }) => {
     if (S.nav !== N) return;
     if (!failed) N.loadedTo = to;
     rebuildWatch(N);
@@ -428,7 +457,8 @@ function maybeExtendHazards(N, along) {
 }
 
 function allPoints() {
-  const merged = mergeHazards(S.osm, S.local);
+  const st = S.static || {};
+  const merged = mergeSources([S.osm, st.osm, st.gitd], S.local);
   return { cameras: merged.cameras, sections: merged.sections };
 }
 
@@ -449,18 +479,43 @@ function clearMarkers() {
   S.markers.clear();
 }
 
+function drawSections(route) {
+  const src = map.getSource('secs');
+  if (!src) return;
+  const feats = route && route.hz ? route.hz.secs.map((x) => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: sliceLine(route.line, x.startAlong, x.endAlong) } })) : [];
+  src.setData({ type: 'FeatureCollection', features: feats });
+}
+
+function pinEl(kind, label, { limit = null, tag = '' } = {}) {
+  const el = document.createElement('div');
+  el.className = `hz ${kind}`;
+  el.innerHTML = `<div class="in">${hazardPin(kind, { limit })}</div>${tag ? `<span class="hz-tag ${kind === 'end' ? 'end' : ''}">${tag}</span>` : ''}`;
+  el.title = label;
+  return el;
+}
+
 function renderHazardMarkers(route) {
   clearMarkers();
+  drawSections(route);
   if (!route || !route.hz) return;
-  const add = (id, type, lng, lat, label) => {
-    const el = document.createElement('div');
-    el.className = `hz ${type === 'redlight' ? 'camera' : type}`;
-    el.innerHTML = icon[type] ? icon[type](22) : icon.warn(22);
-    el.title = label;
-    S.markers.set(id, new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map));
-  };
-  for (const h of route.hz.cams) add(h.id, h.type, h.lng, h.lat, TYPES[h.type].label);
-  for (const s of route.hz.secs) add(`${s.id}:s`, 'section', s.start[0], s.start[1], `${TYPES.section.label}: początek`);
+  const put = (id, el, lng, lat) => { S.markers.set(id, new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([lng, lat]).addTo(map)); };
+  for (const h of route.hz.cams) {
+    const label = TYPES[h.type] ? TYPES[h.type].label : 'Ostrzeżenie';
+    if (h.type === 'camera') put(h.id, pinEl('camera', label, { limit: h.limit }), h.lng, h.lat);
+    else if (h.type === 'redlight') put(h.id, pinEl('redlight', label), h.lng, h.lat);
+    else if (h.type === 'section') put(h.id, pinEl('start', label, { limit: h.limit, tag: 'ODCINKOWY' }), h.lng, h.lat);
+    else {
+      const el = document.createElement('div');
+      el.className = `hzr ${h.type}`;
+      el.innerHTML = icon[h.type] ? icon[h.type](22) : icon.warn(22);
+      el.title = label;
+      S.markers.set(h.id, new maplibregl.Marker({ element: el }).setLngLat([h.lng, h.lat]).addTo(map));
+    }
+  }
+  for (const x of route.hz.secs) {
+    put(`${x.id}:s`, pinEl('start', `${TYPES.section.label}: początek`, { limit: x.limit, tag: 'START' }), x.start[0], x.start[1]);
+    put(`${x.id}:e`, pinEl('end', `${TYPES.section.label}: koniec`, { tag: 'KONIEC' }), x.end[0], x.end[1]);
+  }
 }
 
 // ---------- Tryby ekranu ----------
@@ -497,6 +552,10 @@ function startNav({ sim = false } = {}) {
   if (!sim && !S.pos) { toast('Brak sygnału GPS. Wyjdź na otwartą przestrzeń albo użyj symulacji.', 4000); return; }
   voice.unlock();
   lockScreen();
+  if (!route.limitsTried) {
+    route.limitsTried = true;
+    loadRouteLimits(CONFIG.limitsUrl, route).then((r) => { S.hzStatus = { ...(S.hzStatus || {}), limits: r.ok ? `ok (${Math.round(r.covered * 100)}% trasy ma znany limit)` : 'niedostępne' }; }).catch(() => {});
+  }
   if (!route.hz) applyHazards([route]);
 
   const items = itemsFor(route);
@@ -524,7 +583,7 @@ function startNav({ sim = false } = {}) {
   const start = S.pos ? [S.pos.lng, S.pos.lat] : route.coords[0];
   map.easeTo({ center: start, zoom: 16, pitch: settings.tilt ? 55 : 0, bearing: S.heading, duration: 900, padding: camPadding() });
   placePuck();
-  voice.say(route.steps[1] ? `Ruszaj. ${route.steps[1].text} za ${fmtDist(route.steps[1].at)}` : 'Ruszaj');
+  voice.say('Ruszaj', { prio: 2 });
 }
 
 function camPadding() {
@@ -598,10 +657,10 @@ function navTick(fix) {
   const w = N.watch.update(g.along, speedMs, lim);
   showBanner(w, kmh, lim);
   if (settings.hazardsVoice) {
-    for (const t of w.say) voice.say(t, { urgent: w.level === 'final' });
+    for (const t of w.say) voice.say(t, { prio: w.level === 'final' ? 4 : 2 });
   }
   if (w.level === 'final' && w.say.length) voice.beep(1000, 160);
-  for (const t of g.spoken) voice.say(t);
+  for (const t of g.spoken) voice.say(t, { prio: /^Za /.test(t) ? 1 : 3 });
 
   // Odcinkowe pomiary
   updateSections(N, g, fix);
@@ -632,7 +691,7 @@ function navTick(fix) {
     reroute(fix);
   }
   if (g.arrived && !N.arrivedTimer) {
-    voice.say('Dojechałeś do celu', { urgent: true });
+    voice.say('Dojechałeś do celu', { prio: 3 });
     toast('Dojechałeś do celu', 5000);
     N.arrivedTimer = setTimeout(endNav, 6000);
   }
@@ -699,7 +758,7 @@ function updateSections(N, g, fix) {
       <div class="s-row"><div><div class="s-lbl">Twoja średnia na odcinku</div><div class="s-avg ${st.over ? 'over' : ''}">${Math.round(st.avgKmh)}<small>km/h</small></div></div>
       ${lim ? `<div><div class="s-lbl" style="text-align:right">Limit</div><div class="s-lim">${lim}</div></div>` : ''}</div>
       <div class="s-bar"><i style="width:${Math.round(st.progress * 100)}%"></i></div>
-      <div class="s-tip"><span>Wjazd</span><span>Zostało ${fmtDist(st.remaining)}</span></div>${advice}`;
+      <div class="s-rem"><span>Do końca odcinka</span><b>${fmtDist(st.remaining)}</b></div>${advice}`;
   } else {
     el.innerHTML = `<div class="s-head"><span><i class="s-dot"></i>Koniec odcinka</span><span>${fmtDist(st.length)}</span></div>
       <div class="s-row"><div><div class="s-lbl">Średnia na odcinku</div><div class="s-avg ${st.over ? 'over' : ''}">${Math.round(st.avgKmh)}<small>km/h</small></div></div>
@@ -710,7 +769,7 @@ function updateSections(N, g, fix) {
 async function reroute(fix) {
   const N = S.nav;
   toast('Zjechałeś z trasy. Przeliczam…', 4000);
-  voice.say('Przeliczam trasę');
+  voice.say('Przeliczam trasę', { prio: 3 });
   try {
     const rs = await fetchRoutes(CONFIG.routingUrl, [[fix.lng, fix.lat], [S.dest.lng, S.dest.lat]], { alternatives: false });
     if (S.mode !== 'nav' || S.nav !== N) return;
@@ -867,7 +926,8 @@ $('btn-voice-pick').onclick = () => {
 $('btn-voice-log').onclick = () => {
   const el = $('voice-log');
   el.hidden = !el.hidden;
-  el.textContent = `Wersja ${APP_VERSION}, silnik: ${voice.engine}, głos: ${voice.voice ? voice.voice.name : 'brak'}, mowa włączona: ${voice.enabled}\n` + (voice.events.length ? voice.events.join('\n') : 'Brak zdarzeń. Uruchom symulację i wróć tutaj.');
+  const hz = S.hzStatus || {};
+  el.textContent = `Wersja ${APP_VERSION}, silnik: ${voice.engine}, głos: ${voice.voice ? voice.voice.name : 'brak'}, mowa włączona: ${voice.enabled}\nDane: plik OSM ${hz.osmFile ?? '?'} pkt, GITD ${hz.gitd ?? '?'} pkt, Overpass ${hz.live || '…'}, limity prędkości ${hz.limits || '…'}\n` + (voice.events.length ? voice.events.join('\n') : 'Brak zdarzeń. Uruchom symulację i wróć tutaj.');
 };
 
 // ---------- Start ----------

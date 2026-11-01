@@ -154,3 +154,30 @@ test('ReportStore: zgłoszenia wygasają i przeżywają ponowne uruchomienie', (
   assert.equal(b.active(now + 60 * 60000).length, 2);
   assert.deepEqual(b.active(now + 100 * 60000).map((i) => i.type), ['accident']); // policja wygasa po 90 min
 });
+
+test('mergeSources: ten sam fotoradar z OSM i GITD to jeden punkt, z uzupełnionym limitem', async () => {
+  const { mergeSources } = await import('../js/hazards.js');
+  const osm = { cameras: [{ id: 'osm:n1', type: 'camera', lng: 22.5, lat: 51.2, limit: null, dir: 90, source: 'osm' }], sections: [] };
+  const gitd = {
+    cameras: [
+      { id: 'gitd:1', type: 'camera', lng: 22.50015, lat: 51.20008, limit: 50, dir: null, source: 'gitd' }, // ok. 14 m dalej
+      { id: 'gitd:2', type: 'camera', lng: 22.6, lat: 51.2, limit: 70, source: 'gitd' },
+    ],
+    sections: [],
+  };
+  const m = mergeSources([osm, gitd], null);
+  assert.equal(m.cameras.length, 2);
+  const a = m.cameras.find((c) => c.id === 'osm:n1');
+  assert.equal(a.limit, 50);
+  assert.equal(a.dir, 90);
+});
+
+test('mergeSources: odcinki o tych samych końcach z dwóch źródeł łączą się, suppress działa', async () => {
+  const { mergeSources } = await import('../js/hazards.js');
+  const a = { cameras: [], sections: [{ id: 'osm:r1', type: 'section', start: [22.5, 51.2], end: [22.52, 51.2], limit: null }] };
+  const b = { cameras: [{ id: 'gitd:9', type: 'camera', lng: 23, lat: 51, source: 'gitd' }], sections: [{ id: 'gitd:s1', type: 'section', start: [22.5002, 51.2001], end: [22.5201, 51.2], limit: 70 }] };
+  const m = mergeSources([a, b], { suppress: ['gitd:9'] });
+  assert.equal(m.sections.length, 1);
+  assert.equal(m.sections[0].limit, 70);
+  assert.equal(m.cameras.length, 0);
+});

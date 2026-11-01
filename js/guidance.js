@@ -1,7 +1,7 @@
 // Prowadzenie po trasie: pozycja na trasie, zjechanie z trasy, zapowiedzi skrętów.
 
 import { project } from './geo.js';
-import { fmtDist } from './routing.js';
+import { distWords } from './speech-pl.js';
 
 export class Guidance {
   constructor(route, opts = {}) {
@@ -9,6 +9,7 @@ export class Guidance {
     this.hint = 0;
     this.offCount = 0;
     this.announced = new Set();
+    this.preFrom = new Map();
     this.maxOffM = opts.maxOffM ?? 35;
     this.offFixes = opts.offFixes ?? 3;
     this.lastAlong = 0;
@@ -39,7 +40,7 @@ export class Guidance {
     this.arrived = remaining < 25;
 
     // Następny manewr: pierwszy krok, którego miejsce jest przed nami.
-    let nextIdx = r.steps.findIndex((s, i) => i > 0 && s.at > along + 8);
+    let nextIdx = r.steps.findIndex((s, i) => i > 0 && s.at > along + 8 && !isSilent(s));
     if (nextIdx === -1) nextIdx = r.steps.length - 1;
     const next = r.steps[nextIdx];
     const distToNext = Math.max(0, next.at - along);
@@ -54,7 +55,7 @@ export class Guidance {
     }
 
     const speed = Math.max(0, fix.speed ?? 0);
-    const spoken = this._announce(nextIdx, next, distToNext, speed);
+    const spoken = this._announce(nextIdx, next, distToNext, speed, along);
 
     return {
       along,
@@ -71,29 +72,44 @@ export class Guidance {
     };
   }
 
-  // Progi zapowiedzi zależą od prędkości (więcej czasu na autostradzie).
-  _announce(idx, step, dist, speed) {
+  /**
+   * Dwie zapowiedzi na manewr (plus przypomnienie na długich odcinkach):
+   *  1. zaraz po poprzednim manewrze: „Za dziewięćset metrów skręć w lewo w ulicę Krężnicką”,
+   *  2. tuż przed manewrem: „Skręć w lewo”.
+   * Dwa manewry blisko siebie łączymy w jedną wypowiedź.
+   */
+  _announce(idx, step, dist, speed, along = 0) {
     const out = [];
+    const steps = this.route.steps;
     const isLast = step.type === 'arrive';
-    const kmh = speed * 3.6;
-    const far = kmh > 90 ? 1500 : kmh > 60 ? 800 : 0;
-    const marks = [];
-    if (far) marks.push(['far', far]);
-    marks.push(['mid', kmh > 60 ? 400 : 300], ['near', 120], ['now', 35]);
-    for (const [name, d] of marks) {
-      const key = `${idx}:${name}`;
-      if (dist <= d && !this.announced.has(key)) {
-        // Oznacz jako wypowiedziane również wcześniejsze progi, żeby nie mówić trzech naraz.
-        for (const [n2, d2] of marks) if (d2 >= d) this.announced.add(`${idx}:${n2}`);
-        if (name === 'now') {
-          out.push(isLast ? 'Dojechałeś do celu' : step.text);
-        } else if (isLast) {
-          out.push(`Za ${fmtDist(dist)} cel podróży`);
-        } else {
-          out.push(`Za ${fmtDist(dist)} ${lower(step.text)}`);
-        }
-        break;
-      }
+    const v = Math.max(speed, 4); // m/s; na postoju zakładamy ok. 14 km/h
+    const remindDist = Math.min(1400, Math.max(350, v * 32));
+    const nowDist = Math.min(130, Math.max(40, v * 4.5));
+    const has = (n) => this.announced.has(`${idx}:${n}`);
+    const mark = (...ns) => ns.forEach((n) => this.announced.add(`${idx}:${n}`));
+
+    // kolejny prawdziwy manewr po tym (do łączenia zapowiedzi)
+    let after = null;
+    for (let j = idx + 1; j < steps.length; j++) { if (!isSilent(steps[j])) { after = steps[j]; break; } }
+    const gap = after && after.type !== 'arrive' ? after.at - step.at : Infinity;
+    const chain = (near) => (gap < (near ? 150 : 250) ? `${near ? ', a zaraz potem ' : ', a potem '}${lower(after.short || after.text)}` : '');
+
+    if (dist <= nowDist && !has('now')) {
+      mark('pre', 'rem', 'now');
+      out.push(isLast ? 'Dojechałeś do celu' : `${step.short || step.text}${chain(true)}`);
+      return out;
+    }
+    const prevAt = idx > 0 ? steps[idx - 1].at : 0;
+    const passedPrev = idx <= 1 || along - prevAt >= 70; // nie nakładamy się na poprzedni komunikat
+    const text = () => (isLast ? `Za ${distWords(dist)} cel podróży` : `Za ${distWords(dist)} ${lower(step.text)}${chain(false)}`);
+    if (!has('pre') && passedPrev && dist > nowDist + 80) {
+      mark('pre');
+      this.preFrom.set(idx, dist);
+      if (dist <= remindDist) mark('rem');
+      out.push(text());
+    } else if (has('pre') && !has('rem') && dist <= remindDist && dist > nowDist + 80 && (this.preFrom.get(idx) || 0) > remindDist * 1.5) {
+      mark('rem');
+      out.push(text());
     }
     return out;
   }
@@ -103,6 +119,7 @@ export class Guidance {
     this.hint = 0;
     this.offCount = 0;
     this.announced.clear();
+    this.preFrom.clear();
     this.lastAlong = 0;
     this.arrived = false;
   }
@@ -110,4 +127,14 @@ export class Guidance {
 
 function lower(t) {
   return t.charAt(0).toLowerCase() + t.slice(1);
+}
+
+/** Kroki, o których nie mówimy (zmiana nazwy drogi, „jedź prosto”). */
+export function isSilent(step) {
+  if (!step) return true;
+  if (step.type === 'arrive') return false;
+  if (step.type === 'new name' || step.type === 'notification' || step.type === 'depart') return true;
+  if (step.type === 'continue' && (!step.modifier || step.modifier === 'straight')) return true;
+  if (step.type === 'turn' && (!step.modifier || step.modifier === 'straight')) return true;
+  return false;
 }

@@ -1,3 +1,5 @@
+import { forSpeech } from './speech-pl.js';
+
 // Głos: przeglądarkowy syntezator mowy. Na iPhonie pierwsza wypowiedź musi
 // pochodzić z dotknięcia ekranu, dlatego unlock() wołamy z przycisku „Start” lub „Symulacja”.
 
@@ -98,21 +100,29 @@ export class Voice {
     } catch { /* brak audio */ }
   }
 
-  /** urgent: przerywa i czyści kolejkę (np. ostrzeżenie tuż przed fotoradarem). */
-  say(text, { urgent = false } = {}) {
-    this.log(`say${urgent ? '!' : ''}: ${String(text).slice(0, 40)}`);
+  /**
+   * prio: 4 = ostrzeżenie tuż przed zagrożeniem (przerywa), 3 = komenda skrętu „teraz” (przerywa tylko mniej ważne),
+   * 2 = ostrzeżenia, 1 = zapowiedzi, 0 = informacje. Zaległe komunikaty tracą ważność po ttl ms:
+   * przeterminowana zapowiedź jest gorsza niż cisza.
+   */
+  say(text, { urgent = false, prio = urgent ? 4 : 1, ttl = 9000 } = {}) {
+    this.log(`say p${prio}: ${String(text).slice(0, 40)}`);
     if (!this.enabled || !text) return;
     if (this.engine !== 'robot' && !this.ok) return;
-    if (urgent) {
-      this.queue = [];
+    const item = { text: String(text), prio, t: Date.now(), ttl };
+    if (this.queue.some((q) => q.text === item.text)) return; // bez dubli w kolejce
+    const curPrio = this.speaking && this.curItem ? this.curItem.prio : -1;
+    if (prio >= 3 && prio > curPrio && this.speaking) {
+      // ważniejszy komunikat przerywa mniej ważny
+      this.queue = this.queue.filter((q) => q.prio >= prio);
       this.gen = (this.gen || 0) + 1;
       try { if (this.player) this.player.pause(); } catch { /* ignoruj */ }
       try { if (this.ok) speechSynthesis.cancel(); } catch { /* ignoruj */ }
       this._finish();
     }
-    this.queue.push(text);
-    // Nie gromadzimy zaległych komunikatów: przeterminowane zapowiedzi są gorsze niż cisza.
-    if (this.queue.length > 3) this.queue.splice(0, this.queue.length - 3);
+    this.queue.push(item);
+    this.queue.sort((x, y) => y.prio - x.prio || x.t - y.t);
+    if (this.queue.length > 3) this.queue.length = 3;
     this._next();
   }
 
@@ -121,11 +131,17 @@ export class Voice {
     this.timer = null;
     this.speaking = false;
     this.cur = null;
+    this.curItem = null;
   }
 
   _next() {
-    if (this.speaking || !this.queue.length) return;
-    const text = this.queue.shift();
+    if (this.speaking) return;
+    const now = Date.now();
+    this.queue = this.queue.filter((q) => now - q.t <= q.ttl);
+    if (!this.queue.length) return;
+    const item = this.queue.shift();
+    this.curItem = item;
+    const text = forSpeech(item.text);
     if (this.engine === 'robot') { this._robot(text); return; }
     const u = new SpeechSynthesisUtterance(text);
     if (this.voice) { u.voice = this.voice; u.lang = this.voice.lang; } else u.lang = 'pl-PL';
@@ -227,7 +243,7 @@ export class Voice {
     const was = this.enabled;
     this.enabled = true;
     if (this.engine === 'robot') this.beep(880, 160);
-    this.say('Test głosu. Za trzysta metrów skręć w prawo.', { urgent: true });
+    this.say('Test głosu. Za trzysta metrów skręć w prawo w ulicę Krężnicką.', { urgent: true });
     this.enabled = was;
     return this.info();
   }

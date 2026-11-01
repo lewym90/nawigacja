@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { destination } from '../js/geo.js';
+import { destination, pointAt } from '../js/geo.js';
 import { instruct, fmtDist, fmtDuration, parseRoutes, routeUrl, limitAt } from '../js/routing.js';
 import { Guidance } from '../js/guidance.js';
 import { fakeOsrmRoute, fakeRoute } from './helpers.mjs';
 
 test('instrukcje po polsku', () => {
-  assert.equal(instruct({ name: 'ul. Lipowa', maneuver: { type: 'turn', modifier: 'right' } }).text, 'Skręć w prawo w ul. Lipowa');
+  assert.equal(instruct({ name: 'ul. Lipowa', maneuver: { type: 'turn', modifier: 'right' } }).text, 'Skręć w prawo w ulicę Lipową');
   assert.equal(instruct({ name: '', maneuver: { type: 'turn', modifier: 'sharp left' } }).text, 'Skręć ostro w lewo');
-  assert.equal(instruct({ name: 'Al. X', maneuver: { type: 'roundabout', exit: 2 } }).text, 'Na rondzie zjedź drugim zjazdem na Al. X');
+  assert.equal(instruct({ name: 'Al. X', maneuver: { type: 'roundabout', exit: 2 } }).text, 'Na rondzie zjedź drugim zjazdem w aleję X');
   assert.equal(instruct({ maneuver: { type: 'arrive', modifier: 'left' } }).text, 'Cel podróży po lewej');
   assert.equal(instruct({ maneuver: { type: 'turn', modifier: 'uturn' } }).text, 'Zawróć');
 });
@@ -58,18 +58,19 @@ test('Guidance: pozycja na trasie, pozostały dystans, następny manewr', () => 
   assert.ok(Math.abs(s.remaining - 8000) < 50);
 });
 
-test('Guidance: zapowiedzi skrętu jedna na próg, bez powtórek', () => {
+test('Guidance: dwie zapowiedzi na manewr, bez powtórek', () => {
   const route = fakeRoute();
   const g = new Guidance(route);
   const said = [];
-  for (let along = 5000; along <= 6000; along += 20) {
-    const idx = Math.min(route.line.coords.length - 1, Math.round(along / 100));
-    const p = route.line.coords[idx];
+  for (let along = 3500; along <= 6000; along += 20) {
+    const p = pointAt(route.line, along).point;
     const s = g.update({ lng: p[0], lat: p[1], speed: 13.9, accuracy: 5 });
     said.push(...s.spoken);
   }
-  assert.ok(said.length >= 2 && said.length <= 4, said.join(' | '));
-  assert.ok(said.some((t) => /^Za \d+ m skręć w prawo w Al\. Próbna/.test(t)), said.join(' | '));
+  // zapowiedź z odległością, ewentualne przypomnienie i komenda „teraz”
+  assert.ok(said.length >= 2 && said.length <= 3, said.join(' | '));
+  assert.ok(said.some((t) => /^Za .+ (metrów|kilometr).* skręć w prawo w/.test(t)), said.join(' | '));
+  assert.ok(said.includes('Skręć w prawo'), said.join(' | '));
   assert.equal(new Set(said).size, said.length);
 });
 

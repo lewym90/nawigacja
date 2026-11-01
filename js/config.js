@@ -15,18 +15,24 @@ export const CONFIG = {
   // Overpass: fotoradary i odcinkowe pomiary z OSM.
   overpassUrl: 'https://overpass-api.de/api/interpreter',
 
+  // Ograniczenia prędkości wzdłuż trasy (Valhalla, dane OSM). Docelowo własny serwer.
+  limitsUrl: 'https://valhalla1.openstreetmap.de',
+
   // Wyszukiwanie adresów (Photon, oparty na OSM).
   geocodeUrl: 'https://photon.komoot.io/api/',
 
   // Własna warstwa poprawek (wygrywa z OSM).
   localHazardsUrl: './data/hazards.local.json',
+  // Pliki budowane codziennie przez GitHub Actions (tools/build-hazards.mjs): cała Polska, bez zapytań na żywo.
+  staticOsmUrl: './data/hazards.osm.json',
+  staticGitdUrl: './data/hazards.gitd.json',
 
   // Środek startowy mapy: Lublin.
   center: [22.5684, 51.2465],
   zoom: 12,
 };
 
-export const APP_VERSION = '0.1.12';
+export const APP_VERSION = '0.2.0';
 
 export const STORAGE = { settings: 'nav.settings', lastDest: 'nav.lastDest' };
 

@@ -2,6 +2,7 @@
 // Adres silnika jest w config.js: docelowo własny serwer (Valhalla/OSRM).
 
 import { buildLine } from './geo.js';
+import { intoSuffix } from './speech-pl.js';
 
 const MOD_PL = {
   left: 'w lewo',
@@ -43,17 +44,23 @@ function onStreet(name, ref) {
  * Zwraca { text, icon } gdzie icon: nazwa strzałki dla UI.
  */
 export function instruct(step) {
+  const r = instructFull(step);
+  const on = intoSuffix(step.name, step.ref);
+  r.short = on && r.text.endsWith(on) ? r.text.slice(0, -on.length).trim() : r.text;
+  return r;
+}
+
+function instructFull(step) {
   const m = step.maneuver || {};
   const type = m.type;
   const mod = m.modifier;
-  const street = onStreet(step.name, step.ref);
-  const on = street ? ` w ${street}` : '';
-  const toward = street ? ` na ${street}` : '';
+  const on = intoSuffix(step.name, step.ref); // „ w ulicę Krężnicką” (biernik)
+  const toward = on;
   const dir = MOD_PL[mod] || '';
 
   switch (type) {
     case 'depart':
-      return { text: street ? `Ruszaj${on}` : 'Ruszaj', icon: 'straight' };
+      return { text: 'Ruszaj', icon: 'straight' };
     case 'arrive': {
       const side = mod === 'left' ? ' po lewej' : mod === 'right' ? ' po prawej' : '';
       return { text: `Cel podróży${side}`, icon: 'arrive' };
@@ -72,7 +79,7 @@ export function instruct(step) {
     case 'merge':
       return { text: `Włącz się do ruchu${toward}`, icon: 'merge' };
     case 'on ramp':
-      return { text: `Wjedź na ${street || 'drogę'}`.replace('na na', 'na'), icon: iconFor(mod) };
+      return { text: `Wjedź${on || ' na drogę'}`, icon: iconFor(mod) };
     case 'off ramp':
       return { text: `Zjedź ${dir}${toward}`.replace('  ', ' ').trim(), icon: iconFor(mod) };
     case 'fork':
@@ -80,13 +87,13 @@ export function instruct(step) {
     case 'end of road':
       return { text: `Na końcu drogi skręć ${dir}${on}`, icon: iconFor(mod) };
     case 'continue':
-      return { text: mod === 'uturn' ? 'Zawróć' : `Jedź dalej ${dir === 'prosto' ? 'prosto' : dir}${on}`.trim(), icon: iconFor(mod) };
+      return { text: mod === 'uturn' ? 'Zawróć' : `Jedź dalej ${dir === 'prosto' ? 'prosto' : dir}`.trim(), icon: iconFor(mod) };
     case 'new name':
-      return { text: `Jedź prosto${on}`, icon: 'straight' };
+      return { text: 'Jedź prosto', icon: 'straight' };
     case 'turn':
     default:
       if (mod === 'uturn') return { text: 'Zawróć', icon: 'uturn' };
-      if (mod === 'straight' || !mod) return { text: `Jedź prosto${on}`, icon: 'straight' };
+      if (mod === 'straight' || !mod) return { text: 'Jedź prosto', icon: 'straight' };
       return { text: `Skręć ${dir}${on}`, icon: iconFor(mod) };
   }
 }
@@ -135,6 +142,7 @@ export function parseRoute(r, index = 0) {
       const ins = instruct(st);
       steps.push({
         text: ins.text,
+        short: ins.short,
         icon: ins.icon,
         name: onStreet(st.name, st.ref),
         type: st.maneuver && st.maneuver.type,

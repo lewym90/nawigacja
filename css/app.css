@@ -129,6 +129,9 @@ input { font: inherit; color: inherit; user-select: text; -webkit-user-select: t
 #section .s-avg { font-size: 44px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
 #section .s-avg small { font-size: 14px; font-weight: 500; color: var(--muted); margin-left: 6px; letter-spacing: 0; }
 #section .s-avg.over { color: var(--warn); }
+#section .s-rem { display: flex; align-items: baseline; justify-content: space-between; margin-top: 10px; }
+#section .s-rem span { font-size: 13px; color: var(--muted); font-weight: 600; }
+#section .s-rem b { font-size: 30px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; }
 #section .s-lbl { font-size: 12px; color: var(--muted); }
 #section .s-lim { text-align: right; font-size: 26px; font-weight: 750; line-height: 1; }
 #section .s-bar { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
@@ -225,17 +228,24 @@ body.day .route-card.sel .rc-name { color: var(--route); }
   position: fixed; left: 50%; transform: translateX(-50%); top: calc(var(--safe-t) + 190px); z-index: 9;
   padding: 10px 16px; border-radius: 14px; font-size: 14px; font-weight: 600; max-width: 86vw; text-align: center;
 }
-.hz {
-  width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; border: 3px solid var(--bg);
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4); color: #1a0f05;
+.hz { width: 44px; height: 54px; position: relative; }
+.hz .in { width: 100%; height: 100%; transform-origin: 50% 100%; transition: transform 0.25s ease, opacity 0.25s ease; filter: drop-shadow(0 4px 5px rgba(0, 0, 0, 0.45)); }
+.hz .pin { display: block; }
+.hz.near .in { transform: scale(1.22); }
+.hz.far .in { opacity: 0.85; }
+.hz-tag {
+  position: absolute; left: 50%; top: -17px; transform: translateX(-50%); white-space: nowrap;
+  padding: 2px 8px; border-radius: 9px; font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em;
+  background: #fff; color: #1a1405; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
-.hz.camera, .hz.redlight { background: var(--warn); }
-.hz.section { background: var(--yellow); color: #1a1405; }
-.hz.police { background: #5aa0ff; color: #05142b; }
-.hz.accident, .hz.obstacle, .hz.jam, .hz.roadwork { background: var(--yellow); color: #1a1405; }
-.hz.accident { background: var(--danger); color: #fff; }
-.hz.near { transform: scale(1.18); }
-.hz.far { opacity: 0.8; }
+.hz-tag.end { background: #1c2028; color: #fff; }
+/* zgłoszenia kierowców (policja, wypadek, korek…) zostają okrągłe */
+.hzr {
+  width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; border: 3px solid var(--bg);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4); color: #1a0f05; background: var(--yellow);
+}
+.hzr.police { background: #5aa0ff; color: #05142b; }
+.hzr.accident { background: var(--danger); color: #fff; }
 .dest-pin { color: var(--gold); filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.5)); }
 .me-dot { width: 20px; height: 20px; border-radius: 50%; background: var(--route); border: 3px solid #fff; box-shadow: 0 0 0 8px rgba(76, 155, 255, 0.25); }
 
@@ -246,7 +256,7 @@ body.day .route-card.sel .rc-name { color: var(--route); }
 .hint { position: fixed; left: 12px; right: 12px; bottom: calc(var(--safe-b) + 16px); z-index: 3; padding: 14px 16px; border-radius: 18px; font-size: 14px; color: var(--muted); line-height: 1.45; }
 .hint b { color: var(--text); }
 
-body.has-section #banner { top: calc(var(--safe-t) + 312px); }
+body.has-section #banner { top: calc(var(--safe-t) + 340px); }
 
 .nav-arrow { width: 46px; height: 46px; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5)); }
 

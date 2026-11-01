@@ -166,3 +166,15 @@ export function corridorBoxesRange(line, fromM, toM, marginM = 400, stepM = 2000
   }
   return boxes;
 }
+
+/** Fragment linii od `from` do `to` metrów (współrzędne [lng,lat]), z dokładnymi końcami. */
+export function sliceLine(line, from, to) {
+  const a = Math.max(0, Math.min(line.total, from));
+  const b = Math.max(a, Math.min(line.total, to));
+  const out = [pointAt(line, a).point];
+  for (let i = 0; i < line.cum.length; i++) {
+    if (line.cum[i] > a && line.cum[i] < b) out.push(line.coords[i]);
+  }
+  out.push(pointAt(line, b).point);
+  return out;
+}

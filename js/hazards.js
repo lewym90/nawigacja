@@ -89,6 +89,52 @@ export function parseOverpass(json) {
  * Łączy warstwy. Własna warstwa (local) wygrywa po id, a lista `suppress`
  * usuwa błędne wpisy z OSM (np. fotoradar zdjęty, atrapa).
  */
+/**
+ * Scala kilka źródeł (np. OSM na żywo, OSM z pliku, GITD) w jedną listę bez dubli.
+ * Pierwsze źródło wygrywa; z kolejnych dopełniamy brakujący limit i kierunek.
+ * Dwa fotoradary bliżej niż 40 m uznajemy za ten sam, dwa odcinki o początkach i końcach
+ * bliżej niż 150 m też.
+ */
+export function mergeSources(layers, local) {
+  const cams = [];
+  const secs = [];
+  const camCell = new Map();
+  const cell = (lng, lat) => `${Math.floor(lng * 500)}:${Math.floor(lat * 500)}`; // ok. 130 x 220 m
+  const near = (a, b, m) => haversine([a.lng, a.lat], [b.lng, b.lat]) <= m;
+  const ids = new Set();
+  for (const layer of layers) {
+    if (!layer) continue;
+    for (const c of layer.cameras || []) {
+      if (ids.has(c.id)) continue;
+      let dup = null;
+      const cx = Math.floor(c.lng * 500), cy = Math.floor(c.lat * 500);
+      for (let dx = -1; dx <= 1 && !dup; dx++) for (let dy = -1; dy <= 1 && !dup; dy++) {
+        for (const o of camCell.get(`${cx + dx}:${cy + dy}`) || []) if ((o.type === 'redlight') === (c.type === 'redlight') && near(o, c, 40)) { dup = o; break; }
+      }
+      if (dup) {
+        if (dup.limit == null && c.limit != null) dup.limit = c.limit;
+        if (dup.dir == null && c.dir != null) dup.dir = c.dir;
+        (dup.sources = dup.sources || [dup.source]).push(c.source);
+        continue;
+      }
+      ids.add(c.id);
+      const copy = { ...c };
+      cams.push(copy);
+      const k = cell(c.lng, c.lat);
+      if (!camCell.has(k)) camCell.set(k, []);
+      camCell.get(k).push(copy);
+    }
+    for (const x of layer.sections || []) {
+      if (ids.has(x.id)) continue;
+      const dup = secs.find((o) => haversine(o.start, x.start) <= 150 && haversine(o.end, x.end) <= 150);
+      if (dup) { if (dup.limit == null && x.limit != null) dup.limit = x.limit; continue; }
+      ids.add(x.id);
+      secs.push({ ...x });
+    }
+  }
+  return mergeHazards({ cameras: cams, sections: secs }, local);
+}
+
 export function mergeHazards(osm, local) {
   const suppress = new Set((local && local.suppress) || []);
   const cams = new Map();

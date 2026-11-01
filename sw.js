@@ -1,10 +1,10 @@
 // Service worker: powłoka aplikacji działa bez sieci. Kafelki i dane tras idą przez sieć.
-const VERSION = 'nav-v0.1.12';
+const VERSION = 'nav-v0.2.0';
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
   './vendor/maplibre-gl.js', './vendor/maplibre-gl.css',
   './js/app.js', './js/config.js', './js/geo.js', './js/routing.js', './js/guidance.js',
-  './js/hazards.js', './js/voice.js', './js/sim.js', './js/mapstyle.js', './js/icons.js',
+  './js/hazards.js', './js/speech-pl.js', './js/speed.js', './js/limits.js', './js/voice.js', './js/sim.js', './js/mapstyle.js', './js/icons.js',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
 ];
 
@@ -25,7 +25,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (url.origin !== location.origin) return; // usługi zewnętrzne: zawsze sieć
   // Własna warstwa poprawek: najpierw sieć (świeże dane), w razie braku sieci kopia.
-  if (url.pathname.endsWith('hazards.local.json')) {
+  if (/\/data\/hazards\.[a-z]+\.json$/.test(url.pathname)) {
     e.respondWith(fetch(req).then((r) => { const c = r.clone(); caches.open(VERSION).then((x) => x.put(req, c)); return r; }).catch(() => caches.match(req)));
     return;
   }
