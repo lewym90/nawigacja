@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Usługa głosu dla nawigacji: zamienia zdanie na nagranie (Gemini TTS) i pamięta je na dysku.
-Klucz API jest tylko tutaj (plik /etc/nav-tts.env: GEMINI_KEY=...), aplikacja go nie widzi.
+"""Usługa głosu dla nawigacji: zamienia zdanie na nagranie i pamięta je na dysku.
+Głosy: ewa = polski model Pocket TTS liczony na tym serwerze (bez kosztów), agata = Gemini TTS (wymaga klucza).
+Klucz API (opcjonalny, tylko dla Agaty) jest w pliku /etc/nav-tts.env: GEMINI_KEY=..., aplikacja go nie widzi.
 Uruchamia się przez systemd i słucha tylko na 127.0.0.1; z internetu wystawia ją Caddy.
 """
-import base64, hashlib, json, os, re, struct, sys, threading, time, urllib.error, urllib.request
+import base64, hashlib, io, json, os, re, struct, sys, threading, time, urllib.error, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -19,6 +20,8 @@ PROMPT = 'Przeczytaj naturalnie, spokojnie i wyraźnie, jak lektor nawigacji sam
 
 os.makedirs(CACHE, exist_ok=True)
 lock = threading.Lock()
+ewa_lock = threading.RLock()
+_ewa = []
 GAP = float(os.environ.get('NAV_TTS_GAP', '7'))  # minimalny odstęp między zapytaniami do Gemini (s)
 gate = threading.Condition()
 gstate = {'next': 0.0, 'urgent': 0}
@@ -84,8 +87,31 @@ def synth(text, urgent=False):
     raise RuntimeError(f'Gemini: {last}')
 
 
-def get_audio(text, urgent=False):
-    h = hashlib.sha256(f'{MODEL}|{VOICE}|{text}'.encode()).hexdigest()[:40]
+def ewa_model():
+    """Wczytuje model Pocket (polski) przy pierwszym użyciu; potem zostaje w pamięci (~150 MB z kwantyzacją)."""
+    with ewa_lock:
+        if not _ewa:
+            import soundfile as sf
+            from huggingface_hub import hf_hub_download
+            from pocket_tts import TTSModel
+            ref = hf_hub_download('shefowl/pocket-tts-polish-6l', 'reference.wav')
+            m = TTSModel.load_model(config='hf://shefowl/pocket-tts-polish-6l/config.yaml', temp=0.3, quantize=True)
+            _ewa.extend([m, m.get_state_for_audio_prompt(ref), sf])
+        return _ewa
+
+
+def synth_ewa(text):
+    with ewa_lock:  # procesor liczy jedno zdanie naraz
+        m, st, sf = ewa_model()
+        w = m.generate_audio(st, text)
+        buf = io.BytesIO()
+        sf.write(buf, w.numpy().squeeze(), m.sample_rate, format='WAV', subtype='PCM_16')
+        return buf.getvalue()
+
+
+def get_audio(text, voice='ewa', urgent=False):
+    ident = f'{MODEL}|{VOICE}' if voice == 'agata' else 'pocket-pl-6l'
+    h = hashlib.sha256(f'{voice}|{ident}|{text}'.encode()).hexdigest()[:40]
     path = os.path.join(CACHE, h + '.wav')
     if os.path.exists(path):
         return open(path, 'rb').read()
@@ -102,15 +128,20 @@ def get_audio(text, urgent=False):
             return open(path, 'rb').read()
         raise RuntimeError('nie udało się')
     try:
-        with lock:
-            today = time.strftime('%Y-%m-%d')
-            if day['d'] != today:
-                day['d'], day['n'] = today, 0
-            if day['n'] >= DAILY_NEW:
-                raise PermissionError('dzienny limit nowych zdań')
-        data = synth(text, urgent)
-        with lock:
-            day['n'] += 1
+        if voice == 'agata':
+            if not KEY:
+                raise PermissionError('Agata niedostępna: brak klucza')
+            with lock:
+                today = time.strftime('%Y-%m-%d')
+                if day['d'] != today:
+                    day['d'], day['n'] = today, 0
+                if day['n'] >= DAILY_NEW:
+                    raise PermissionError('dzienny limit nowych zdań')
+            data = synth(text, urgent)
+            with lock:
+                day['n'] += 1
+        else:
+            data = synth_ewa(text)
         tmp = path + '.tmp'
         open(tmp, 'wb').write(data)
         os.replace(tmp, path)
@@ -150,18 +181,19 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         if u.path.endswith('/health'):
-            self._send(200, json.dumps({'ok': bool(KEY), 'model': MODEL, 'voice': VOICE, 'new_today': day['n'], 'gap_s': GAP, 'last_error': last_err['msg']}).encode(), 'application/json')
+            self._send(200, json.dumps({'ok': True, 'ewa': bool(_ewa), 'agata': bool(KEY), 'model': MODEL, 'voice': VOICE, 'new_today': day['n'], 'gap_s': GAP, 'last_error': last_err['msg']}).encode(), 'application/json')
             return
         o = self.headers.get('Origin', '')
         if o and o not in ALLOWED and not re.match(r'^http://(localhost|127\.0\.0\.1)(:\d+)?$', o):
             self._send(403, b'zabronione')
             return
         t = ' '.join((parse_qs(u.query).get('t', [''])[0]).split())
-        if not t or len(t) > MAXLEN or not KEY:
+        voice = parse_qs(u.query).get('v', ['ewa'])[0]
+        if voice not in ('ewa', 'agata') or not t or len(t) > MAXLEN:
             self._send(400, b'zly tekst')
             return
         try:
-            self._send(200, get_audio(t, parse_qs(u.query).get('u', ['0'])[0] == '1'), 'audio/wav', {'Cache-Control': 'public, max-age=31536000, immutable'})
+            self._send(200, get_audio(t, voice, parse_qs(u.query).get('u', ['0'])[0] == '1'), 'audio/wav', {'Cache-Control': 'public, max-age=31536000, immutable'})
         except PermissionError as e:
             self._send(429, str(e).encode())
         except Exception as e:  # noqa: BLE001

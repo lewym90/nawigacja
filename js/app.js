@@ -1,5 +1,5 @@
 import { Places } from './places.js';
-import { CONFIG, APP_VERSION, loadSettings, saveSettings, STORAGE } from './config.js';
+import { CONFIG, APP_VERSION, VOICES, loadSettings, saveSettings, STORAGE } from './config.js';
 import { buildStyle, isNight } from './mapstyle.js';
 import { fetchRoutes, fmtDist, fmtDuration, limitAt } from './routing.js';
 import { Guidance } from './guidance.js';
@@ -18,7 +18,7 @@ const $ = (id) => document.getElementById(id);
 const settings = loadSettings();
 const voice = new Voice();
 voice.enabled = settings.voice;
-voice.engine = ['cloud', 'robot'].includes(settings.ttsEngine) ? settings.ttsEngine : 'system';
+voice.setVoice(settings.ttsEngine);
 voice.cloudUrl = CONFIG.ttsUrl || '';
 voice.prefName = settings.voiceName || '';
 const reports = new ReportStore();
@@ -967,8 +967,9 @@ function syncMenu() {
   sw('sw-hz', settings.hazardsVoice);
   sw('sw-tilt', settings.tilt);
   document.querySelectorAll('#seg-theme button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.theme));
-  document.querySelectorAll('#seg-engine button').forEach((b) => b.classList.toggle('on', b.dataset.v === (['cloud', 'robot'].includes(settings.ttsEngine) ? settings.ttsEngine : 'system')));
+  document.querySelectorAll('#seg-engine button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.ttsEngine));
 }
+$('seg-engine').innerHTML = VOICES.map((v) => `<button data-v="${v.id}"${v.enabled ? '' : ' disabled title="Niedostępna"'}>${v.label}</button>`).join('');
 $('btn-menu').onclick = () => { syncMenu(); show('menu', true); };
 $('btn-menu-x').onclick = () => show('menu', false);
 $('sw-voice').onclick = () => { settings.voice = !settings.voice; voice.enabled = settings.voice; saveSettings(settings); syncMenu(); };
@@ -979,7 +980,10 @@ document.querySelectorAll('#seg-theme button').forEach((b) => (b.onclick = () =>
 }));
 
 document.querySelectorAll('#seg-engine button').forEach((b) => (b.onclick = () => {
-  settings.ttsEngine = b.dataset.v; voice.engine = b.dataset.v; voice.hold(false); saveSettings(settings); syncMenu();
+  if (b.disabled) { toast('Agata jest jeszcze niedostępna', 2000); return; }
+  settings.ttsEngine = b.dataset.v; voice.setVoice(b.dataset.v); saveSettings(settings); syncMenu();
+  voice.unlock();
+  voice.say('Cześć, jestem ' + (b.dataset.v === 'ewa' ? 'Ewa' : 'Zosia') + '. Za trzysta metrów skręć w prawo.', { urgent: true });
 }));
 
 $('btn-voice-pick').onclick = () => {
@@ -1006,7 +1010,7 @@ $('btn-voice-test').onclick = () => {
   voice.unlock();
   const i = voice.test();
   const msg = !i.supported ? 'Ta przeglądarka nie ma syntezatora mowy'
-    : i.robot ? 'Głos wbudowany. Po sygnale powinieneś usłyszeć mowę. Brak mowy? Napisz mi, co dalej słychać.'
+    : i.cloud ? 'Głos z serwera. Pierwsze zdanie może potrwać kilka sekund. Gdy serwer nie odpowiada, mówi Zosia.'
     : i.pl ? `Głos polski: ${i.pl}. Teraz bez sygnału, sama mowa. Słychać Zosię?`
     : `Brak polskiego głosu (głosów: ${i.voices}). Dodaj go: Ustawienia, Dostępność, Treści czytane, Głosy.`;
   toast(msg, 9000);

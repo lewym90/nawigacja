@@ -280,3 +280,5 @@ body.has-section #banner { top: calc(var(--safe-t) + 340px); }
 #save-row { display: flex; align-items: center; gap: 8px; padding: 4px 16px 10px; font-size: 13px; color: var(--muted); }
 #save-row button { border: 1px solid var(--line); background: var(--surface-2); color: var(--text); border-radius: 999px; padding: 7px 13px; font-size: 14px; }
 #save-row button.done { border-color: var(--gold); color: var(--gold); }
+
+.seg button:disabled { opacity: .38; }

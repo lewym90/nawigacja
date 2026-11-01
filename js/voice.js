@@ -43,14 +43,14 @@ export class Voice {
     this.maxUtteranceMs = maxUtteranceMs;
     this.lastError = null;
     this.onError = null;
-    this.engine = 'robot'; // 'robot' = wbudowany syntezator (gra jak zwykły dźwięk), 'system' = głos telefonu
+    this.engine = 'system'; // 'system' = Zosia (głos telefonu), 'cloud' = nagrania z własnego serwera (Ewa, Agata)
+    this.cloudVoice = 'ewa';
     this.player = null;
     this.cache = new Map();
     this.cloudCache = new Map();
     this.cloudQ = [];
     this.cloudActive = 0;
     this.cloudUrl = '';
-    this.robot = null;
     this.events = [];
     this.prefName = '';
     if (this.ok) {
@@ -84,10 +84,15 @@ export class Voice {
     return this.voice;
   }
 
+  /** 'system' (Zosia), 'ewa' lub 'agata'. */
+  setVoice(name) {
+    if (name === 'ewa' || name === 'agata') { this.engine = 'cloud'; this.cloudVoice = name; } else { this.engine = 'system'; }
+  }
+
   /** Cicha wypowiedź przy pierwszym dotknięciu ekranu: odblokowuje mowę po ponownym uruchomieniu aplikacji. */
   prime() {
     try {
-      if (!this.ok || this.engine === 'robot') return;
+      if (!this.ok) return;
       const u = new SpeechSynthesisUtterance(' ');
       u.volume = 0;
       speechSynthesis.speak(u);
@@ -96,7 +101,7 @@ export class Voice {
 
   unlock() {
     // Silnik systemowy: nic poza samą mową. Dźwięk <audio> tuż przed nią wyciszał ją na iPhonie.
-    if (this.engine !== 'robot' && this.engine !== 'cloud') return;
+    if (this.engine !== 'cloud') return;
     if (!this.player) this.player = new Audio();
     try { this.player.src = toneWavUri(440, 30); this.player.volume = 0.01; this.player.play().catch(() => {}); } catch { /* ignoruj */ }
   }
@@ -122,7 +127,7 @@ export class Voice {
   say(text, { urgent = false, prio = urgent ? 4 : 1, ttl = 9000 } = {}) {
     this.log(`say p${prio}: ${String(text).slice(0, 40)}`);
     if (!this.enabled || !text) return;
-    if (this.engine !== 'robot' && this.engine !== 'cloud' && !this.ok) return;
+    if (this.engine !== 'cloud' && !this.ok) return;
     const item = { text: String(text), prio, t: Date.now(), ttl };
     if (this.queue.some((q) => q.text === item.text)) return; // bez dubli w kolejce
     const curPrio = this.speaking && this.curItem ? this.curItem.prio : -1;
@@ -156,8 +161,7 @@ export class Voice {
     const item = this.queue.shift();
     this.curItem = item;
     const text = forSpeech(item.text);
-    if (this.engine === 'robot') { this._robot(text); return; }
-    if (this.engine === 'cloud' && this.cloudUrl && Date.now() > (this.cloudBlockedUntil || 0)) { this._cloud(text); return; }
+    if (this.engine === 'cloud' && this.cloudUrl && Date.now() > (this.cloudBlockedUntil || 0)) { this._cloud(withPauses(text)); return; }
     this._system(text);
   }
 
@@ -213,7 +217,7 @@ export class Voice {
   }
 
   /** Adres nagrania z serwera (to samo zdanie = ten sam plik, serwer i telefon go pamiętają). */
-  _cloudKey(text) { return text.replace(/\s+/g, ' ').trim(); }
+  _cloudKey(text) { return `${this.cloudVoice}|${text.replace(/\s+/g, ' ').trim()}`; }
 
   /** Pobiera nagranie z serwera (kolejka: najwyżej 3 naraz; pilne wchodzi na początek). Zwraca adres blob:. */
   _fetchCloud(text, { urgent = false } = {}) {
@@ -227,7 +231,7 @@ export class Voice {
         const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
         const to = setTimeout(() => ctl && ctl.abort(), 40000);
         try {
-          const r = await fetch(`${this.cloudUrl}?t=${encodeURIComponent(key)}${urgent ? '&u=1' : ''}`, ctl ? { signal: ctl.signal } : {});
+          const r = await fetch(`${this.cloudUrl}?v=${this.cloudVoice}&t=${encodeURIComponent(key.slice(key.indexOf('|') + 1))}${urgent ? '&u=1' : ''}`, ctl ? { signal: ctl.signal } : {});
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           const blob = await r.blob();
           if (!blob.size) throw new Error('pusty');
@@ -259,7 +263,7 @@ export class Voice {
   /** Z wyprzedzeniem prosi serwer o nagrania, żeby w czasie jazdy były gotowe. */
   prefetch(texts) {
     if (this.engine !== 'cloud' || !this.cloudUrl || Date.now() < (this.cloudBlockedUntil || 0)) return;
-    for (const t of texts) { const f = forSpeech(t); if (f) this._fetchCloud(f).catch(() => {}); }
+    for (const t of texts) { const f = withPauses(forSpeech(t)); if (f) this._fetchCloud(f).catch(() => {}); }
   }
 
   async _cloud(text) {
@@ -301,44 +305,9 @@ export class Voice {
     }
   }
 
-  /** Wbudowany syntezator (eSpeak, wczytywany dopiero przy pierwszej wypowiedzi), odtwarzany przez element <audio>. */
-  async _robot(text) {
-    const gen = this.gen || 0;
-    this.speaking = true;
-    const stamp = {};
-    this.cur = stamp;
-    const done = () => {
-      if (this.cur !== stamp) return;
-      this._finish();
-      this._next();
-    };
-    this.timer = setTimeout(done, this.maxUtteranceMs);
-    try {
-      if (!this.robot) this.robot = await import('../vendor/robot-tts.js');
-      let url = this.cache.get(text);
-      if (!url) {
-        url = this.robot.render(text);
-        if (this.cache.size > 60) this.cache.delete(this.cache.keys().next().value);
-        this.cache.set(text, url);
-      }
-      if (this.cur !== stamp || gen !== (this.gen || 0)) return; // w międzyczasie przerwano
-      if (!this.player) this.player = new Audio();
-      const a = this.player;
-      a.onended = done;
-      a.onerror = () => { this.lastError = 'audio'; if (this.onError) this.onError('audio'); done(); };
-      a.src = url;
-      a.volume = 1;
-      await a.play();
-    } catch (err) {
-      this.lastError = (err && err.name) || String(err);
-      if (this.onError) this.onError(this.lastError);
-      done();
-    }
-  }
-
   /** Krótki sygnał dźwiękowy przez element <audio> (kanał multimediów). */
   beep(freq = 880, ms = 140) {
-    if (this.engine !== 'robot' && this.enabled) return; // przy głosie systemowym sygnał wyciszałby mowę; zapowiedź niesie ostrzeżenie
+    if (this.enabled) return; // przy głosie systemowym sygnał wyciszałby mowę; zapowiedź niesie ostrzeżenie
     try {
       this.tones = this.tones || new Map();
       const key = `${freq}:${ms}`;
@@ -352,7 +321,7 @@ export class Voice {
 
   /** Diagnostyka dla użytkownika: co jest dostępne w tej przeglądarce. */
   info() {
-    if (this.engine === 'robot') return { supported: true, voices: 1, pl: 'wbudowany', robot: true };
+    if (this.engine === 'cloud') return { supported: true, voices: 1, pl: null, cloud: this.cloudVoice };
     if (!this.ok) return { supported: false, voices: 0, pl: null };
     const vs = speechSynthesis.getVoices();
     return { supported: true, voices: vs.length, pl: this.voice ? this.voice.name : null };
@@ -361,7 +330,6 @@ export class Voice {
   test() {
     const was = this.enabled;
     this.enabled = true;
-    if (this.engine === 'robot') this.beep(880, 160);
     this.say('Test głosu. Za trzysta metrów skręć w prawo w ulicę Krężnicką.', { urgent: true });
     this.enabled = was;
     return this.info();

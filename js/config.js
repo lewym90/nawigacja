@@ -33,7 +33,7 @@ export const CONFIG = {
   zoom: 12,
 };
 
-export const APP_VERSION = '0.4.2';
+export const APP_VERSION = '0.5.0';
 
 export const STORAGE = { settings: 'nav.settings', lastDest: 'nav.lastDest' };
 
@@ -42,14 +42,22 @@ export const DEFAULT_SETTINGS = {
   theme: 'auto', // auto | day | night
   tilt: true,
   hazardsVoice: true,
-  ttsEngine: 'system', // cloud = nagrania z własnego serwera (wraca do telefonu) | system = głos telefonu | robot = wbudowany
+  ttsEngine: 'system', // system = Zosia (głos telefonu) | ewa = nagrania z własnego serwera (Pocket) | agata = Gemini (nieaktywna)
 };
+
+/** Lektorzy do wyboru w ustawieniach. Agata (Gemini) wymaga płatnego klucza: włączymy ją po decyzji. */
+export const VOICES = [
+  { id: 'system', label: 'Zosia', enabled: true },
+  { id: 'ewa', label: 'Ewa', enabled: true },
+  { id: 'agata', label: 'Agata', enabled: false },
+];
 
 export function loadSettings() {
   try {
     const st = { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(STORAGE.settings) || '{}') };
     // 0.3.4: „Naturalny” wymaga płatnego klucza; do czasu jego włączenia wracamy do głosu telefonu
     if (!st.ttsMigrated034) { st.ttsMigrated034 = true; if (st.ttsEngine === 'cloud') st.ttsEngine = 'system'; }
+    if (!VOICES.some((v) => v.id === st.ttsEngine && v.enabled)) st.ttsEngine = 'system'; // stare ustawienia („Naturalny”, „Wbudowany”) i głosy niedostępne
     return st;
   } catch {
     return { ...DEFAULT_SETTINGS };
