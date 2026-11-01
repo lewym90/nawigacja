@@ -7,7 +7,7 @@ import {
   HazardWatch, SectionTracker, ReportStore, TYPES,
 } from './hazards.js';
 import { corridorBoxesRange, haversine, bearing } from './geo.js';
-import { Voice } from './voice.js';
+import { Voice, qualityLabel } from './voice.js';
 import { Simulator } from './sim.js';
 import { icon, arrow } from './icons.js';
 
@@ -16,6 +16,7 @@ const settings = loadSettings();
 const voice = new Voice();
 voice.enabled = settings.voice;
 voice.engine = settings.ttsEngine === 'robot' ? 'robot' : 'system';
+voice.prefName = settings.voiceName || '';
 const reports = new ReportStore();
 
 const S = {
@@ -856,6 +857,19 @@ document.querySelectorAll('#seg-engine button').forEach((b) => (b.onclick = () =
   settings.ttsEngine = b.dataset.v; voice.engine = b.dataset.v; voice.hold(false); saveSettings(settings); syncMenu();
 }));
 
+$('btn-voice-pick').onclick = () => {
+  const v = voice.cycleVoice();
+  if (!v) { toast('Brak polskich głosów w telefonie', 3000); return; }
+  settings.voiceName = voice.prefName; saveSettings(settings);
+  voice.say('Tak będę mówić. Za trzysta metrów skręć w prawo.', { urgent: true });
+  toast(`Głos: ${v.name} (${qualityLabel(v)}). Dotknij ponownie, by zmienić.`, 4000);
+};
+$('btn-voice-log').onclick = () => {
+  const el = $('voice-log');
+  el.hidden = !el.hidden;
+  el.textContent = `Wersja ${APP_VERSION}, silnik: ${voice.engine}, głos: ${voice.voice ? voice.voice.name : 'brak'}, mowa włączona: ${voice.enabled}\n` + (voice.events.length ? voice.events.join('\n') : 'Brak zdarzeń. Uruchom symulację i wróć tutaj.');
+};
+
 // ---------- Start ----------
 setMode('idle');
 startGeo();
@@ -894,4 +908,4 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 }
 
 // Haki do testów i diagnostyki (nie zmieniają działania aplikacji).
-window.__nav = { S, map, onFix, chooseDest, startNav, endNav, parsePhoton, reports };
+window.__nav = { S, map, voice, settings, onFix, chooseDest, startNav, endNav, parsePhoton, reports };

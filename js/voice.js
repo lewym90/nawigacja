@@ -21,6 +21,14 @@ export function toneWavUri(freq = 880, ms = 160, rate = 22050, amp = 0.6) {
   return `data:audio/wav;base64,${btoa(bin)}`;
 }
 
+export function voiceQuality(v) {
+  const n = v.name || '';
+  if (/premium|siri|natural|neural/i.test(n)) return 3;
+  if (/enhanced|rozszerz|google|online|microsoft/i.test(n)) return 2;
+  return 1;
+}
+export function qualityLabel(v) { const q = voiceQuality(v); return q >= 3 ? 'Premium' : q === 2 ? 'Rozszerzony' : 'Podstawowy'; }
+
 export class Voice {
   constructor({ maxUtteranceMs = 20000 } = {}) {
     this.enabled = true;
@@ -37,14 +45,37 @@ export class Voice {
     this.player = null;
     this.cache = new Map();
     this.robot = null;
+    this.events = [];
+    this.prefName = '';
     if (this.ok) {
       const pick = () => {
         const vs = speechSynthesis.getVoices();
-        this.voice = vs.find((v) => /^pl/i.test(v.lang)) || vs.find((v) => v.default) || vs[0] || null;
+        const pl = vs.filter((v) => /^pl/i.test(v.lang));
+        const pref = this.prefName && pl.find((v) => v.voiceURI === this.prefName || v.name === this.prefName);
+        this.voice = pref || pl.slice().sort((a, b) => voiceQuality(b) - voiceQuality(a))[0] || vs.find((v) => v.default) || vs[0] || null;
       };
       pick();
       speechSynthesis.addEventListener && speechSynthesis.addEventListener('voiceschanged', pick);
     }
+  }
+
+  log(msg) {
+    this.events.push(`${new Date().toTimeString().slice(3, 8)}:${String(Date.now() % 60000).padStart(5, '0').slice(0, 2)} ${msg}`);
+    if (this.events.length > 30) this.events.shift();
+  }
+
+  polishVoices() {
+    try { return speechSynthesis.getVoices().filter((v) => /^pl/i.test(v.lang)); } catch { return []; }
+  }
+
+  /** Następny polski głos z listy (przycisk w menu). */
+  cycleVoice() {
+    const pl = this.polishVoices();
+    if (!pl.length) return null;
+    const i = pl.findIndex((v) => v === this.voice);
+    this.voice = pl[(i + 1) % pl.length];
+    this.prefName = this.voice.voiceURI || this.voice.name;
+    return this.voice;
   }
 
   unlock() {
@@ -69,6 +100,7 @@ export class Voice {
 
   /** urgent: przerywa i czyści kolejkę (np. ostrzeżenie tuż przed fotoradarem). */
   say(text, { urgent = false } = {}) {
+    this.log(`say${urgent ? '!' : ''}: ${String(text).slice(0, 40)}`);
     if (!this.enabled || !text) return;
     if (this.engine !== 'robot' && !this.ok) return;
     if (urgent) {
@@ -106,10 +138,11 @@ export class Voice {
       this._next();
     };
     let started = false;
-    u.onstart = () => { started = true; };
-    u.onend = done;
+    u.onstart = () => { started = true; this.log('start'); };
+    u.onend = () => { this.log('end'); done(); };
     u.onerror = (e) => {
       this.lastError = (e && e.error) || 'error';
+      this.log(`błąd: ${this.lastError}`);
       if (this.onError) this.onError(this.lastError);
       done();
     };
@@ -117,12 +150,14 @@ export class Voice {
     this.timer = setTimeout(done, this.maxUtteranceMs);
     try {
       // Kolejka jest pusta (nic nie mówimy), więc czyszczenie jest bezpieczne; iOS bywa „zawieszony” po poprzedniej wypowiedzi.
+      this.log(`speak ${this.voice ? this.voice.name : 'brak głosu'}: ${text.slice(0, 30)}`);
       speechSynthesis.cancel();
       if (speechSynthesis.paused) speechSynthesis.resume();
       speechSynthesis.speak(u);
       // Jeśli po chwili nic się nie zaczęło, spróbuj jeszcze raz.
       setTimeout(() => {
         if (this.cur !== u || started || speechSynthesis.speaking) return;
+        this.log('ponawiam: nic się nie zaczęło');
         try { speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* ignoruj */ }
       }, 1200);
     } catch (err) {
