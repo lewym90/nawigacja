@@ -229,3 +229,16 @@ test('auto: koszt z use_distance 0.6 (krótsze trasy miejskie, bez rezygnacji z 
   const body = valhallaRequest([[22.5, 51.2], [22.6, 51.3]], { costing: 'auto' });
   assert.equal(body.costing_options.auto.use_distance, 0.6);
 });
+
+test('auto: wybór najszybsza / zrównoważona / najkrótsza zmienia koszt dystansu', async () => {
+  const { valhallaRequest, ROUTE_PREFS, DEFAULT_PREF } = await import('../js/valhalla.js');
+  const P = [[22.5, 51.2], [22.6, 51.3]];
+  assert.equal(DEFAULT_PREF, 'balanced');
+  assert.deepEqual(Object.keys(ROUTE_PREFS), ['fast', 'balanced', 'short']);
+  assert.equal(valhallaRequest(P, { costing: 'auto', pref: 'fast' }).costing_options.auto.use_distance, 0);
+  assert.equal(valhallaRequest(P, { costing: 'auto', pref: 'balanced' }).costing_options.auto.use_distance, 0.6);
+  assert.equal(valhallaRequest(P, { costing: 'auto', pref: 'short' }).costing_options.auto.use_distance, 1);
+  assert.equal(valhallaRequest(P, { costing: 'auto', pref: 'nieznana' }).costing_options.auto.use_distance, 0.6);
+  // pieszo i rower nie zależą od preferencji
+  assert.equal('use_distance' in valhallaRequest(P, { costing: 'pedestrian', pref: 'short' }).costing_options.pedestrian, false);
+});

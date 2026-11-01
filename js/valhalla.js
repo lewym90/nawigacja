@@ -163,6 +163,17 @@ export const SNAP_RADIUS = { auto: 10, pedestrian: 15, bicycle: 12 };
 // auto.use_distance 0.6: pomiar lokalnym Valhallą na 10 trasach miejskich (Lublin) porównanych z OSRM:
 // domyślnie +17,7 km nadmiaru (trasy do 70% dłuższe, objazdy po szybszych drogach); 0,6 -> +5,1 km, a trasy
 // dalekie nadal idą ekspresówkami (Lublin-Warszawa 117 min). use_highways=0 odrzucone (203 min), 0,8 (+70 min na Kraków).
+// Preferencja trasy samochodem (use_distance): pomiar lokalną Valhallą, Lublin, trasy miejskie (10) i dalekie:
+//   fast 0   : miasto 104,7 km/219 min | Kraków 316 km/215 min
+//   balanced 0,6 (domyślna): 91,4 km/225 min | Kraków 306 km/219 min
+//   short 1  : 86,4 km/258 min | Kraków 261 km/315 min (55 km krócej, ale 100 min dłużej)
+export const ROUTE_PREFS = {
+  fast: { label: 'Najszybsza', useDistance: 0 },
+  balanced: { label: 'Zrównoważona', useDistance: 0.6 },
+  short: { label: 'Najkrótsza', useDistance: 1 },
+};
+export const DEFAULT_PREF = 'balanced';
+
 export const COSTING_OPTIONS = {
   pedestrian: { pedestrian: { walkway_factor: 1, sidewalk_factor: 1, alley_factor: 1, driveway_factor: 1, use_living_streets: 1, use_tracks: 0.6 } },
   bicycle: { bicycle: { service_penalty: 5, use_living_streets: 1 } },
@@ -173,13 +184,14 @@ export const COSTING_OPTIONS = {
  * Zapytanie o trasę. heading (stopnie) podajemy przy ponownym liczeniu w ruchu: trasa zaczyna się
  * wtedy zgodnie z kierunkiem jazdy (bez „zawróć” i objeżdżania bloku, gdy stoisz na wyjeździe).
  */
-export function valhallaRequest(points, { costing = 'auto', alternatives = true, heading = null } = {}) {
+export function valhallaRequest(points, { costing = 'auto', alternatives = true, heading = null, pref = DEFAULT_PREF } = {}) {
   // radius: Valhalla bierze pod uwagę WSZYSTKIE drogi w tym promieniu, a nie tylko najbliższą. Bez tego
   // punkt przy chodniku ledwo połączonym z siecią (zamiast sąsiedniej uliczki) daje objazd wokół bloku.
   const R = SNAP_RADIUS[costing] ?? 10;
   const locations = points.map(([lon, lat]) => ({ lat, lon, radius: R }));
   if (heading != null && isFinite(heading)) { locations[0].heading = Math.round(((heading % 360) + 360) % 360); locations[0].heading_tolerance = 60; }
-  const opts = COSTING_OPTIONS[costing];
+  let opts = COSTING_OPTIONS[costing];
+  if (costing === 'auto') opts = { auto: { use_distance: (ROUTE_PREFS[pref] || ROUTE_PREFS[DEFAULT_PREF]).useDistance } };
   return {
     locations,
     costing,
@@ -267,12 +279,12 @@ export function withEndpoints(osrm, origin, dest, d0, d1) {
 
 const SNAP_MODES = new Set(['pedestrian', 'bicycle']);
 
-export async function fetchValhallaRoutes(base, points, { costing = 'auto', alternatives = true, heading = null, timeoutMs = 9000 } = {}) {
+export async function fetchValhallaRoutes(base, points, { costing = 'auto', alternatives = true, heading = null, pref = DEFAULT_PREF, timeoutMs = 9000 } = {}) {
   const get = async (hd, pts, exact) => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-      const body = valhallaRequest(pts, { costing, alternatives, heading: hd });
+      const body = valhallaRequest(pts, { costing, alternatives, heading: hd, pref });
       if (exact) body.locations.forEach((l) => { delete l.radius; });
       const res = await fetch(`${base.replace(/\/$/, '')}/route?json=${encodeURIComponent(JSON.stringify(body))}`, { signal: ctrl.signal });
       if (!res.ok) throw new Error(`Valhalla: ${res.status}`);

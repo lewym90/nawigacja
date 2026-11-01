@@ -285,4 +285,7 @@ body.has-section #banner { top: calc(var(--safe-t) + 340px); }
 
 /* Wybór sposobu poruszania się (auto / pieszo / rower) */
 #seg-travel { margin: 0 0 10px; }
+#seg-pref { margin: 0 0 10px; }
+#seg-pref button { flex: 1; padding: 7px 4px; font-size: 14px; }
+#seg-pref[hidden] { display: none; }
 #seg-travel button { flex: 1; padding: 9px 4px; font-size: 15px; }

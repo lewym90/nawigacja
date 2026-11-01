@@ -122,12 +122,18 @@ with sync_playwright() as p:
     print('KARTY:', cards)
     # tryb pieszy: przełącznik, trasa z Valhalli, brak fotoradarów
     assert page.eval_on_selector_all('#seg-travel button', 'els => els.length') == 3, 'brak przełącznika trybu'
+    assert page.eval_on_selector_all('#seg-pref button', 'els => els.length') == 3 and page.is_visible('#seg-pref'), 'brak wyboru rodzaju trasy (auto)'
     page.click('#seg-travel button[data-v=pedestrian]')
+    assert not page.is_visible('#seg-pref'), 'wybór rodzaju trasy ma być ukryty pieszo'
     page.wait_for_function("document.querySelectorAll('.route-card').length >= 1 && /Piesza|Spacerowa/.test(document.getElementById('routes').innerText) || document.querySelectorAll('.route-card').length === 1", timeout=8000)
     pcards = page.eval_on_selector_all('.route-card', 'els => els.map(e => e.innerText.replace(/\\n+/g, " | "))')
     print('KARTY PIESZO:', pcards)
     assert len(pcards) == 1 and 'fotoradar' not in pcards[0], 'tryb pieszy ma pokazać 1 trasę bez fotoradarów'
     page.click('#seg-travel button[data-v=auto]')
+    page.wait_for_function("document.querySelectorAll('.route-card').length === 2", timeout=8000)
+    page.click('#seg-pref button[data-v=short]')
+    page.wait_for_function("document.querySelector('#seg-pref button.on').dataset.v === 'short' && document.querySelectorAll('.route-card').length >= 1", timeout=8000)
+    page.click('#seg-pref button[data-v=balanced]')
     page.wait_for_function("document.querySelectorAll('.route-card').length === 2", timeout=8000)
 
     # Symulacja: skok do 2300 m, by zobaczyć fotoradar

@@ -1,6 +1,7 @@
 import { Places } from './places.js';
 import { CONFIG, APP_VERSION, VOICES, loadSettings, saveSettings, STORAGE } from './config.js';
 import { buildStyle, isNight } from './mapstyle.js';
+import { ROUTE_PREFS, DEFAULT_PREF } from './valhalla.js';
 import { getRoutes } from './provider.js';
 import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
 import { Compass } from './compass.js';
@@ -31,6 +32,7 @@ const { loadHazards, itemsFor, applyHazards } = hd;
 
 const S = {
   travel: modeOf(settings.travel).id, // auto | pedestrian | bicycle (modes.js)
+  pref: ROUTE_PREFS[settings.routePref] ? settings.routePref : DEFAULT_PREF, // samochód: fast | balanced | short
   mode: 'idle', // idle | preview | nav
   pos: null,
   dest: null,
@@ -338,18 +340,33 @@ function renderTravelSeg() {
     settings.travel = S.travel;
     saveSettings(settings);
     renderTravelSeg();
+    renderPrefSeg();
     restyleForTravel();
     if (S.dest) await planRoute();
   }));
 }
+function renderPrefSeg() {
+  const el = $('seg-pref');
+  el.hidden = S.travel !== 'auto';
+  el.innerHTML = Object.entries(ROUTE_PREFS).map(([id, p]) => `<button data-v="${id}" role="tab" class="${id === S.pref ? 'on' : ''}">${p.label}</button>`).join('');
+  el.querySelectorAll('button').forEach((b) => (b.onclick = async () => {
+    if (b.dataset.v === S.pref) return;
+    S.pref = b.dataset.v;
+    settings.routePref = S.pref;
+    saveSettings(settings);
+    renderPrefSeg();
+    if (S.dest) await planRoute();
+  }));
+}
 renderTravelSeg();
+renderPrefSeg();
 
 async function planRoute() {
   const d = S.dest;
   const from = S.pos ? [S.pos.lng, S.pos.lat] : map.getCenter().toArray();
   toast('Wyznaczam trasę…', 8000);
   try {
-    S.routes = await getRoutes(CONFIG, [from, [d.lng, d.lat]], { costing: travel().costing, alternatives: travel().alternatives });
+    S.routes = await getRoutes(CONFIG, [from, [d.lng, d.lat]], { costing: travel().costing, alternatives: travel().alternatives, pref: S.pref });
   } catch (e) {
     toast('Nie udało się wyznaczyć trasy. Spróbuj ponownie.', 4000);
     return;
@@ -764,7 +781,7 @@ async function reroute(fix) {
   toast(travel().say.off, 4000);
   voice.say('Przeliczam trasę', { prio: 3 });
   try {
-    const rs = await getRoutes(CONFIG, [[fix.lng, fix.lat], [S.dest.lng, S.dest.lat]], { costing: travel().costing, alternatives: false, heading: (fix.speed || 0) > 1.5 ? fix.heading : null });
+    const rs = await getRoutes(CONFIG, [[fix.lng, fix.lat], [S.dest.lng, S.dest.lat]], { costing: travel().costing, alternatives: false, pref: S.pref, heading: (fix.speed || 0) > 1.5 ? fix.heading : null });
     if (S.mode !== 'nav' || S.nav !== N) return;
     const route = rs[0];
     applyHazards([route]);
