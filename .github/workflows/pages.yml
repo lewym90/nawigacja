@@ -18,6 +18,15 @@ jobs:
       url: ${{ steps.d.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Anuluj zawieszone wdrożenia Pages
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for sha in $(gh api "repos/${{ github.repository }}/deployments?environment=github-pages&per_page=15" --jq '.[].sha' | sort -u); do
+            echo "anuluję $sha"
+            gh api -X POST "repos/${{ github.repository }}/pages/deployments/$sha/cancel" || true
+          done
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .
