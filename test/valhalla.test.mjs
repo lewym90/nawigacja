@@ -218,7 +218,8 @@ test('auto: bez doboru punktu wejścia (jedno zapytanie), z kierunkiem jazdy', a
   globalThis.fetch = async (url) => { paths.push(new URL(url).pathname.split('/').pop()); return { ok: true, json: async () => fixture }; };
   try {
     await fetchValhallaRoutes('https://x/valhalla', [[22.5, 51.2], [22.6, 51.3]], { costing: 'auto', heading: 90 });
-    assert.deepEqual(paths, ['route']);
+    // jedno zapytanie o trasę (bez locate/matrix) + kontrola rodzajów dróg; odpowiedź bez krawędzi nie psuje trasy
+    assert.deepEqual(paths, ['route', 'trace_attributes']);
   } finally { globalThis.fetch = realFetch; }
 });
 
@@ -241,4 +242,76 @@ test('auto: wybór najszybsza / zrównoważona / najkrótsza zmienia koszt dysta
   assert.equal(valhallaRequest(P, { costing: 'auto', pref: 'nieznana' }).costing_options.auto.use_distance, 0.6);
   // pieszo i rower nie zależą od preferencji
   assert.equal('use_distance' in valhallaRequest(P, { costing: 'pedestrian', pref: 'short' }).costing_options.pedestrian, false);
+});
+
+// ---------- unikanie dróg gruntowych i serwisowych w środku trasy (samochód) ----------
+test('polyline: kodowanie i dekodowanie wracają do tych samych punktów', async () => {
+  const { encodePolyline, decodePolyline } = await import('../js/valhalla.js');
+  const pts = [[22.5684, 51.2465], [22.57, 51.25], [22.6, 51.3], [21.0122, 52.2297]];
+  const back = decodePolyline(encodePolyline(pts));
+  pts.forEach((p, i) => { assert.ok(Math.abs(p[0] - back[i][0]) < 1e-6 && Math.abs(p[1] - back[i][1]) < 1e-6); });
+});
+
+test('minorEdges: droga gruntowa w środku trasy tak, na końcach nie; serwisowa zależy od długości trasy', async () => {
+  const { minorEdges } = await import('../js/valhalla.js');
+  // trasa prostą na północ; każda krawędź 0,1 km; shape = punkty co 100 m
+  const mk = (uses) => { let i = 0; return uses.map((u) => ({ use: u, length: 0.1, begin_shape_index: i, end_shape_index: ++i })); };
+  const shape = (n) => Array.from({ length: n + 1 }, (_, i) => [22.5, 51.2 + i * 0.0009]);
+  const road = Array(30).fill('road');
+  // track na końcu (ostatnie 600 m) — dopuszczony
+  const nearEnd = [...road.slice(0, 25), ...Array(5).fill('track')];
+  assert.equal(minorEdges(mk(nearEnd), shape(30)).meters, 0);
+  // track w środku 300 m — niechciany, z punktami w środkach krawędzi
+  const mid = [...road.slice(0, 12), 'track', 'track', 'track', ...road.slice(0, 15)];
+  const r = minorEdges(mk(mid), shape(30));
+  assert.equal(Math.round(r.meters), 300); assert.equal(r.points.length, 3);
+  // krótki track 40 m poniżej progu 60 m — pomijamy
+  assert.equal(minorEdges([...mk(road.slice(0, 12)), { use: 'track', length: 0.04, begin_shape_index: 12, end_shape_index: 13 }, ...mk(road.slice(0, 15)).map((e) => ({ ...e, begin_shape_index: e.begin_shape_index + 13, end_shape_index: e.end_shape_index + 13 }))], shape(30)).meters, 0);
+  // serwisowa 200 m w trasie 3 km (blisko: próg 400 m) — dopuszczona; ta sama w trasie 20 km (próg 150 m) — niechciana
+  const svc = [...road.slice(0, 12), 'service_road', 'service_road', ...road.slice(0, 16)];
+  assert.equal(minorEdges(mk(svc), shape(30)).meters, 0);
+  const longEdges = mk(svc).map((e) => ({ ...e, length: e.length * 7 })); // trasa ~21 km, odcinek serwisowy 1,4 km
+  assert.ok(minorEdges(longEdges, shape(30)).meters > 0);
+});
+
+test('acceptDetour: odrzuca objazd o wiele dłuższy lub wolniejszy', async () => {
+  const { acceptDetour } = await import('../js/valhalla.js');
+  const base = { distance: 10000, duration: 1200 };
+  assert.equal(acceptDetour(base, { distance: 10600, duration: 1260 }), true);
+  assert.equal(acceptDetour(base, { distance: 14000, duration: 1200 }), false);
+  assert.equal(acceptDetour(base, { distance: 10000, duration: 1700 }), false);
+});
+
+test('avoidMinorRoads: bierze trasę bez dróg gruntowych, a gdy objazd gorszy albo go nie ma — zostaje pierwotna', async () => {
+  const { avoidMinorRoads, encodePolyline } = await import('../js/valhalla.js');
+  const coords = Array.from({ length: 31 }, (_, i) => [22.5, 51.2 + i * 0.0009]);
+  const mkRoute = (d, t) => ({ routes: [{ distance: d, duration: t, geometry: { type: 'LineString', coordinates: coords } }] });
+  const shapeEnc = encodePolyline(coords);
+  const withTrack = (uses) => ({ edges: uses.map((u, i) => ({ use: u, length: 0.1, begin_shape_index: i, end_shape_index: i + 1 })), shape: shapeEnc });
+  const road = Array(31).fill('road'); const bad = [...road.slice(0, 12), 'track', 'track', ...road.slice(0, 16)];
+  const realFetch = globalThis.fetch;
+  try {
+    let traces = [withTrack(bad), withTrack(road)];
+    globalThis.fetch = async () => ({ ok: true, json: async () => (traces.length > 1 ? traces.shift() : traces[0]) });
+    const orig = mkRoute(3000, 300); const better = mkRoute(3200, 310);
+    const got = await avoidMinorRoads('http://x', orig, async (ex) => { assert.ok(ex.length >= 2); return better; });
+    assert.equal(got, better);
+    // objazd o wiele dłuższy → zostaje pierwotna
+    traces = [withTrack(bad), withTrack(road)];
+    const huge = mkRoute(9000, 300);
+    assert.equal(await avoidMinorRoads('http://x', orig, async () => huge), orig);
+    // brak objazdu (serwer zwraca błąd) → pierwotna
+    traces = [withTrack(bad)];
+    assert.equal(await avoidMinorRoads('http://x', orig, async () => { throw new Error('No path'); }), orig);
+    // objazd z większą liczbą metrów dróg gruntowych → pierwotna
+    traces = [withTrack(bad), withTrack([...road.slice(0, 8), ...Array(10).fill('track'), ...road.slice(0, 13)])];
+    assert.equal(await avoidMinorRoads('http://x', orig, async () => better), orig);
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('valhallaRequest: exclude_locations z punktów do ominięcia', async () => {
+  const { valhallaRequest } = await import('../js/valhalla.js');
+  const b = valhallaRequest([[22.5, 51.2], [22.6, 51.3]], { costing: 'auto', exclude: [[22.55, 51.25]] });
+  assert.deepEqual(b.exclude_locations, [{ lat: 51.25, lon: 22.55 }]);
+  assert.equal('exclude_locations' in valhallaRequest([[22.5, 51.2], [22.6, 51.3]], { costing: 'auto' }), false);
 });
