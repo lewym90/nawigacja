@@ -90,12 +90,15 @@ export class Guidance {
 
     // kolejny prawdziwy manewr po tym (do łączenia zapowiedzi)
     let after = null;
-    for (let j = idx + 1; j < steps.length; j++) { if (!isSilent(steps[j])) { after = steps[j]; break; } }
+    let afterIdx = -1;
+    for (let j = idx + 1; j < steps.length; j++) { if (!isSilent(steps[j])) { after = steps[j]; afterIdx = j; break; } }
     const gap = after && after.type !== 'arrive' ? after.at - step.at : Infinity;
     const chain = (near) => (gap < (near ? 150 : 250) ? `${near ? ', a zaraz potem ' : ', a potem '}${lower(after.short || after.text)}` : '');
 
     if (dist <= nowDist && !has('now')) {
       mark('pre', 'rem', 'now');
+      // następny manewr podany w tym samym zdaniu nie dostaje już własnej komendy „teraz”
+      if (after && after.type !== 'arrive' && gap < 150) ['pre', 'rem', 'now'].forEach((n) => this.announced.add(`${afterIdx}:${n}`));
       out.push(isLast ? 'Dojechałeś do celu' : `${step.short || step.text}${chain(true)}`);
       return out;
     }

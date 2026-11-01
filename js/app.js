@@ -2,7 +2,7 @@ import { Places } from './places.js';
 import { CONFIG, APP_VERSION, loadSettings, saveSettings, STORAGE } from './config.js';
 import { buildStyle, isNight } from './mapstyle.js';
 import { fetchRoutes, fmtDist, fmtDuration, limitAt } from './routing.js';
-import { Guidance } from './guidance.js';
+import { Guidance, isSilent } from './guidance.js';
 import { SpeedFilter } from './speed.js';
 import { loadRouteLimits } from './limits.js';
 import {
@@ -646,7 +646,9 @@ function startNav({ sim = false } = {}) {
   const start = S.pos ? [S.pos.lng, S.pos.lat] : route.coords[0];
   map.easeTo({ center: start, zoom: 16, pitch: settings.tilt ? 55 : 0, bearing: S.heading, duration: 900, padding: camPadding() });
   placePuck();
-  voice.say('Ruszaj', { prio: 2 });
+  // „Ruszaj” tylko gdy do pierwszego manewru jest daleko; inaczej zagłusza pierwszą wskazówkę
+  const firstTurn = (route.steps || []).find((st, i) => i > 0 && !isSilent(st));
+  if (!firstTurn || firstTurn.at > 300) voice.say('Ruszaj', { prio: 2 });
 }
 
 function camPadding() {
@@ -880,7 +882,7 @@ $('btn-sim').onclick = () => {
   if (!route) return;
   startNav({ sim: true });
   S.simSpeedup = 4;
-  S.sim = new Simulator(route, { speedKmh: 50, speedup: S.simSpeedup, onFix: (f) => onFix(f) });
+  S.sim = new Simulator(route, { speedup: S.simSpeedup, onFix: (f) => onFix(f) });
   S.sim.start();
   toast('Symulacja jazdy: dotknij prędkości, by ją zmienić', 4000);
 };
@@ -890,11 +892,11 @@ $('btn-end').onclick = endNav;
 $('speed').onclick = () => {
   if (!S.sim) return;
   const seq = [30, 50, 90, 130];
-  const cur = Math.round(S.sim.v * 3.6);
+  const cur = S.sim.fixed == null ? 0 : Math.round(S.sim.fixed * 3.6);
   const i = seq.findIndex((v) => v > cur + 1);
-  const next = seq[i === -1 ? 0 : i];
-  S.sim.setSpeed(next);
-  toast(`Symulacja: ${next} km/h`, 1500);
+  if (i === -1) { S.sim.fixed = null; toast('Symulacja: jazda zgodnie z limitem', 1500); return; }
+  S.sim.setSpeed(seq[i]);
+  toast(`Symulacja: ${seq[i]} km/h`, 1500);
 };
 
 // Każdy gest użytkownika na mapie (przeciągnięcie, szczypanie, obrót) wstrzymuje podążanie.
