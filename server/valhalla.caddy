@@ -1,6 +1,6 @@
 # Własna Valhalla pod /valhalla (dołączany z /etc/caddy/conf.d/ do bloku 188-68-247-201.sslip.io)
 handle_path /valhalla/* {
-	header Access-Control-Allow-Origin "https://lewym90.github.io"
+	header >Access-Control-Allow-Origin "https://lewym90.github.io"
 	header Access-Control-Allow-Methods "GET, POST, OPTIONS"
 	header Access-Control-Allow-Headers "Content-Type"
 	header Vary "Origin"
