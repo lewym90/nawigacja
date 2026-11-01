@@ -83,3 +83,9 @@ test('pieszo: schody i przejścia z opisu manewru, krótkie komunikaty', () => {
   assert.equal(r.steps[2].feature, 'crossing');
   assert.match(r.steps[2].text, /Przejdź przez ulicę/);
 });
+
+test('współrzędne wpisane jako cel', async () => {
+  // parseCoords siedzi w app.js (DOM), więc sprawdzamy ten sam wzorzec osobno
+  const re = /^\s*(-?\d{1,2}[.,]\d+)\s*[,; ]\s*(-?\d{1,3}[.,]\d+)\s*$/;
+  assert.ok(re.test('51.2465, 22.5684') && re.test('51,2465 22,5684') && !re.test('Lublin 3'));
+});

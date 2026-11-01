@@ -81,7 +81,7 @@ document.body.classList.toggle('day', !night);
 
 const map = new maplibregl.Map({
   container: 'map',
-  style: buildStyle(night ? 'night' : 'day', CONFIG),
+  style: buildStyle(night ? 'night' : 'day', CONFIG, S.travel),
   center: CONFIG.center,
   zoom: CONFIG.zoom,
   maxPitch: 70,
@@ -138,9 +138,18 @@ function applyTheme() {
   night = n;
   document.body.classList.toggle('day', !night);
   document.querySelector('meta[name=theme-color]').content = night ? '#0b0b0d' : '#f4f1ea';
-  map.setStyle(buildStyle(night ? 'night' : 'day', CONFIG));
+  map.setStyle(buildStyle(night ? 'night' : 'day', CONFIG, S.travel));
 }
 setInterval(applyTheme, 60000);
+
+// Styl mapy zależy też od sposobu poruszania się (pieszo: ścieżki i schody, rower: drogi rowerowe).
+let styleTravel = S.travel;
+function restyleForTravel() {
+  const key = S.travel === 'auto' ? 'auto' : S.travel;
+  if (key === styleTravel) return;
+  styleTravel = key;
+  map.setStyle(buildStyle(night ? 'night' : 'day', CONFIG, S.travel));
+}
 
 // ---------- Pozycja ----------
 let meMarker = null;
@@ -250,7 +259,18 @@ input.addEventListener('input', () => {
 });
 input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(searchTimer); const q = input.value.trim(); if (q.length >= 2) runSearch(q); input.blur(); } });
 
+/** „51,2465, 22,5684” lub „51.2465 22.5684” -> współrzędne (do testów i dokładnych punktów). */
+export function parseCoords(q) {
+  const m = /^\s*(-?\d{1,2}[.,]\d+)\s*[,; ]\s*(-?\d{1,3}[.,]\d+)\s*$/.exec(q || '');
+  if (!m) return null;
+  const lat = parseFloat(m[1].replace(',', '.'));
+  const lng = parseFloat(m[2].replace(',', '.'));
+  return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 ? { lat, lng } : null;
+}
+
 async function runSearch(q) {
+  const pt = parseCoords(q);
+  if (pt) { renderResults([{ main: `Punkt ${pt.lat.toFixed(5)}, ${pt.lng.toFixed(5)}`, sub: 'Współrzędne', lng: pt.lng, lat: pt.lat }]); return; }
   if (searchCtrl) searchCtrl.abort();
   searchCtrl = new AbortController();
   const c = S.pos ? [S.pos.lng, S.pos.lat] : map.getCenter().toArray();
@@ -317,6 +337,7 @@ function renderTravelSeg() {
     settings.travel = S.travel;
     saveSettings(settings);
     renderTravelSeg();
+    restyleForTravel();
     if (S.dest) await planRoute();
   }));
 }
@@ -897,7 +918,7 @@ $('btn-voice-log').onclick = () => {
   const el = $('voice-log');
   el.hidden = !el.hidden;
   const hz = hd.status || {};
-  el.textContent = `Wersja ${APP_VERSION}, silnik: ${voice.engine}, głos: ${voice.voice ? voice.voice.name : 'brak'}, mowa włączona: ${voice.enabled}\nDane: plik OSM ${hz.osmFile ?? '?'} pkt, GITD ${hz.gitd ?? '?'} pkt, Overpass ${hz.live || '…'}, limity prędkości ${hz.limits || '…'}\n` + (voice.events.length ? voice.events.join('\n') : 'Brak zdarzeń. Uruchom symulację i wróć tutaj.');
+  el.textContent = `Wersja ${APP_VERSION}, silnik: ${voice.engine}, głos: ${voice.voice ? voice.voice.name : 'brak'}, mowa włączona: ${voice.enabled}\nDane: plik OSM ${hz.osmFile ?? '?'} pkt, GITD ${hz.gitd ?? '?'} pkt, Overpass ${hz.live || '…'}, limity prędkości ${hz.limits || '…'}\n` + (S.pos ? `Pozycja: ${S.pos.lat.toFixed(5)}, ${S.pos.lng.toFixed(5)}\n` : '') + (voice.events.length ? voice.events.join('\n') : 'Brak zdarzeń. Uruchom symulację i wróć tutaj.');
 };
 
 // ---------- Start ----------

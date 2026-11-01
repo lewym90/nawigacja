@@ -7,7 +7,7 @@ const PALETTE = {
     building: '#1B1B22', buildingTop: '#23232C', industrial: '#15151B', hospital: '#1B1519', school: '#16161C',
     roadMinor: '#24242C', roadMinorCase: '#0D0D10', roadMid: '#33333E', roadMidCase: '#0D0D10',
     roadMain: '#4A4A58', roadMainCase: '#0D0D10', roadMajor: '#7A6A3A', roadMajorCase: '#2B2411',
-    rail: '#2A2A33', path: '#2E2E37', boundary: '#3A3A44',
+    rail: '#2A2A33', path: '#2E2E37', pathPed: '#8A8576', steps: '#E0A85A', cycle: '#3C8F6B', boundary: '#3A3A44',
     label: '#A09B91', labelMajor: '#D8D3C7', halo: '#0D0D10', placeCity: '#E7E2D6', placeTown: '#BDB8AD',
   },
   day: {
@@ -15,15 +15,36 @@ const PALETTE = {
     building: '#DDD8CC', buildingTop: '#E8E3D8', industrial: '#E4E0D6', hospital: '#F0DDDD', school: '#EAE4D2',
     roadMinor: '#FFFFFF', roadMinorCase: '#D8D3C6', roadMid: '#FFFFFF', roadMidCase: '#CFC9BA',
     roadMain: '#FDF1D2', roadMainCase: '#C9BE9E', roadMajor: '#F5D58A', roadMajorCase: '#BFA45A',
-    rail: '#C8C3B6', path: '#D6D0C2', boundary: '#B8B2A4',
+    rail: '#C8C3B6', path: '#D6D0C2', pathPed: '#8E8776', steps: '#C47A1E', cycle: '#2E8B62', boundary: '#B8B2A4',
     label: '#6B665C', labelMajor: '#2E2B25', halo: '#F4F1EA', placeCity: '#23211C', placeTown: '#4A463E',
   },
 };
 
 const lerpWidth = (a, b, c) => ['interpolate', ['exponential', 1.5], ['zoom'], 5, a, 12, b, 18, c];
+// Ścieżki: domyślnie ledwo widoczne (jazda autem), dla pieszego i rowerzysty główny bohater mapy.
+function pathLayers(road, c, travel) {
+  const P = ['path', 'track', 'pedestrian'];
+  if (travel === 'pedestrian') {
+    const w = ['interpolate', ['linear'], ['zoom'], 13, 0.8, 16, 2.4, 19, 5];
+    return [
+      road('path', P, c.pathPed, w, { 'line-opacity': ['interpolate', ['linear'], ['zoom'], 12, 0, 14, 1], 'line-dasharray': [1, 0] }),
+      { ...road('steps', ['path'], c.steps, ['interpolate', ['linear'], ['zoom'], 15, 1.6, 19, 5], { 'line-dasharray': [0.8, 0.8] }), filter: ['all', ['==', ['get', 'class'], 'path'], ['==', ['get', 'subclass'], 'steps']], minzoom: 15 },
+    ];
+  }
+  if (travel === 'bicycle') {
+    const w = ['interpolate', ['linear'], ['zoom'], 12, 0.8, 16, 2.2, 19, 4.5];
+    return [
+      road('path', P, c.path, lerpWidth(0.3, 1, 3), { 'line-opacity': ['interpolate', ['linear'], ['zoom'], 13, 0, 15, 1] }),
+      { ...road('cycleway', ['path'], c.cycle, w, {}), filter: ['all', ['==', ['get', 'class'], 'path'], ['==', ['get', 'subclass'], 'cycleway']], minzoom: 11 },
+    ];
+  }
+  return [road('path', P, c.path, lerpWidth(0.3, 0.6, 2), { 'line-opacity': ['interpolate', ['linear'], ['zoom'], 13, 0, 15, 1] })];
+}
+
 const NAME = ['coalesce', ['get', 'name:pl'], ['get', 'name']];
 
-export function buildStyle(mode, cfg) {
+/** travel: auto | pedestrian | bicycle. Pieszo wyraźnie rysujemy ścieżki i schody, rowerem drogi rowerowe. */
+export function buildStyle(mode, cfg, travel = 'auto') {
   const c = PALETTE[mode] || PALETTE.night;
   const road = (id, classes, color, w, extra = {}) => ({
     id, type: 'line', source: 'omt', 'source-layer': 'transportation',
@@ -50,7 +71,7 @@ export function buildStyle(mode, cfg) {
       { id: 'waterway', type: 'line', source: 'omt', 'source-layer': 'waterway', paint: { 'line-color': c.waterLine, 'line-width': lerpWidth(0.4, 1.2, 4) } },
       { id: 'rail', type: 'line', source: 'omt', 'source-layer': 'transportation', minzoom: 10, filter: ['==', ['get', 'class'], 'rail'], paint: { 'line-color': c.rail, 'line-width': lerpWidth(0.4, 0.8, 2), 'line-dasharray': [3, 2] } },
 
-      road('path', ['path', 'track', 'pedestrian'], c.path, lerpWidth(0.3, 0.6, 2), { 'line-opacity': ['interpolate', ['linear'], ['zoom'], 13, 0, 15, 1] }),
+      ...pathLayers(road, c, travel),
       road('minor-case', ['minor', 'service'], c.roadMinorCase, lerpWidth(0.3, 2.4, 14)),
       road('minor', ['minor', 'service'], c.roadMinor, lerpWidth(0.2, 1.6, 12)),
       road('mid-case', ['tertiary', 'secondary'], c.roadMidCase, lerpWidth(0.6, 3.6, 22)),
