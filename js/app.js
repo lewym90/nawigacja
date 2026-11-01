@@ -1,4 +1,4 @@
-import { CONFIG, loadSettings, saveSettings, STORAGE } from './config.js';
+import { CONFIG, APP_VERSION, loadSettings, saveSettings, STORAGE } from './config.js';
 import { buildStyle, isNight } from './mapstyle.js';
 import { fetchRoutes, fmtDist, fmtDuration, limitAt } from './routing.js';
 import { Guidance } from './guidance.js';
@@ -757,8 +757,27 @@ document.querySelectorAll('#seg-theme button').forEach((b) => (b.onclick = () =>
 // ---------- Start ----------
 setMode('idle');
 startGeo();
+$('app-ver').textContent = APP_VERSION;
+$('btn-refresh').onclick = async () => {
+  try {
+    const regs = (await navigator.serviceWorker?.getRegistrations()) || [];
+    await Promise.all(regs.map((r) => r.unregister()));
+    const keys = (await window.caches?.keys()) || [];
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  } catch { /* przeładujemy mimo błędu */ }
+  location.reload();
+};
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
+  // Gdy nowa wersja przejmie stronę, przeładuj raz (nie w trakcie jazdy).
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloaded) return;
+    if (S.mode === 'nav') { toast('Nowa wersja gotowa: zamknij i otwórz aplikację po jeździe', 6000); return; }
+    reloaded = true;
+    location.reload();
+  });
+  navigator.serviceWorker.register('./sw.js').then((reg) => reg.update().catch(() => {})).catch(() => {});
 }
 
 // Haki do testów i diagnostyki (nie zmieniają działania aplikacji).

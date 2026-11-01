@@ -1,5 +1,5 @@
 // Service worker: powłoka aplikacji działa bez sieci. Kafelki i dane tras idą przez sieć.
-const VERSION = 'nav-v0.1.1';
+const VERSION = 'nav-v0.1.2';
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
   './vendor/maplibre-gl.js', './vendor/maplibre-gl.css',
@@ -9,7 +9,7 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
