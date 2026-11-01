@@ -1,4 +1,4 @@
-import { forSpeech } from './speech-pl.js';
+import { forSpeech, withPauses } from './speech-pl.js';
 
 // Głos: przeglądarkowy syntezator mowy. Na iPhonie pierwsza wypowiedź musi
 // pochodzić z dotknięcia ekranu, dlatego unlock() wołamy z przycisku „Start” lub „Symulacja”.
@@ -155,9 +155,11 @@ export class Voice {
     if (!this.ok) { this._finish(); this._next(); return; }
     // iPhone: po dźwięku z elementu <audio> mowa systemowa potrafi milczeć, dopóki go nie zwolnimy
     if (this.player) { try { this.player.pause(); this.player.removeAttribute('src'); this.player.load(); } catch { /* ignoruj */ } }
+    text = withPauses(text);
     const u = new SpeechSynthesisUtterance(text);
     if (this.voice) { u.voice = this.voice; u.lang = this.voice.lang; } else u.lang = 'pl-PL';
-    u.rate = 1.02;
+    u.rate = 0.96;
+    u.pitch = 1.0;
     this.speaking = true;
     this.cur = u;
     const done = () => {

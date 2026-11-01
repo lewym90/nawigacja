@@ -33,7 +33,7 @@ export const CONFIG = {
   zoom: 12,
 };
 
-export const APP_VERSION = '0.3.3';
+export const APP_VERSION = '0.3.4';
 
 export const STORAGE = { settings: 'nav.settings', lastDest: 'nav.lastDest' };
 
@@ -42,12 +42,15 @@ export const DEFAULT_SETTINGS = {
   theme: 'auto', // auto | day | night
   tilt: true,
   hazardsVoice: true,
-  ttsEngine: 'cloud', // cloud = nagrania z własnego serwera (wraca do telefonu) | system = głos telefonu | robot = wbudowany
+  ttsEngine: 'system', // cloud = nagrania z własnego serwera (wraca do telefonu) | system = głos telefonu | robot = wbudowany
 };
 
 export function loadSettings() {
   try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(STORAGE.settings) || '{}') };
+    const st = { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(STORAGE.settings) || '{}') };
+    // 0.3.4: „Naturalny” wymaga płatnego klucza; do czasu jego włączenia wracamy do głosu telefonu
+    if (!st.ttsMigrated034) { st.ttsMigrated034 = true; if (st.ttsEngine === 'cloud') st.ttsEngine = 'system'; }
+    return st;
   } catch {
     return { ...DEFAULT_SETTINGS };
   }

@@ -11,7 +11,7 @@ test('silnik chmury: gdy serwer nie odpowiada, mówi głos telefonu i po 2 błę
   v.engine = 'cloud'; v.cloudUrl = 'https://x.test/nav-tts';
   v.say('Skręć w lewo'); await new Promise((r) => setTimeout(r, 40));
   v.say('Skręć w prawo'); await new Promise((r) => setTimeout(r, 40));
-  assert.deepEqual(spoken, ['Skręć w lewo', 'Skręć w prawo']);
+  assert.deepEqual(spoken, ['Skręć w lewo.', 'Skręć w prawo.']);
   v.say('Ruszaj'); await new Promise((r) => setTimeout(r, 40));
   v.say('Zjedź'); await new Promise((r) => setTimeout(r, 40));
   assert.ok(v.cloudBlockedUntil > Date.now());

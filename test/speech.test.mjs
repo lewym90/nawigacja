@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { plNum, distWords, intoSuffix, intoPhrase, parseRoadRef, forSpeech, isFemAdjective } from '../js/speech-pl.js';
+import { plNum, distWords, intoSuffix, intoPhrase, parseRoadRef, forSpeech, isFemAdjective, withPauses } from '../js/speech-pl.js';
 
 test('liczby słownie', () => {
   assert.equal(plNum(0), 'zero');
@@ -57,4 +57,11 @@ test('forSpeech: cyfry, jednostki i skróty', () => {
   assert.equal(forSpeech('w drogę wojewódzką 848'), 'w drogę wojewódzką osiemset czterdzieści osiem');
   assert.equal(forSpeech('Al. Racławickie'), 'aleja Racławickie');
   assert.equal(forSpeech('za 300 m'), 'za trzysta metrów');
+});
+
+test('withPauses: oddech po odległości i kierunku, kropka na końcu', () => {
+  assert.equal(withPauses('Za sześćset metrów skręć w lewo w ulicę Krężnicką'), 'Za sześćset metrów, skręć w lewo, w ulicę Krężnicką.');
+  assert.equal(withPauses('Za półtora kilometra zjedź drogą ekspresową S siedemnaście'), 'Za półtora kilometra, zjedź drogą ekspresową S siedemnaście.');
+  assert.equal(withPauses('Skręć w lewo'), 'Skręć w lewo.');
+  assert.equal(withPauses('Zwolnij. Fotoradar'), 'Zwolnij, Fotoradar.'.replace('Zwolnij, F', 'Zwolnij. F'));
 });

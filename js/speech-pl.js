@@ -181,3 +181,20 @@ export function forSpeech(text) {
   t = t.replace(/(\d+)/g, (_, n) => plNum(+n));
   return t.replace(/\s{2,}/g, ' ').trim();
 }
+
+/**
+ * Pauzy i intonacja dla syntezatora telefonu: przecinki dają oddech, kropka na końcu opuszcza głos.
+ * Wołać po forSpeech (tekst jest już słowami).
+ */
+export function withPauses(text) {
+  let t = String(text || '').trim();
+  if (!t) return t;
+  // „Za sześćset metrów skręć…” -> „Za sześćset metrów, skręć…”
+  t = t.replace(/^(Za (?:[a-ząćęłńóśźż]+ ){1,5}?(?:metrów|metry|metr|kilometrów|kilometry|kilometr|kilometra))(?= [^,.])/i, '$1,');
+  // „skręć w lewo w ulicę X” -> „skręć w lewo, w ulicę X”
+  t = t.replace(/\b((?:ostro |lekko )?w (?:lewo|prawo)|zawróć|prosto) (?=w |na )/gi, '$1, ');
+  t = t.replace(/^(Uwaga|Zwolnij)(?=\s)/, '$1,');
+  t = t.replace(/\. (?=\S)/g, '. ');
+  if (!/[.!?]$/.test(t)) t += '.';
+  return t;
+}

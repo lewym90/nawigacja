@@ -11,9 +11,9 @@ test('kolejka nie zawiesza się, gdy przeglądarka nie zgłosi końca wypowiedzi
   const v = new Voice({ maxUtteranceMs: 30 }); v.engine = 'system';
   v.say('pierwsza');
   v.say('druga');
-  assert.deepEqual(spoken, ['pierwsza']);
+  assert.deepEqual(spoken, ['pierwsza.']);
   await new Promise((r) => setTimeout(r, 120));
-  assert.ok(spoken.includes('druga'), `wypowiedziano: ${spoken.join(', ')}`);
+  assert.ok(spoken.includes('druga.'), `wypowiedziano: ${spoken.join(', ')}`);
 });
 
 test('wyłączony głos nic nie mówi, a test diagnostyczny zgłasza polski głos', () => {
