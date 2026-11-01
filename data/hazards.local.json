@@ -1,0 +1,6 @@
+{
+  "_opis": "Własna warstwa poprawek. Wpisy tu wygrywają z OpenStreetMap po tym samym id. 'suppress' wycisza błędne wpisy OSM (np. zdjęty fotoradar). Dodawaj tylko to, co sprawdzono w terenie lub w oficjalnym źródle.",
+  "cameras": [],
+  "sections": [],
+  "suppress": []
+}

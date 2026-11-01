@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>Nawigacja</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b0b0d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Nawigacja">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<link rel="stylesheet" href="./vendor/maplibre-gl.css">
+<link rel="stylesheet" href="./css/app.css">
+</head>
+<body>
+<div id="map" aria-label="Mapa"></div>
+<div id="puck" hidden></div>
+
+<!-- Wyszukiwanie -->
+<section id="search" class="glass">
+  <div class="search-row">
+    <span id="search-ico"></span>
+    <input id="q" type="search" inputmode="search" enterkeyhint="search" placeholder="Dokąd jedziemy?" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Wpisz adres lub miejsce">
+    <button id="btn-menu" class="icon-btn" aria-label="Menu"></button>
+  </div>
+  <ul id="results" hidden></ul>
+</section>
+
+<!-- Prowadzenie -->
+<section id="maneuver" class="glass" hidden>
+  <div class="m-arrow" id="m-arrow"></div>
+  <div>
+    <div class="m-dist" id="m-dist"></div>
+    <div class="m-text" id="m-text"></div>
+  </div>
+</section>
+<section id="banner" class="glass info" hidden role="status" aria-live="polite">
+  <div class="b-ico" id="b-ico"></div>
+  <div>
+    <div class="b-title" id="b-title"></div>
+    <div class="b-sub" id="b-sub"></div>
+  </div>
+</section>
+<section id="section" class="glass" hidden role="status"></section>
+
+<div id="speedbox" hidden>
+  <div id="limit" hidden>50</div>
+  <div id="speed" class="glass"><b id="speed-v">0</b><small>km/h</small></div>
+</div>
+
+<div id="fabs">
+  <button id="btn-locate" class="fab" aria-label="Moja pozycja"></button>
+  <button id="btn-report" class="fab gold" aria-label="Zgłoś zdarzenie" hidden></button>
+  <button id="btn-sound" class="fab" aria-label="Głos" hidden></button>
+</div>
+
+<div id="hint" class="hint glass">
+  <b>Wpisz cel</b>, a pokażę trasy i ostrzeżenia na drodze. Do testu w domu użyj symulacji jazdy.
+</div>
+
+<!-- Podgląd tras -->
+<section id="preview" class="panel" hidden>
+  <div class="grab"></div>
+  <div class="p-title"><span>Dokąd: <b id="p-dest"></b></span><button id="btn-cancel" class="icon-btn" aria-label="Anuluj"></button></div>
+  <div id="routes"></div>
+  <div class="row">
+    <button id="btn-sim" class="btn-ghost">Symulacja</button>
+    <button id="btn-start" class="btn-go"><span id="go-ico"></span>Start</button>
+  </div>
+</section>
+
+<!-- Pasek nawigacji -->
+<section id="nav-panel" class="panel" hidden>
+  <div>
+    <div class="eta" id="n-time">–</div>
+    <div class="eta-sub" id="n-sub"></div>
+  </div>
+  <div class="chip" id="n-chip" hidden></div>
+  <button id="btn-end" class="btn-end">Zakończ</button>
+</section>
+
+<!-- Zgłoszenia -->
+<section id="report" class="panel" hidden>
+  <div class="grab"></div>
+  <div class="p-title"><b>Co się dzieje na drodze?</b><button id="btn-report-x" class="icon-btn" aria-label="Zamknij"></button></div>
+  <div id="report-grid"></div>
+</section>
+
+<!-- Menu -->
+<section id="menu" class="panel" hidden>
+  <div class="grab"></div>
+  <div class="p-title"><b>Ustawienia</b><button id="btn-menu-x" class="icon-btn" aria-label="Zamknij"></button></div>
+  <div class="m-row"><span>Głos</span><button id="sw-voice" class="switch" role="switch" aria-label="Głos"><i></i></button></div>
+  <div class="m-row"><span>Ostrzeżenia głosowe</span><button id="sw-hz" class="switch" role="switch" aria-label="Ostrzeżenia głosowe"><i></i></button></div>
+  <div class="m-row"><span>Widok 3D w jeździe</span><button id="sw-tilt" class="switch" role="switch" aria-label="Widok 3D"><i></i></button></div>
+  <div class="m-row"><span>Motyw</span><div class="seg" id="seg-theme"><button data-v="auto">Auto</button><button data-v="day">Dzień</button><button data-v="night">Noc</button></div></div>
+  <p class="fine">Ostrzeżenia pochodzą z baz danych i zgłoszeń kierowców, nie z wykrywania urządzeń pomiarowych. Mogą być niepełne lub nieaktualne: obowiązują znaki i przepisy.
+  Ekran musi pozostać włączony, a aplikacja na wierzchu, bo przeglądarka wstrzymuje GPS w tle.<br>
+  Dane map: © autorzy OpenStreetMap (ODbL), kafelki OpenFreeMap / OpenMapTiles.</p>
+</section>
+
+<div id="toast" class="glass" hidden role="status"></div>
+
+<script src="./vendor/maplibre-gl.js"></script>
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>
