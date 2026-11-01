@@ -137,7 +137,7 @@ test('zapytanie Valhalli: koszty pieszych (podjazdy/alejki bez kary) i kierunek 
   assert.equal(car.locations[0].heading, 10);
   assert.equal(car.locations[0].heading_tolerance, 60);
   assert.equal(car.locations[1].heading, undefined);
-  assert.equal('costing_options' in car, false);
+  assert.equal(car.costing_options.auto.use_distance, 0.6);
   const none = valhallaRequest([[22.5, 51.2], [22.6, 51.3]], { costing: 'auto' });
   assert.equal(none.locations[0].heading, undefined);
 });
@@ -220,4 +220,12 @@ test('auto: bez doboru punktu wejścia (jedno zapytanie), z kierunkiem jazdy', a
     await fetchValhallaRoutes('https://x/valhalla', [[22.5, 51.2], [22.6, 51.3]], { costing: 'auto', heading: 90 });
     assert.deepEqual(paths, ['route']);
   } finally { globalThis.fetch = realFetch; }
+});
+
+test('auto: koszt z use_distance 0.6 (krótsze trasy miejskie, bez rezygnacji z ekspresówek)', async () => {
+  const { COSTING_OPTIONS, valhallaRequest } = await import('../js/valhalla.js');
+  assert.equal(COSTING_OPTIONS.auto.auto.use_distance, 0.6);
+  assert.equal(COSTING_OPTIONS.auto.auto.use_highways, undefined);
+  const body = valhallaRequest([[22.5, 51.2], [22.6, 51.3]], { costing: 'auto' });
+  assert.equal(body.costing_options.auto.use_distance, 0.6);
 });

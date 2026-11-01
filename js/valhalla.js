@@ -160,10 +160,13 @@ export function valhallaToOsrm(json) {
 // (x5 i x2): na osiedlach to zwykle jedyne i najkrótsze przejścia, więc dawała objazdy wokół bloków.
 export const SNAP_RADIUS = { auto: 10, pedestrian: 15, bicycle: 12 };
 
+// auto.use_distance 0.6: pomiar lokalnym Valhallą na 10 trasach miejskich (Lublin) porównanych z OSRM:
+// domyślnie +17,7 km nadmiaru (trasy do 70% dłuższe, objazdy po szybszych drogach); 0,6 -> +5,1 km, a trasy
+// dalekie nadal idą ekspresówkami (Lublin-Warszawa 117 min). use_highways=0 odrzucone (203 min), 0,8 (+70 min na Kraków).
 export const COSTING_OPTIONS = {
   pedestrian: { pedestrian: { walkway_factor: 1, sidewalk_factor: 1, alley_factor: 1, driveway_factor: 1, use_living_streets: 1, use_tracks: 0.6 } },
   bicycle: { bicycle: { service_penalty: 5, use_living_streets: 1 } },
-  auto: {},
+  auto: { auto: { use_distance: 0.6 } },
 };
 
 /**
