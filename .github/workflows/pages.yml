@@ -1,0 +1,42 @@
+name: Wdrożenie strony
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['test/**', 'tools/**', 'README.md']
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages-nawigacja
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Zbierz pliki strony
+        run: |
+          mkdir -p _site
+          cp -r index.html sw.js manifest.webmanifest css js icons vendor data _site/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+      - name: Chwila przerwy przed ponowną publikacją
+        if: steps.deploy.outcome == 'failure'
+        run: sleep 45
+      - id: deploy2
+        name: Ponowna publikacja
+        if: steps.deploy.outcome == 'failure'
+        uses: actions/deploy-pages@v4
