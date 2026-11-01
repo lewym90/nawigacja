@@ -55,3 +55,16 @@ test('alternatywy i błędy', () => {
   assert.equal(q.costing, 'pedestrian');
   assert.equal(q.locations[1].lat, 52);
 });
+
+test('opis trasy wskazuje ulicę, która odróżnia warianty (a nie wspólny początek)', () => {
+  const mk = (names) => ({ geometry: { type: 'LineString', coordinates: [[22, 51], [22.1, 51.1]] },
+    distance: 9000, duration: 900,
+    legs: [{ summary: 'Granata', steps: names.map(([name, d]) => ({ name, distance: d, duration: 60, maneuver: { type: 'turn', modifier: 'left', location: [22, 51] } })) }] });
+  const rs = parseRoutes({ code: 'Ok', routes: [
+    mk([['Granata', 2000], ['Krańcowa', 4000], ['Wojciechowska', 3000]]),
+    mk([['Granata', 2000], ['Zamojska', 4500], ['Wojciechowska', 2500]]),
+    mk([['Granata', 2000], ['Lubelska', 5000], ['Wojciechowska', 2000]]),
+  ] });
+  assert.deepEqual(rs.map((r) => r.via), ['Krańcowa', 'Zamojska', 'Lubelska']);
+  assert.equal(parseRoutes({ code: 'Ok', routes: [mk([['Granata', 9000]])] })[0].via, 'Granata');
+});

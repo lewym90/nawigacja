@@ -129,7 +129,37 @@ export function parseRoutes(json) {
   if (!json || json.code !== 'Ok' || !Array.isArray(json.routes)) {
     throw new Error(json && json.message ? json.message : 'Brak trasy');
   }
-  return json.routes.map((r, i) => parseRoute(r, i));
+  const routes = json.routes.map((r, i) => parseRoute(r, i));
+  labelRoutes(routes);
+  return routes;
+}
+
+/**
+ * Opis „przez ...” dla każdej trasy: ulica, która ją odróżnia od pozostałych (a nie ta, którą
+ * wspólnie zaczynają wszystkie warianty). Ustawia route.via.
+ */
+export function labelRoutes(routes) {
+  const per = routes.map((r) => {
+    const m = new Map();
+    for (const st of r.steps) {
+      const n = (st.name || '').trim();
+      if (n) m.set(n, (m.get(n) || 0) + (st.distance || 0));
+    }
+    return m;
+  });
+  routes.forEach((r, i) => {
+    r.via = r.summary || '';
+    if (routes.length < 2) return;
+    let best = null;
+    let bestScore = 250; // ulica musi się różnić o co najmniej ~250 m względem każdej innej trasy
+    for (const [name, d] of per[i]) {
+      let other = 0;
+      per.forEach((m, j) => { if (j !== i) other = Math.max(other, m.get(name) || 0); });
+      const score = d - other;
+      if (score > bestScore) { bestScore = score; best = name; }
+    }
+    if (best) r.via = best;
+  });
 }
 
 export function parseRoute(r, index = 0) {

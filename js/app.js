@@ -352,8 +352,9 @@ function fitRoutes() {
 }
 
 function routeName(r, i) {
-  if (i === 0) return `Najszybsza${r.summary ? ` · przez ${r.summary}` : ''}`;
-  return r.summary ? `Alternatywa · przez ${r.summary}` : `Alternatywa ${i}`;
+  const via = r.via || r.summary;
+  if (i === 0) return `Najszybsza${via ? ` · przez ${via}` : ''}`;
+  return via ? `Alternatywa · przez ${via}` : `Alternatywa ${i}`;
 }
 
 function renderRouteCards() {
