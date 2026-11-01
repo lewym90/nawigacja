@@ -37,14 +37,15 @@ body.day {
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; height: 100%; background: var(--bg); overscroll-behavior: none; }
+html { margin: 0; height: 100%; background: var(--bg); }
+html, body { overscroll-behavior: none; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
   color: var(--text);
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
-  position: fixed; inset: 0;
+  margin: 0; height: 100%; min-height: 100dvh; background: var(--bg); position: relative;
   user-select: none; -webkit-user-select: none;
 }
 button { font: inherit; color: inherit; cursor: pointer; }

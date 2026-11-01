@@ -36,7 +36,7 @@ export class Voice {
     if (this.ok) {
       const pick = () => {
         const vs = speechSynthesis.getVoices();
-        this.voice = vs.find((v) => /^pl/i.test(v.lang)) || null;
+        this.voice = vs.find((v) => /^pl/i.test(v.lang)) || vs.find((v) => v.default) || vs[0] || null;
       };
       pick();
       speechSynthesis.addEventListener && speechSynthesis.addEventListener('voiceschanged', pick);
@@ -45,11 +45,7 @@ export class Voice {
 
   unlock() {
     try { const a = new Audio(toneWavUri(440, 30)); a.volume = 0.01; a.play().catch(() => {}); } catch { /* ignoruj */ }
-    if (!this.ok) return;
-    const u = new SpeechSynthesisUtterance('.');
-    u.volume = 0;
-    this.cur = u;
-    speechSynthesis.speak(u);
+    // Bez „cichej” wypowiedzi: na iPhonie potrafiła zawisnąć i blokować całą kolejkę mowy (jak w Lumen).
   }
 
   /** urgent: przerywa i czyści kolejkę (np. ostrzeżenie tuż przed fotoradarem). */
@@ -77,8 +73,7 @@ export class Voice {
     if (this.speaking || !this.queue.length) return;
     const text = this.queue.shift();
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'pl-PL';
-    if (this.voice) u.voice = this.voice;
+    if (this.voice) { u.voice = this.voice; u.lang = this.voice.lang; } else u.lang = 'pl-PL';
     u.rate = 1.02;
     this.speaking = true;
     this.cur = u;
@@ -96,6 +91,7 @@ export class Voice {
     // Zabezpieczenie: gdy przeglądarka nie zgłosi końca, kolejka nie może zostać zablokowana.
     this.timer = setTimeout(done, this.maxUtteranceMs);
     try {
+      if (speechSynthesis.paused) speechSynthesis.resume();
       speechSynthesis.speak(u);
     } catch (err) {
       this.lastError = String(err);
