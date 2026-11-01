@@ -2,7 +2,7 @@
 // pochodzić z dotknięcia ekranu, dlatego unlock() wołamy z przycisku „Start” lub „Symulacja”.
 
 /** Ton jako plik WAV w adresie data: (element <audio> gra na iOS mimo wyciszenia przełącznikiem). */
-export function toneWavUri(freq = 880, ms = 160, rate = 22050) {
+export function toneWavUri(freq = 880, ms = 160, rate = 22050, amp = 0.6) {
   const n = Math.floor((rate * ms) / 1000);
   const buf = new ArrayBuffer(44 + n * 2);
   const dv = new DataView(buf);
@@ -13,7 +13,7 @@ export function toneWavUri(freq = 880, ms = 160, rate = 22050) {
   w(36, 'data'); dv.setUint32(40, n * 2, true);
   for (let i = 0; i < n; i++) {
     const env = Math.min(1, i / 400, (n - i) / 400); // łagodny początek i koniec bez trzasku
-    dv.setInt16(44 + i * 2, Math.round(Math.sin((2 * Math.PI * freq * i) / rate) * 0.6 * env * 32767), true);
+    dv.setInt16(44 + i * 2, Math.round(Math.sin((2 * Math.PI * freq * i) / rate) * amp * env * 32767), true);
   }
   let bin = '';
   const bytes = new Uint8Array(buf);
@@ -45,7 +45,27 @@ export class Voice {
 
   unlock() {
     try { const a = new Audio(toneWavUri(440, 30)); a.volume = 0.01; a.play().catch(() => {}); } catch { /* ignoruj */ }
-    // Bez „cichej” wypowiedzi: na iPhonie potrafiła zawisnąć i blokować całą kolejkę mowy (jak w Lumen).
+    this.hold(true);
+    if (!this.ok) return;
+    // Pierwsza wypowiedź musi paść z dotknięcia: krótka, ale prawdziwa (cicha potrafiła zawisnąć i zablokować kolejkę).
+    try {
+      const u = new SpeechSynthesisUtterance('Nawigacja gotowa');
+      if (this.voice) { u.voice = this.voice; u.lang = this.voice.lang; } else u.lang = 'pl-PL';
+      speechSynthesis.speak(u);
+    } catch { /* ignoruj */ }
+  }
+
+  /** Pętla prawie niesłyszalnego dźwięku: utrzymuje sesję audio „odtwarzanie”, dzięki czemu mowa jest słyszalna mimo wyciszenia przełącznikiem. */
+  hold(on) {
+    try {
+      if (on) {
+        if (!this.keep) { this.keep = new Audio(toneWavUri(40, 1000, 8000, 0.004)); this.keep.loop = true; }
+        const p = this.keep.play();
+        if (p && p.catch) p.catch(() => {});
+      } else if (this.keep) {
+        this.keep.pause();
+      }
+    } catch { /* brak audio */ }
   }
 
   /** urgent: przerywa i czyści kolejkę (np. ostrzeżenie tuż przed fotoradarem). */

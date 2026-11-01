@@ -44,15 +44,14 @@ body {
   color: var(--text);
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
-  overflow: hidden;
-  margin: 0; height: 100%; min-height: 100dvh; background: var(--bg); position: relative;
+  margin: 0; height: 100%; background: var(--bg);
   user-select: none; -webkit-user-select: none;
 }
 button { font: inherit; color: inherit; cursor: pointer; }
 input { font: inherit; color: inherit; user-select: text; -webkit-user-select: text; }
 [hidden] { display: none !important; }
 
-#map { position: absolute; inset: 0; min-height: 100vh; min-height: 100dvh; }
+#map { position: fixed; inset: 0; min-height: 100vh; min-height: 100dvh; }
 .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right { margin-bottom: calc(var(--safe-b) + var(--attr-lift, 0px)); }
 .maplibregl-ctrl-attrib { background: transparent !important; font-size: 10px; opacity: 0.7; }
 .maplibregl-ctrl-attrib a { color: var(--muted) !important; }
@@ -67,7 +66,7 @@ input { font: inherit; color: inherit; user-select: text; -webkit-user-select: t
 
 /* ---------- Wyszukiwanie ---------- */
 #search {
-  position: absolute; left: 12px; right: 12px; top: calc(var(--safe-t) + 12px);
+  position: fixed; left: 12px; right: 12px; top: calc(var(--safe-t) + 12px);
   border-radius: 20px; z-index: 5;
 }
 .search-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 16px; min-height: 54px; }
@@ -95,7 +94,7 @@ input { font: inherit; color: inherit; user-select: text; -webkit-user-select: t
 
 /* ---------- Karta manewru ---------- */
 #maneuver {
-  position: absolute; left: 12px; right: 12px; top: calc(var(--safe-t) + 10px); z-index: 4;
+  position: fixed; left: 12px; right: 12px; top: calc(var(--safe-t) + 10px); z-index: 4;
   border-radius: 22px; padding: 14px 18px; display: flex; align-items: center; gap: 16px;
 }
 #maneuver .m-arrow { color: var(--gold); flex: none; display: grid; place-items: center; width: 52px; }
@@ -105,7 +104,7 @@ input { font: inherit; color: inherit; user-select: text; -webkit-user-select: t
 
 /* ---------- Baner ostrzeżenia ---------- */
 #banner {
-  position: absolute; left: 12px; right: 12px; top: calc(var(--safe-t) + 112px); z-index: 4;
+  position: fixed; left: 12px; right: 12px; top: calc(var(--safe-t) + 112px); z-index: 4;
   border-radius: 18px; padding: 12px 16px; display: flex; align-items: center; gap: 14px;
   transition: transform 0.25s ease, opacity 0.25s ease;
 }
@@ -120,7 +119,7 @@ input { font: inherit; color: inherit; user-select: text; -webkit-user-select: t
 
 /* ---------- Odcinkowy pomiar ---------- */
 #section {
-  position: absolute; left: 12px; right: 12px; top: calc(var(--safe-t) + 112px); z-index: 4;
+  position: fixed; left: 12px; right: 12px; top: calc(var(--safe-t) + 112px); z-index: 4;
   border-radius: 20px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
 }
 #section .s-head { display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 700; letter-spacing: 0.02em; }
@@ -140,7 +139,7 @@ input { font: inherit; color: inherit; user-select: text; -webkit-user-select: t
 #section.done .s-avg.over { color: var(--warn); }
 
 /* ---------- Prędkość i limit ---------- */
-#speedbox { position: absolute; left: 14px; z-index: 4; display: flex; flex-direction: column; align-items: center; gap: 8px; bottom: calc(var(--safe-b) + 150px); }
+#speedbox { position: fixed; left: 14px; z-index: 4; display: flex; flex-direction: column; align-items: center; gap: 8px; bottom: calc(var(--safe-b) + 150px); }
 #limit {
   width: 62px; height: 62px; border-radius: 50%; background: #fff; border: 7px solid #d93636; color: #111;
   display: grid; place-items: center; font-weight: 850; font-size: 23px; letter-spacing: -0.03em;
@@ -153,14 +152,14 @@ input { font: inherit; color: inherit; user-select: text; -webkit-user-select: t
 #speed.over b { color: var(--warn); }
 
 /* ---------- Przyciski boczne ---------- */
-#fabs { position: absolute; right: 14px; z-index: 4; display: flex; flex-direction: column; gap: 10px; bottom: calc(var(--safe-b) + 150px); }
+#fabs { position: fixed; right: 14px; z-index: 4; display: flex; flex-direction: column; gap: 10px; bottom: calc(var(--safe-b) + 150px); }
 .fab { width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--line); background: var(--surface-solid); box-shadow: var(--shadow); color: var(--text); }
 .fab:active { transform: scale(0.94); }
 .fab.gold { color: var(--gold); }
 
 /* ---------- Dolne panele ---------- */
 .panel {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 6;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
   background: var(--surface-solid); border-top: 1px solid var(--line);
   border-radius: 24px 24px 0 0; padding: 12px 16px calc(var(--safe-b) + 16px);
   box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.35);
@@ -223,7 +222,7 @@ body.day .route-card.sel .rc-name { color: var(--route); }
 
 /* ---------- Toast, znaczniki ---------- */
 #toast {
-  position: absolute; left: 50%; transform: translateX(-50%); top: calc(var(--safe-t) + 190px); z-index: 9;
+  position: fixed; left: 50%; transform: translateX(-50%); top: calc(var(--safe-t) + 190px); z-index: 9;
   padding: 10px 16px; border-radius: 14px; font-size: 14px; font-weight: 600; max-width: 86vw; text-align: center;
 }
 .hz {
@@ -240,11 +239,11 @@ body.day .route-card.sel .rc-name { color: var(--route); }
 .dest-pin { color: var(--gold); filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.5)); }
 .me-dot { width: 20px; height: 20px; border-radius: 50%; background: var(--route); border: 3px solid #fff; box-shadow: 0 0 0 8px rgba(76, 155, 255, 0.25); }
 
-#puck { position: absolute; left: 50%; z-index: 3; width: 64px; height: 64px; margin-left: -32px; margin-top: -32px; pointer-events: none; }
+#puck { position: fixed; left: 50%; z-index: 3; width: 64px; height: 64px; margin-left: -32px; margin-top: -32px; pointer-events: none; }
 #puck::before { content: ''; position: absolute; inset: 6px; border-radius: 50%; background: rgba(76, 155, 255, 0.2); }
 #puck svg { position: absolute; inset: 0; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5)); }
 
-.hint { position: absolute; left: 12px; right: 12px; bottom: calc(var(--safe-b) + 16px); z-index: 3; padding: 14px 16px; border-radius: 18px; font-size: 14px; color: var(--muted); line-height: 1.45; }
+.hint { position: fixed; left: 12px; right: 12px; bottom: calc(var(--safe-b) + 16px); z-index: 3; padding: 14px 16px; border-radius: 18px; font-size: 14px; color: var(--muted); line-height: 1.45; }
 .hint b { color: var(--text); }
 
 body.has-section #banner { top: calc(var(--safe-t) + 312px); }
@@ -252,9 +251,12 @@ body.has-section #banner { top: calc(var(--safe-t) + 312px); }
 .nav-arrow { width: 46px; height: 46px; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5)); }
 
 .resume {
-  position: absolute; left: 50%; transform: translateX(-50%); z-index: 7; bottom: calc(var(--safe-b) + 132px);
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 7; bottom: calc(var(--safe-b) + 132px);
   display: flex; align-items: center; gap: 8px; padding: 13px 18px; border-radius: 28px; border: 0;
   background: var(--gold); color: var(--gold-ink); font-size: 16px; font-weight: 750; white-space: nowrap;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 .resume:active { filter: brightness(0.92); transform: translateX(-50%) scale(0.97); }
+
+/* iOS (ekran początkowy) skraca okno o ok. 60 pt, jeśli sam dokument nie jest przewijalny (czarny pasek na dole). Niewidoczny odstęp czyni go przewijalnym; interfejs jest position: fixed i się nie rusza (tak samo jak w Poczcie i Kalendarzu). */
+#docspacer { position: absolute; top: 0; left: 0; width: 1px; height: calc(100vh + 120px); visibility: hidden; pointer-events: none; }

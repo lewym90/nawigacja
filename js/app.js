@@ -729,6 +729,7 @@ async function reroute(fix) {
 }
 
 function endNav() {
+  voice.hold(false);
   clearTimeout(resumeTimer);
   if (navMarker) { navMarker.remove(); navMarker = null; }
   if (S.nav && S.nav.arrivedTimer) clearTimeout(S.nav.arrivedTimer);
