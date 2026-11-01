@@ -7,7 +7,8 @@ import json, sys, urllib.parse, urllib.request
 lat, lng = float(sys.argv[1]), float(sys.argv[2])
 R = 1500
 q = f'[out:json][timeout:25];way(around:{R},{lat},{lng})[highway=steps];out center 40;'
-req = urllib.request.Request('https://overpass-api.de/api/interpreter', data=urllib.parse.urlencode({'data': q}).encode())
+req = urllib.request.Request('https://overpass-api.de/api/interpreter', data=urllib.parse.urlencode({'data': q}).encode(),
+                             headers={'User-Agent': 'nawigacja-test/1.0 (github.com/lewym90/nawigacja)', 'Accept': 'application/json'})
 els = json.load(urllib.request.urlopen(req, timeout=40))['elements']
 print(f'Schodów OSM w promieniu {R} m: {len(els)}')
 found = 0
