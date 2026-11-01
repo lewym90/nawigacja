@@ -33,6 +33,10 @@ export class Voice {
     this.maxUtteranceMs = maxUtteranceMs;
     this.lastError = null;
     this.onError = null;
+    this.engine = 'robot'; // 'robot' = wbudowany syntezator (gra jak zwykły dźwięk), 'system' = głos telefonu
+    this.player = null;
+    this.cache = new Map();
+    this.robot = null;
     if (this.ok) {
       const pick = () => {
         const vs = speechSynthesis.getVoices();
@@ -45,6 +49,9 @@ export class Voice {
 
   unlock() {
     try { const a = new Audio(toneWavUri(440, 30)); a.volume = 0.01; a.play().catch(() => {}); } catch { /* ignoruj */ }
+    if (!this.player) this.player = new Audio();
+    try { this.player.src = toneWavUri(440, 30); this.player.volume = 0.01; this.player.play().catch(() => {}); } catch { /* ignoruj */ }
+    if (this.engine === 'robot') return;
     this.hold(true);
     if (!this.ok) return;
     // Pierwsza wypowiedź musi paść z dotknięcia: krótka, ale prawdziwa (cicha potrafiła zawisnąć i zablokować kolejkę).
@@ -70,10 +77,13 @@ export class Voice {
 
   /** urgent: przerywa i czyści kolejkę (np. ostrzeżenie tuż przed fotoradarem). */
   say(text, { urgent = false } = {}) {
-    if (!this.ok || !this.enabled || !text) return;
+    if (!this.enabled || !text) return;
+    if (this.engine !== 'robot' && !this.ok) return;
     if (urgent) {
       this.queue = [];
-      try { speechSynthesis.cancel(); } catch { /* ignoruj */ }
+      this.gen = (this.gen || 0) + 1;
+      try { if (this.player) this.player.pause(); } catch { /* ignoruj */ }
+      try { if (this.ok) speechSynthesis.cancel(); } catch { /* ignoruj */ }
       this._finish();
     }
     this.queue.push(text);
@@ -92,6 +102,7 @@ export class Voice {
   _next() {
     if (this.speaking || !this.queue.length) return;
     const text = this.queue.shift();
+    if (this.engine === 'robot') { this._robot(text); return; }
     const u = new SpeechSynthesisUtterance(text);
     if (this.voice) { u.voice = this.voice; u.lang = this.voice.lang; } else u.lang = 'pl-PL';
     u.rate = 1.02;
@@ -119,6 +130,41 @@ export class Voice {
     }
   }
 
+  /** Wbudowany syntezator (eSpeak, wczytywany dopiero przy pierwszej wypowiedzi), odtwarzany przez element <audio>. */
+  async _robot(text) {
+    const gen = this.gen || 0;
+    this.speaking = true;
+    const stamp = {};
+    this.cur = stamp;
+    const done = () => {
+      if (this.cur !== stamp) return;
+      this._finish();
+      this._next();
+    };
+    this.timer = setTimeout(done, this.maxUtteranceMs);
+    try {
+      if (!this.robot) this.robot = await import('../vendor/robot-tts.js');
+      let url = this.cache.get(text);
+      if (!url) {
+        url = this.robot.render(text);
+        if (this.cache.size > 60) this.cache.delete(this.cache.keys().next().value);
+        this.cache.set(text, url);
+      }
+      if (this.cur !== stamp || gen !== (this.gen || 0)) return; // w międzyczasie przerwano
+      if (!this.player) this.player = new Audio();
+      const a = this.player;
+      a.onended = done;
+      a.onerror = () => { this.lastError = 'audio'; if (this.onError) this.onError('audio'); done(); };
+      a.src = url;
+      a.volume = 1;
+      await a.play();
+    } catch (err) {
+      this.lastError = (err && err.name) || String(err);
+      if (this.onError) this.onError(this.lastError);
+      done();
+    }
+  }
+
   /** Krótki sygnał dźwiękowy przez element <audio> (kanał multimediów). */
   beep(freq = 880, ms = 140) {
     try {
@@ -134,6 +180,7 @@ export class Voice {
 
   /** Diagnostyka dla użytkownika: co jest dostępne w tej przeglądarce. */
   info() {
+    if (this.engine === 'robot') return { supported: true, voices: 1, pl: 'wbudowany', robot: true };
     if (!this.ok) return { supported: false, voices: 0, pl: null };
     const vs = speechSynthesis.getVoices();
     return { supported: true, voices: vs.length, pl: this.voice ? this.voice.name : null };

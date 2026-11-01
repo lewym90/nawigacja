@@ -8,7 +8,7 @@ globalThis.speechSynthesis = { getVoices: () => [{ lang: 'pl-PL', name: 'Zosia' 
 const { Voice } = await import('../js/voice.js');
 
 test('kolejka nie zawiesza się, gdy przeglądarka nie zgłosi końca wypowiedzi', async () => {
-  const v = new Voice({ maxUtteranceMs: 30 });
+  const v = new Voice({ maxUtteranceMs: 30 }); v.engine = 'system';
   v.say('pierwsza');
   v.say('druga');
   assert.deepEqual(spoken, ['pierwsza']);
@@ -17,7 +17,7 @@ test('kolejka nie zawiesza się, gdy przeglądarka nie zgłosi końca wypowiedzi
 });
 
 test('wyłączony głos nic nie mówi, a test diagnostyczny zgłasza polski głos', () => {
-  const v = new Voice();
+  const v = new Voice(); v.engine = 'system';
   const n = spoken.length;
   v.enabled = false;
   v.say('cicho');

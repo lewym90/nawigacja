@@ -15,6 +15,7 @@ const $ = (id) => document.getElementById(id);
 const settings = loadSettings();
 const voice = new Voice();
 voice.enabled = settings.voice;
+voice.engine = settings.voiceEngine === 'system' ? 'system' : 'robot';
 const reports = new ReportStore();
 
 const S = {
@@ -77,6 +78,8 @@ const map = new maplibregl.Map({
   pitchWithRotate: false,
 });
 map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
+{ const fold = () => document.querySelectorAll('.maplibregl-ctrl-attrib').forEach((el) => { el.classList.remove('maplibregl-compact-show'); el.removeAttribute('open'); });
+  map.on('load', fold); map.on('resize', fold); setTimeout(fold, 300); }
 
 // iOS potrafi zmienić wysokość okna po starcie (pasek adresu, obszar bezpieczny): dopasuj mapę.
 const fitMap = () => map.resize();
@@ -838,6 +841,7 @@ function syncMenu() {
   sw('sw-hz', settings.hazardsVoice);
   sw('sw-tilt', settings.tilt);
   document.querySelectorAll('#seg-theme button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.theme));
+  document.querySelectorAll('#seg-engine button').forEach((b) => b.classList.toggle('on', b.dataset.v === (settings.voiceEngine === 'system' ? 'system' : 'robot')));
 }
 $('btn-menu').onclick = () => { syncMenu(); show('menu', true); };
 $('btn-menu-x').onclick = () => show('menu', false);
@@ -846,6 +850,10 @@ $('sw-hz').onclick = () => { settings.hazardsVoice = !settings.hazardsVoice; sav
 $('sw-tilt').onclick = () => { settings.tilt = !settings.tilt; saveSettings(settings); syncMenu(); };
 document.querySelectorAll('#seg-theme button').forEach((b) => (b.onclick = () => {
   settings.theme = b.dataset.v; saveSettings(settings); syncMenu(); applyTheme();
+}));
+
+document.querySelectorAll('#seg-engine button').forEach((b) => (b.onclick = () => {
+  settings.voiceEngine = b.dataset.v; voice.engine = b.dataset.v; voice.hold(false); saveSettings(settings); syncMenu();
 }));
 
 // ---------- Start ----------
@@ -858,6 +866,7 @@ $('btn-voice-test').onclick = () => {
   voice.unlock();
   const i = voice.test();
   const msg = !i.supported ? 'Ta przeglądarka nie ma syntezatora mowy'
+    : i.robot ? 'Głos wbudowany. Po sygnale powinieneś usłyszeć mowę. Brak mowy? Napisz mi, co dalej słychać.'
     : i.pl ? `Głos polski: ${i.pl}. Najpierw usłyszysz sygnał, potem mowę. Sygnał słychać, a mowy nie? Wtedy to syntezator telefonu.`
     : `Brak polskiego głosu (głosów: ${i.voices}). Dodaj go: Ustawienia, Dostępność, Treści czytane, Głosy.`;
   toast(msg, 9000);

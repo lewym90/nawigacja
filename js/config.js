@@ -26,7 +26,7 @@ export const CONFIG = {
   zoom: 12,
 };
 
-export const APP_VERSION = '0.1.8';
+export const APP_VERSION = '0.1.9';
 
 export const STORAGE = { settings: 'nav.settings', lastDest: 'nav.lastDest' };
 
@@ -35,6 +35,7 @@ export const DEFAULT_SETTINGS = {
   theme: 'auto', // auto | day | night
   tilt: true,
   hazardsVoice: true,
+  voiceEngine: 'robot', // robot = wbudowany | system = głos telefonu
 };
 
 export function loadSettings() {
