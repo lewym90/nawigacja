@@ -48,18 +48,10 @@ export class Voice {
   }
 
   unlock() {
-    try { const a = new Audio(toneWavUri(440, 30)); a.volume = 0.01; a.play().catch(() => {}); } catch { /* ignoruj */ }
+    // Silnik systemowy: nic poza samą mową. Dźwięk <audio> tuż przed nią wyciszał ją na iPhonie.
+    if (this.engine !== 'robot') return;
     if (!this.player) this.player = new Audio();
     try { this.player.src = toneWavUri(440, 30); this.player.volume = 0.01; this.player.play().catch(() => {}); } catch { /* ignoruj */ }
-    if (this.engine === 'robot') return;
-    // Silnik systemowy: żadnego dźwięku z <audio> obok mowy (na iPhonie potrafi ją wyciszyć).
-    if (!this.ok) return;
-    // Pierwsza wypowiedź musi paść z dotknięcia: krótka, ale prawdziwa (cicha potrafiła zawisnąć i zablokować kolejkę).
-    try {
-      const u = new SpeechSynthesisUtterance('Nawigacja gotowa');
-      if (this.voice) { u.voice = this.voice; u.lang = this.voice.lang; } else u.lang = 'pl-PL';
-      speechSynthesis.speak(u);
-    } catch { /* ignoruj */ }
   }
 
   /** Pętla prawie niesłyszalnego dźwięku: utrzymuje sesję audio „odtwarzanie”, dzięki czemu mowa jest słyszalna mimo wyciszenia przełącznikiem. */
@@ -113,6 +105,8 @@ export class Voice {
       this._finish();
       this._next();
     };
+    let started = false;
+    u.onstart = () => { started = true; };
     u.onend = done;
     u.onerror = (e) => {
       this.lastError = (e && e.error) || 'error';
@@ -122,8 +116,15 @@ export class Voice {
     // Zabezpieczenie: gdy przeglądarka nie zgłosi końca, kolejka nie może zostać zablokowana.
     this.timer = setTimeout(done, this.maxUtteranceMs);
     try {
+      // Kolejka jest pusta (nic nie mówimy), więc czyszczenie jest bezpieczne; iOS bywa „zawieszony” po poprzedniej wypowiedzi.
+      speechSynthesis.cancel();
       if (speechSynthesis.paused) speechSynthesis.resume();
       speechSynthesis.speak(u);
+      // Jeśli po chwili nic się nie zaczęło, spróbuj jeszcze raz.
+      setTimeout(() => {
+        if (this.cur !== u || started || speechSynthesis.speaking) return;
+        try { speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* ignoruj */ }
+      }, 1200);
     } catch (err) {
       this.lastError = String(err);
       done();
@@ -167,6 +168,7 @@ export class Voice {
 
   /** Krótki sygnał dźwiękowy przez element <audio> (kanał multimediów). */
   beep(freq = 880, ms = 140) {
+    if (this.engine !== 'robot' && this.enabled) return; // przy głosie systemowym sygnał wyciszałby mowę; zapowiedź niesie ostrzeżenie
     try {
       this.tones = this.tones || new Map();
       const key = `${freq}:${ms}`;
