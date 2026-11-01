@@ -110,11 +110,14 @@ with sync_playwright() as p:
     # Gest użytkownika: strzałka ma przejść z ekranu na mapę, a po powrocie wrócić
     page.evaluate("window.__nav.map.fire('movestart', {originalEvent: {}})")
     page.wait_for_timeout(300)
-    print('GEST: puck ukryty =', not page.is_visible('#puck'), '| znacznik na mapie =', page.locator('.nav-arrow').count(), '| przycisk lokalizacji =', page.is_visible('#btn-locate'))
+    print('GEST: puck ukryty =', not page.is_visible('#puck'), '| znacznik na mapie =', page.locator('.nav-arrow').count(), '| przycisk powrotu =', page.is_visible('#btn-resume'))
     page.screenshot(path=f'{OUT}/7b-gesture.png')
-    page.click('#btn-locate')
-    page.wait_for_timeout(300)
-    print('POWRÓT: puck widoczny =', page.is_visible('#puck'), '| znacznik =', page.locator('.nav-arrow').count())
+    page.evaluate("window.__nav.map.jumpTo({center: [22.60, 51.25], zoom: 12, pitch: 0, bearing: 90})")
+    page.click('#btn-resume')
+    page.wait_for_timeout(1200)
+    st = page.evaluate("(() => { const m = window.__nav.map; return {pitch: Math.round(m.getPitch()), zoom: +m.getZoom().toFixed(1)}; })()")
+    print('POWRÓT: puck widoczny =', page.is_visible('#puck'), '| znacznik =', page.locator('.nav-arrow').count(), '| przycisk =', page.is_visible('#btn-resume'), '|', st)
+    page.screenshot(path=f'{OUT}/7c-resume.png')
     # Zjechanie z trasy: kilka odczytów 150 m na wschód od osi => przeliczenie
     page.evaluate('''() => { const n = window.__nav; n.S.sim.stop(); n.S.sim = null;
       const t0 = Date.now(); for (let i = 0; i < 4; i++) n.onFix({lng: 22.5521, lat: 51.2 + 0.0535, speed: 10, accuracy: 5, heading: 0, t: t0 + i*1000}); }''')

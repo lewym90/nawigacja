@@ -44,6 +44,7 @@ $('btn-report-x').innerHTML = icon.close(22);
 $('btn-locate').innerHTML = icon.locate(24);
 $('btn-report').innerHTML = icon.warn(24);
 $('go-ico').innerHTML = icon.play(20);
+$('resume-ico').innerHTML = icon.locate(22);
 
 const REPORT_TYPES = ['police', 'accident', 'obstacle', 'jam', 'roadwork'];
 $('report-grid').innerHTML = REPORT_TYPES.map(
@@ -471,6 +472,7 @@ function setMode(m) {
   show('btn-sound', m === 'nav');
   show('btn-locate', m !== 'nav');
   show('puck', m === 'nav');
+  show('btn-resume', false);
   if (m !== 'nav') { show('banner', false); show('section', false); document.body.classList.remove('has-section'); }
   const lift = m === 'preview' ? window.innerHeight * 0.5 : m === 'nav' ? 110 : 0;
   document.documentElement.style.setProperty('--attr-lift', `${Math.round(lift)}px`);
@@ -611,10 +613,11 @@ function navTick(fix) {
   // Kamera i znacznik pojazdu
   const useSnap = g.offDist < 25 && g.point;
   const c = useSnap ? g.point : [fix.lng, fix.lat];
+  const zoom = kmh > 100 ? 14.8 : kmh > 70 ? 15.4 : kmh > 40 ? 16 : 16.6;
+  N.cam = { c, hd, zoom };
   if (!S.follow && navMarker) { navMarker.setLngLat(c); navMarker.setRotation(hd); }
   if (S.follow) {
     const dur = fix.sim ? Math.max(120, 900 / (S.simSpeedup || 1)) : 950;
-    const zoom = kmh > 100 ? 14.8 : kmh > 70 ? 15.4 : kmh > 40 ? 16 : 16.6;
     map.easeTo({ center: c, bearing: hd, zoom, pitch: settings.tilt ? 55 : 0, duration: dur, easing: (t) => t, padding: camPadding() });
   }
 
@@ -772,28 +775,34 @@ let resumeTimer = null;
 
 function pauseFollow() {
   S.follow = false;
-  show('btn-locate', true);
+  show('btn-resume', true);
   show('puck', false);
   if (!navMarker && S.lastFix) {
     const el = document.createElement('div');
     el.className = 'nav-arrow';
     el.innerHTML = '<svg viewBox="0 0 64 64" width="46" height="46" aria-hidden="true"><path d="M32 8 L47 50 L32 42 L17 50Z" fill="#f3efe6" stroke="#0b0b0d" stroke-width="3.5" stroke-linejoin="round"/></svg>';
+    const at = (S.nav && S.nav.cam && S.nav.cam.c) || [S.lastFix.lng, S.lastFix.lat];
     navMarker = new maplibregl.Marker({ element: el, rotationAlignment: 'map', pitchAlignment: 'map' })
-      .setLngLat([S.lastFix.lng, S.lastFix.lat]).setRotation(S.heading).addTo(map);
+      .setLngLat(at).setRotation(S.heading).addTo(map);
   }
   clearTimeout(resumeTimer);
-  resumeTimer = setTimeout(resumeFollow, 12000); // po 12 s bez dotyku wracamy do jazdy
+  resumeTimer = setTimeout(resumeFollow, 15000); // po 15 s bez dotyku wracamy do jazdy
 }
 
 function resumeFollow() {
   clearTimeout(resumeTimer);
   S.follow = true;
-  show('btn-locate', false);
+  show('btn-resume', false);
   if (navMarker) { navMarker.remove(); navMarker = null; }
-  if (S.mode === 'nav') show('puck', true);
+  if (S.mode !== 'nav') return;
+  show('puck', true);
+  // Od razu wracamy kamerą za pojazd, nie czekamy na kolejny odczyt GPS.
+  const cam = S.nav && S.nav.cam;
+  if (cam) map.easeTo({ center: cam.c, bearing: cam.hd, zoom: cam.zoom, pitch: settings.tilt ? 55 : 0, duration: 600, padding: camPadding() });
 }
 
 map.on('movestart', (e) => { if (S.mode === 'nav' && e.originalEvent) pauseFollow(); });
+$('btn-resume').onclick = resumeFollow;
 $('btn-locate').addEventListener('click', () => { if (S.mode === 'nav') resumeFollow(); });
 
 // ---------- Zgłoszenia ----------

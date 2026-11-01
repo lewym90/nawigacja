@@ -249,3 +249,11 @@ body.day .route-card.sel .rc-name { color: var(--route); }
 body.has-section #banner { top: calc(var(--safe-t) + 312px); }
 
 .nav-arrow { width: 46px; height: 46px; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5)); }
+
+.resume {
+  position: absolute; left: 50%; transform: translateX(-50%); z-index: 7; bottom: calc(var(--safe-b) + 132px);
+  display: flex; align-items: center; gap: 8px; padding: 13px 18px; border-radius: 28px; border: 0;
+  background: var(--gold); color: var(--gold-ink); font-size: 16px; font-weight: 750; white-space: nowrap;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.resume:active { filter: brightness(0.92); transform: translateX(-50%) scale(0.97); }
