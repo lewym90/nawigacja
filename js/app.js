@@ -2,7 +2,7 @@ import { Places } from './places.js';
 import { CONFIG, APP_VERSION, loadSettings, saveSettings, STORAGE } from './config.js';
 import { buildStyle, isNight } from './mapstyle.js';
 import { fetchRoutes, fmtDist, fmtDuration, limitAt } from './routing.js';
-import { Guidance, isSilent } from './guidance.js';
+import { Guidance } from './guidance.js';
 import { SpeedFilter } from './speed.js';
 import { loadRouteLimits } from './limits.js';
 import {
@@ -646,9 +646,8 @@ function startNav({ sim = false } = {}) {
   const start = S.pos ? [S.pos.lng, S.pos.lat] : route.coords[0];
   map.easeTo({ center: start, zoom: 16, pitch: settings.tilt ? 55 : 0, bearing: S.heading, duration: 900, padding: camPadding() });
   placePuck();
-  // „Ruszaj” tylko gdy do pierwszego manewru jest daleko; inaczej zagłusza pierwszą wskazówkę
-  const firstTurn = (route.steps || []).find((st, i) => i > 0 && !isSilent(st));
-  if (!firstTurn || firstTurn.at > 300) voice.say('Ruszaj', { prio: 2 });
+  // Pierwsza wypowiedź musi wyjść od razu z dotknięcia „Start”: tylko wtedy iPhone odblokuje mowę na całą jazdę.
+  voice.say('Ruszaj', { prio: 3, ttl: 4000 });
 }
 
 function camPadding() {

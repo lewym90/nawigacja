@@ -200,6 +200,12 @@ export class Voice {
         this.log('ponawiam: nic się nie zaczęło');
         try { speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* ignoruj */ }
       }, 1200);
+      // Drugie zabezpieczenie: gdy i ponowienie nic nie zaczęło, oddajemy kolejkę, zamiast czekać 20 s
+      setTimeout(() => {
+        if (this.cur !== u || started || speechSynthesis.speaking) return;
+        this.log('poddaję: mowa zablokowana, dotknij ekranu');
+        done();
+      }, 3200);
     } catch (err) {
       this.lastError = String(err);
       done();
