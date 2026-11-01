@@ -143,7 +143,9 @@ export function parseGitdRows(rows, sheetName = '') {
     if (cEnd >= 0) endPos = pairCell(r[cEnd]);
     if (!pos) { skipped++; continue; }
     const t = norm(cType >= 0 ? r[cType] : '');
-    const kind = /odcink/.test(t) ? 'section' : /czerwon|redlight|swiatl|skrzyz|przejazd|kolej/.test(t) ? 'redlight' : /mobiln|przenosn/.test(t) ? 'skip' : 'camera';
+    const code0 = cId >= 0 ? String(r[cId] ?? '').trim() : '';
+    // kody lokalizacji GITD: „XXX.C.001” = kamera na świetle, „XXX.O.1.2” = punkt odcinkowego pomiaru
+    const kind = /\.O\.\d/i.test(code0) ? 'section' : /\.C\.\d/i.test(code0) ? 'redlight' : /odcink/.test(t) ? 'section' : /czerwon|redlight|swiatl|skrzyz|przejazd|kolej/.test(t) ? 'redlight' : /mobiln|przenosn/.test(t) ? 'skip' : 'camera';
     if (kind === 'skip') continue;
     const lim = cLimit >= 0 ? num(r[cLimit]) : null;
     items.push({
@@ -182,6 +184,22 @@ export function toHazards(items) {
       pending.push({ ...it, n });
     }
   }
+  // punkty o kodach „XXX.O.n.1” i „XXX.O.n.2” to początek i koniec jednego odcinka
+  const byCode = new Map();
+  for (const p of pending) {
+    const m = String(p.code).match(/^(.+\.O\.\d+)\.(\d+)$/i);
+    if (m) { if (!byCode.has(m[1])) byCode.set(m[1], []); byCode.get(m[1]).push({ ...p, idx: +m[2] }); }
+  }
+  const codePaired = new Set();
+  for (const [key, pts] of byCode) {
+    if (pts.length !== 2) continue;
+    pts.sort((x, y) => x.idx - y.idx);
+    const [a, b] = pts;
+    codePaired.add(a.n); codePaired.add(b.n);
+    sections.push({ id: `gitd:${key}`, type: 'section', start: [a.lng, a.lat], end: [b.lng, b.lat], limit: a.limit ?? b.limit, bidir: true, source: 'gitd' });
+  }
+  for (let i = pending.length - 1; i >= 0; i--) if (codePaired.has(pending[i].n)) pending.splice(i, 1);
+
   // dwa punkty tej samej drogi i kodu bazowego, 300 m – 25 km od siebie, to początek i koniec odcinka
   const used = new Set();
   for (let i = 0; i < pending.length; i++) {
@@ -217,14 +235,17 @@ async function buildGitd() {
   const XLSX = (await import('xlsx')).default || (await import('xlsx'));
   const wb = XLSX.read(buf, { type: 'buffer' });
   const all = [];
+  const report = [];
   for (const name of wb.SheetNames) {
     if (/zdemont|nieaktyw|archiw/i.test(name)) { console.log(`GITD: pomijam arkusz „${name}”`); continue; }
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '', raw: true });
     const { items, skipped, header } = parseGitdRows(rows, name);
     console.log(`GITD: arkusz „${name}”: ${rows.length} wierszy, ${items.length} z położeniem, ${skipped} bez; nagłówki: ${JSON.stringify(header)}`);
+    report.push({ sheet: name, rows: rows.length, parsed: items.length, skipped, header, sample: rows.slice(0, 6) });
     all.push(...items);
   }
   const { cameras, sections } = toHazards(all);
+  try { fs.writeFileSync(OUT('hazards.gitd.report.json'), JSON.stringify({ source: url, sheets: report }, null, 1)); } catch { /* raport pomocniczy */ }
   console.log(`GITD: ${cameras.length} punktów, ${sections.length} odcinków`);
   if (cameras.length + sections.length < 50) throw new Error('podejrzanie mało danych z GITD (zmieniły się nagłówki?)');
   return { generated: new Date().toISOString(), source: url, cameras, sections };

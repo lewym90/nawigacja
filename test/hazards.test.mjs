@@ -181,3 +181,16 @@ test('mergeSources: odcinki o tych samych końcach z dwóch źródeł łączą s
   assert.equal(m.sections[0].limit, 70);
   assert.equal(m.cameras.length, 0);
 });
+
+test('sectionsOnRoute: odcinek bez znanego kierunku (GITD) działa też w drugą stronę', async () => {
+  const { sectionsOnRoute } = await import('../js/hazards.js');
+  const { buildLine } = await import('../js/geo.js');
+  const a = [22.5, 51.2];
+  const b = destination(a, 0, 3000);
+  const route = { line: buildLine([a, b]) };
+  const s = { id: 'x', type: 'section', start: destination(a, 0, 2500), end: destination(a, 0, 500), bidir: true };
+  const r = sectionsOnRoute(route, [s]);
+  assert.equal(r.length, 1);
+  assert.ok(r[0].endAlong > r[0].startAlong);
+  assert.equal(sectionsOnRoute(route, [{ ...s, bidir: false }]).length, 0);
+});

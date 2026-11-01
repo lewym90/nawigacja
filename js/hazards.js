@@ -175,8 +175,12 @@ export function sectionsOnRoute(route, sections, { maxOff = 35 } = {}) {
     const a = project(route.line, s.start);
     const b = project(route.line, s.end);
     if (a.dist > maxOff || b.dist > maxOff) continue;
-    if (b.along - a.along < 100) continue; // przeciwny kierunek albo błąd danych
-    out.push({ ...s, startAlong: a.along, endAlong: b.along, length: b.along - a.along });
+    if (b.along - a.along >= 100) {
+      out.push({ ...s, startAlong: a.along, endAlong: b.along, length: b.along - a.along });
+    } else if (s.bidir && a.along - b.along >= 100) {
+      // źródło nie podaje kierunku (GITD): jedziemy odcinkiem „od końca”, więc zamieniamy końce
+      out.push({ ...s, start: s.end, end: s.start, startAlong: b.along, endAlong: a.along, length: a.along - b.along });
+    } // reszta: przeciwny kierunek albo błąd danych
   }
   return out.sort((x, y) => x.startAlong - y.startAlong);
 }

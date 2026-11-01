@@ -44,3 +44,18 @@ test('GITD: odcinek z kolumnami początek i koniec', () => {
   assert.equal(h.sections.length, 1);
   assert.deepEqual(h.sections[0].end, [22.5, 51.1]);
 });
+
+test('GITD: kody „XXX.O.n.1/2” tworzą odcinek, „XXX.C.n” to kamera na świetle, reszta to fotoradary', () => {
+  const rows = [
+    ['Kod lokalizacji', 'Rodzaj urządzenia', 'Limit', 'Szerokość', 'Długość'],
+    ['WSC.O.1.1', 'pomiar', 70, 51.1, 22.4],
+    ['WSC.O.1.2', 'pomiar', 70, 51.1, 22.5],
+    ['WSC.C.001', 'x', '', 51.3, 22.4],
+    ['WSC.1.045', 'x', 50, 51.2, 22.4],
+  ];
+  const h = toHazards(parseGitdRows(rows).items);
+  assert.equal(h.sections.length, 1);
+  assert.equal(h.sections[0].bidir, true);
+  assert.equal(h.cameras.filter((c) => c.type === 'redlight').length, 1);
+  assert.equal(h.cameras.filter((c) => c.type === 'camera').length, 1);
+});
