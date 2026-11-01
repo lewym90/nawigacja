@@ -1,0 +1,44 @@
+name: Dane tras (Valhalla, Polska)
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '41 2 1 * *'   # raz w miesiącu, 1. dnia o 2:41 UTC
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Wolne miejsce i pamięć
+        run: df -h / | tail -1; free -h | sed -n 2p; nproc
+      - name: Zbuduj dane Valhalli dla Polski
+        run: |
+          mkdir -p custom_files
+          docker run --rm -v "$PWD/custom_files:/custom_files" \
+            -e tile_urls=https://download.geofabrik.de/europe/poland-latest.osm.pbf \
+            -e serve_tiles=False -e build_tar=True -e build_elevation=False -e build_admins=True -e build_time_zones=True \
+            -e server_threads=3 \
+            ghcr.io/valhalla/valhalla-scripted:latest
+          ls -la custom_files
+      - name: Przygotuj pliki do wydania
+        run: |
+          cd custom_files
+          ls -la valhalla_tiles.tar
+          mkdir -p ../out
+          split -b 1800M -d -a 2 valhalla_tiles.tar ../out/valhalla_tiles.tar.part
+          cp valhalla.json ../out/valhalla.json 2>/dev/null || true
+          cp -r admin_data ../out/ 2>/dev/null || true
+          [ -f admins.sqlite ] && cp admins.sqlite ../out/ || true
+          [ -f timezones.sqlite ] && cp timezones.sqlite ../out/ || true
+          ls -la ../out
+          date -u +%FT%TZ > ../out/BUILD_DATE.txt
+          sha256sum valhalla_tiles.tar | cut -d' ' -f1 > ../out/valhalla_tiles.sha256
+      - name: Opublikuj w wydaniu valhalla-pl
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete valhalla-pl --yes --cleanup-tag -R "${{ github.repository }}" || true
+          gh release create valhalla-pl --title "Dane tras Valhalla (Polska)" --notes "Zbudowane z Geofabrik poland-latest. Dane OpenStreetMap, licencja ODbL." -R "${{ github.repository }}"
+          for f in out/*; do [ -f "$f" ] && gh release upload valhalla-pl "$f" -R "${{ github.repository }}" --clobber; done
+          gh release view valhalla-pl -R "${{ github.repository }}" --json assets --jq '.assets[]|"\(.name) \(.size)"'
