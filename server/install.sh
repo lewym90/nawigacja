@@ -3,8 +3,9 @@
 set -e
 install -d /opt/nav-tts /var/lib/nav-tts
 curl -fsSL https://raw.githubusercontent.com/lewym90/nawigacja/main/server/nav-tts.py -o /opt/nav-tts/nav-tts.py
-if [ ! -s /etc/nav-tts.env ]; then
-  read -rsp "Klucz Gemini (nic nie widać przy wpisywaniu): " K; echo
+if ! grep -q '^GEMINI_KEY=.\{20,\}' /etc/nav-tts.env 2>/dev/null; then
+  read -rsp "Klucz Gemini (nic nie widać przy wpisywaniu): " K </dev/tty; echo
+  if [ ${#K} -lt 20 ]; then echo "Za krótki klucz, przerywam."; exit 1; fi
   printf 'GEMINI_KEY=%s\n' "$K" > /etc/nav-tts.env
   chmod 600 /etc/nav-tts.env
 fi
