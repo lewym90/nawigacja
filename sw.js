@@ -4,7 +4,7 @@ const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
   './vendor/maplibre-gl.js', './vendor/maplibre-gl.css',
   './js/app.js', './js/config.js', './js/geo.js', './js/routing.js', './js/guidance.js',
-  './js/hazards.js', './js/speech-pl.js', './js/speed.js', './js/places.js', './js/limits.js', './js/voice.js', './js/sim.js', './js/mapstyle.js', './js/icons.js',
+  './js/hazards.js', './js/speech-pl.js', './js/speed.js', './js/places.js', './js/limits.js', './js/valhalla.js', './js/provider.js', './js/voice.js', './js/sim.js', './js/mapstyle.js', './js/icons.js',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
 ];
 

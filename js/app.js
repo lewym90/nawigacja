@@ -1,7 +1,8 @@
 import { Places } from './places.js';
 import { CONFIG, APP_VERSION, VOICES, loadSettings, saveSettings, STORAGE } from './config.js';
 import { buildStyle, isNight } from './mapstyle.js';
-import { fetchRoutes, fmtDist, fmtDuration, limitAt } from './routing.js';
+import { getRoutes } from './provider.js';
+import { fmtDist, fmtDuration, limitAt } from './routing.js';
 import { Guidance } from './guidance.js';
 import { SpeedFilter } from './speed.js';
 import { loadRouteLimits } from './limits.js';
@@ -307,7 +308,7 @@ async function planRoute() {
   const from = S.pos ? [S.pos.lng, S.pos.lat] : map.getCenter().toArray();
   toast('Wyznaczam trasę…', 8000);
   try {
-    S.routes = await fetchRoutes(CONFIG.routingUrl, [from, [d.lng, d.lat]]);
+    S.routes = await getRoutes(CONFIG, [from, [d.lng, d.lat]]);
   } catch (e) {
     toast('Nie udało się wyznaczyć trasy. Spróbuj ponownie.', 4000);
     return;
@@ -836,7 +837,7 @@ async function reroute(fix) {
   toast('Zjechałeś z trasy. Przeliczam…', 4000);
   voice.say('Przeliczam trasę', { prio: 3 });
   try {
-    const rs = await fetchRoutes(CONFIG.routingUrl, [[fix.lng, fix.lat], [S.dest.lng, S.dest.lat]], { alternatives: false });
+    const rs = await getRoutes(CONFIG, [[fix.lng, fix.lat], [S.dest.lng, S.dest.lat]], { alternatives: false });
     if (S.mode !== 'nav' || S.nav !== N) return;
     const route = rs[0];
     applyHazards([route]);

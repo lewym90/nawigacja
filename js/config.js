@@ -11,6 +11,7 @@ export const CONFIG = {
 
   // Silnik tras zgodny z API OSRM. Docelowo: własny Valhalla/OSRM na serwerze.
   routingUrl: 'https://router.project-osrm.org',
+  routingOwnUrl: '', // własny Valhalla, np. https://188-68-247-201.sslip.io/valhalla (puste = tylko publiczny OSRM)
 
   // Overpass: fotoradary i odcinkowe pomiary z OSM.
   overpassUrl: 'https://overpass-api.de/api/interpreter',
