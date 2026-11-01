@@ -40,3 +40,10 @@ test('pieszo: zapowiedzi na krótkich dystansach', () => {
   assert.ok(say.some((t) => /^Za .*(metrów|metry)/.test(t)), `zapowiedź: ${say}`);
   assert.ok(say.some((t) => t === 'Skręć w prawo'), `komenda: ${say}`);
 });
+
+test('schody i przejścia nie są „ciche”, mimo że manewr to jazda prosto', async () => {
+  const { isSilent } = await import('../js/guidance.js');
+  assert.equal(isSilent({ type: 'continue', modifier: 'straight' }), true);
+  assert.equal(isSilent({ type: 'continue', modifier: 'straight', feature: 'stairs' }), false);
+  assert.equal(isSilent({ type: 'turn', modifier: 'straight', feature: 'crossing' }), false);
+});

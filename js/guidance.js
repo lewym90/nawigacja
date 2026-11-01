@@ -143,6 +143,7 @@ function lower(t) {
 export function isSilent(step) {
   if (!step) return true;
   if (step.type === 'arrive') return false;
+  if (step.feature) return false; // schody, przejścia, windy: zawsze zapowiadamy
   if (step.type === 'new name' || step.type === 'notification' || step.type === 'depart') return true;
   if (step.type === 'continue' && (!step.modifier || step.modifier === 'straight')) return true;
   if (step.type === 'turn' && (!step.modifier || step.modifier === 'straight')) return true;
