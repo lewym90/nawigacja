@@ -24,3 +24,14 @@ test('wyłączony głos nic nie mówi, a test diagnostyczny zgłasza polski gło
   assert.equal(spoken.length, n);
   assert.equal(v.test().pl, 'Zosia');
 });
+
+test('toneWavUri: poprawny nagłówek WAV i długość', async () => {
+  const { toneWavUri } = await import('../js/voice.js');
+  const uri = toneWavUri(880, 100, 8000);
+  assert.match(uri, /^data:audio\/wav;base64,/);
+  const bytes = Buffer.from(uri.split(',')[1], 'base64');
+  assert.equal(bytes.toString('ascii', 0, 4), 'RIFF');
+  assert.equal(bytes.toString('ascii', 8, 12), 'WAVE');
+  assert.equal(bytes.readUInt32LE(40), 800 * 2); // 100 ms przy 8 kHz, 16 bitów
+  assert.equal(bytes.length, 44 + 1600);
+});

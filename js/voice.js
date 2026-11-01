@@ -1,6 +1,26 @@
 // Głos: przeglądarkowy syntezator mowy. Na iPhonie pierwsza wypowiedź musi
 // pochodzić z dotknięcia ekranu, dlatego unlock() wołamy z przycisku „Start” lub „Symulacja”.
 
+/** Ton jako plik WAV w adresie data: (element <audio> gra na iOS mimo wyciszenia przełącznikiem). */
+export function toneWavUri(freq = 880, ms = 160, rate = 22050) {
+  const n = Math.floor((rate * ms) / 1000);
+  const buf = new ArrayBuffer(44 + n * 2);
+  const dv = new DataView(buf);
+  const w = (o, str) => { for (let i = 0; i < str.length; i++) dv.setUint8(o + i, str.charCodeAt(i)); };
+  w(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, rate, true); dv.setUint32(28, rate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+  w(36, 'data'); dv.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) {
+    const env = Math.min(1, i / 400, (n - i) / 400); // łagodny początek i koniec bez trzasku
+    dv.setInt16(44 + i * 2, Math.round(Math.sin((2 * Math.PI * freq * i) / rate) * 0.6 * env * 32767), true);
+  }
+  let bin = '';
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.length; i += 4096) bin += String.fromCharCode(...bytes.subarray(i, i + 4096));
+  return `data:audio/wav;base64,${btoa(bin)}`;
+}
+
 export class Voice {
   constructor({ maxUtteranceMs = 20000 } = {}) {
     this.enabled = true;
@@ -24,6 +44,7 @@ export class Voice {
   }
 
   unlock() {
+    try { const a = new Audio(toneWavUri(440, 30)); a.volume = 0.01; a.play().catch(() => {}); } catch { /* ignoruj */ }
     if (!this.ok) return;
     const u = new SpeechSynthesisUtterance('.');
     u.volume = 0;
@@ -82,19 +103,16 @@ export class Voice {
     }
   }
 
-  /** Krótki sygnał dźwiękowy (Web Audio). */
+  /** Krótki sygnał dźwiękowy przez element <audio> (kanał multimediów). */
   beep(freq = 880, ms = 140) {
     try {
-      this.ctx = this.ctx || new (window.AudioContext || window.webkitAudioContext)();
-      if (this.ctx.state === 'suspended') this.ctx.resume();
-      const o = this.ctx.createOscillator();
-      const g = this.ctx.createGain();
-      o.frequency.value = freq;
-      g.gain.value = 0.15;
-      o.connect(g);
-      g.connect(this.ctx.destination);
-      o.start();
-      o.stop(this.ctx.currentTime + ms / 1000);
+      this.tones = this.tones || new Map();
+      const key = `${freq}:${ms}`;
+      if (!this.tones.has(key)) this.tones.set(key, toneWavUri(freq, ms));
+      const a = new Audio(this.tones.get(key));
+      a.volume = 1;
+      const p = a.play();
+      if (p && p.catch) p.catch((e) => { this.lastError = (e && e.name) || 'audio'; if (this.onError) this.onError(this.lastError); });
     } catch { /* brak audio */ }
   }
 

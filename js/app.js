@@ -857,9 +857,9 @@ $('btn-voice-test').onclick = () => {
   voice.unlock();
   const i = voice.test();
   const msg = !i.supported ? 'Ta przeglądarka nie ma syntezatora mowy'
-    : i.pl ? `Głos polski: ${i.pl}. Jeśli nic nie słychać: sprawdź przełącznik wyciszenia i głośność.`
+    : i.pl ? `Głos polski: ${i.pl}. Najpierw usłyszysz sygnał, potem mowę. Sygnał słychać, a mowy nie? Wtedy to syntezator telefonu.`
     : `Brak polskiego głosu (głosów: ${i.voices}). Dodaj go: Ustawienia, Dostępność, Treści czytane, Głosy.`;
-  toast(msg, 7000);
+  toast(msg, 9000);
 };
 $('btn-refresh').onclick = async () => {
   try {
