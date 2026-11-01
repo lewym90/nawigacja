@@ -77,6 +77,13 @@ const map = new maplibregl.Map({
 });
 map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
 
+// iOS potrafi zmienić wysokość okna po starcie (pasek adresu, obszar bezpieczny): dopasuj mapę.
+const fitMap = () => map.resize();
+window.addEventListener('resize', fitMap);
+window.addEventListener('orientationchange', () => setTimeout(fitMap, 250));
+if (window.visualViewport) window.visualViewport.addEventListener('resize', fitMap);
+[300, 1200, 3000].forEach((ms) => setTimeout(fitMap, ms));
+
 function installLayers() {
   if (!map.getSource('alt')) {
     map.addSource('alt', { type: 'geojson', data: emptyFC() });
@@ -185,7 +192,7 @@ async function runSearch(q) {
   if (searchCtrl) searchCtrl.abort();
   searchCtrl = new AbortController();
   const c = S.pos ? [S.pos.lng, S.pos.lat] : map.getCenter().toArray();
-  const url = `${CONFIG.geocodeUrl}?${new URLSearchParams({ q, limit: '6', lang: 'pl', lon: c[0].toFixed(4), lat: c[1].toFixed(4) })}`;
+  const url = `${CONFIG.geocodeUrl}?${new URLSearchParams({ q, limit: '6', lang: 'default', lon: c[0].toFixed(4), lat: c[1].toFixed(4) })}`;
   try {
     const res = await fetch(url, { signal: searchCtrl.signal });
     if (!res.ok) throw new Error(String(res.status));

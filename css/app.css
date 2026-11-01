@@ -51,7 +51,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 input { font: inherit; color: inherit; user-select: text; -webkit-user-select: text; }
 [hidden] { display: none !important; }
 
-#map { position: absolute; inset: 0; }
+#map { position: absolute; inset: 0; min-height: 100vh; min-height: 100dvh; }
 .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right { margin-bottom: calc(var(--safe-b) + var(--attr-lift, 0px)); }
 .maplibregl-ctrl-attrib { background: transparent !important; font-size: 10px; opacity: 0.7; }
 .maplibregl-ctrl-attrib a { color: var(--muted) !important; }
