@@ -27,7 +27,7 @@ export const MODES = {
     pitch: 55,
     zoom: () => 18,
     compass: true,        // kierunek z kompasu telefonu, gdy stoisz lub idziesz wolno
-    guide: { maxOffM: 22, offFixes: 4, minSpeed: 1.2, nowMin: 12, nowMax: 28, nowSec: 5, remindMin: 70, remindMax: 220, remindSec: 60, preMargin: 25, passedPrev: 18, chainFar: 45, chainNear: 28 },
+    guide: { arriveM: 8, maxOffM: 22, offFixes: 4, minSpeed: 1.2, nowMin: 12, nowMax: 28, nowSec: 5, remindMin: 70, remindMax: 220, remindSec: 60, preMargin: 25, passedPrev: 18, chainFar: 45, chainNear: 28 },
     say: { arrive: 'Jesteś na miejscu', off: 'Zszedłeś z trasy. Przeliczam…', go: 'Idź' },
   },
   bicycle: {
@@ -40,7 +40,7 @@ export const MODES = {
     simKmh: 18,
     pitch: 55,
     zoom: (kmh) => (kmh > 25 ? 16.8 : 17.4),
-    guide: { maxOffM: 28, offFixes: 3, minSpeed: 4, nowMin: 25, nowMax: 70, nowSec: 5, remindMin: 150, remindMax: 500, remindSec: 40, preMargin: 40, passedPrev: 35, chainFar: 90, chainNear: 55 },
+    guide: { arriveM: 12, maxOffM: 28, offFixes: 3, minSpeed: 4, nowMin: 25, nowMax: 70, nowSec: 5, remindMin: 150, remindMax: 500, remindSec: 40, preMargin: 40, passedPrev: 35, chainFar: 90, chainNear: 55 },
     say: { arrive: 'Dojechałeś do celu', off: 'Zjechałeś z trasy. Przeliczam…', go: 'Ruszaj' },
   },
 };

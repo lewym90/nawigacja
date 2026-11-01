@@ -31,10 +31,14 @@ const MAP = {
   22: ['continue', 'straight'], 23: ['fork', 'slight right'], 24: ['fork', 'slight left'],
   25: ['merge', 'straight'], 26: ['roundabout', null], 27: ['exit roundabout', null],
   37: ['merge', 'right'], 38: ['merge', 'left'],
+  40: ['continue', 'straight'], 41: ['continue', 'straight'], 42: ['continue', 'straight'], 43: ['continue', 'straight'], 44: ['continue', 'straight'],
 };
 
 // Cechy dróg pieszych rozpoznajemy po opisie manewru (Valhalla nie ma na to osobnego pola w /route).
 export function featureOf(m) {
+  if (m.type === 40) return 'stairs';
+  if (m.type === 41) return 'escalator';
+  if (m.type === 42) return 'elevator';
   const t = `${m.instruction || ''} ${m.verbal_pre_transition_instruction || ''}`;
   if (/schod|stair|steps\b/i.test(t)) return 'stairs';
   if (/ruchom|escalator/i.test(t)) return 'escalator';
@@ -51,6 +55,46 @@ function nameOf(m) {
   return { name, ref: ref || '' };
 }
 
+const TURN_TYPES = new Set([7, 8, 9, 10, 11, 14, 15, 16, 22]);
+const norm180 = (d) => ((d + 540) % 360) - 180;
+
+/**
+ * Pieszo i rowerem Valhalla zwraca każdy uskok chodnika jako osobny „skręt” (1–5 m). To szum.
+ * Zostawiamy: start, cel, schody/przejścia/windy i prawdziwe skręty (zmiana kierunku >= 30°
+ * względem ostatnio zachowanego odcinka); resztę wchłaniamy w poprzedni krok.
+ */
+export function simplifyWalk(mans) {
+  if (!mans.length || !['pedestrian', 'bicycle'].includes(mans[0].travel_mode)) return mans;
+  const out = [];
+  let heading = null; // kierunek marszu na ostatnio zachowanym odcinku
+  for (let k = 0; k < mans.length; k++) {
+    const m = mans[k];
+    const last = k === mans.length - 1;
+    const hasBearing = typeof m.bearing_after === 'number';
+    if (k === 0 || last || featureOf(m) || !TURN_TYPES.has(m.type) || !hasBearing || heading == null) {
+      out.push({ ...m });
+      if (hasBearing) heading = m.bearing_after;
+      continue;
+    }
+    const delta = norm180(m.bearing_after - heading);
+    const a = Math.abs(delta);
+    // krótki odcinek, po którym wracamy na dawny kierunek (zygzak chodnika)
+    const nxt = mans[k + 1];
+    const zigzag = (m.length || 0) < 0.02 && nxt && typeof nxt.bearing_after === 'number' && Math.abs(norm180(nxt.bearing_after - heading)) < 30;
+    if (a < 30 || zigzag) { // drobny uskok: dalej idziemy prosto, odcinek dolicza się do poprzedniego kroku
+      const prev = out[out.length - 1];
+      prev.length = (prev.length || 0) + (m.length || 0);
+      prev.time = (prev.time || 0) + (m.time || 0);
+      continue;
+    }
+    const side = delta > 0 ? 'right' : 'left';
+    const mod = a < 60 ? `slight ${side}` : a < 125 ? side : a < 160 ? `sharp ${side}` : 'uturn';
+    out.push({ ...m, _mod: mod });
+    heading = m.bearing_after;
+  }
+  return out;
+}
+
 /** Jedna trasa Valhalli (obiekt `trip`) -> obiekt jak trasa OSRM. */
 export function tripToOsrmRoute(trip) {
   const coords = [];
@@ -59,13 +103,13 @@ export function tripToOsrmRoute(trip) {
   for (const leg of trip.legs || []) {
     const shape = decodePolyline(leg.shape);
     for (let i = 0; i < shape.length; i++) { if (coords.length && i === 0) continue; coords.push(shape[i]); }
-    const mans = leg.maneuvers || [];
+    const mans = simplifyWalk(leg.maneuvers || []);
     let roundaboutIdx = -1;
     for (let k = 0; k < mans.length; k++) {
       const m = mans[k];
       const meters = (m.length || 0) * 1000;
       const seconds = m.time || 0;
-      const map = MAP[m.type] || ['turn', 'straight'];
+      const map = m._mod ? ['turn', m._mod] : (MAP[m.type] || ['turn', 'straight']);
       if (m.type === 27 && roundaboutIdx >= 0) { // zjazd z ronda: doliczamy do kroku „rondo” i bierzemy nazwę ulicy wyjazdowej
         const st = steps[roundaboutIdx];
         st.distance += meters; st.duration += seconds;

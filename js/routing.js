@@ -62,7 +62,11 @@ function instructFull(step) {
   if (m.feature === 'stairs') return { text: `Idź po schodach${toward}`, icon: iconFor(mod) };
   if (m.feature === 'escalator') return { text: 'Wjedź schodami ruchomymi', icon: 'straight' };
   if (m.feature === 'elevator') return { text: 'Skorzystaj z windy', icon: 'straight' };
-  if (m.feature === 'crossing') return { text: `Przejdź przez ulicę${dir && dir !== 'prosto' ? ` i skręć ${dir}` : ''}${toward}`, icon: iconFor(mod) };
+  if (m.feature === 'crossing') {
+    // Valhalla: „Skręć w lewo w przejście dla pieszych” = wchodzimy na przejście skręcając
+    if (dir && dir !== 'prosto') return { text: `Skręć ${dir} na przejście dla pieszych`, icon: iconFor(mod) };
+    return { text: 'Przejdź przez ulicę', icon: 'straight' };
+  }
 
   switch (type) {
     case 'depart':

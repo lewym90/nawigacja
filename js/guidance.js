@@ -16,6 +16,7 @@ export class Guidance {
       minSpeed: 4, nowMin: 40, nowMax: 130, nowSec: 4.5, remindMin: 350, remindMax: 1400, remindSec: 32,
       preMargin: 80, passedPrev: 70, chainFar: 250, chainNear: 150, ...p,
     };
+    this.arriveM = p.arriveM ?? 25; // pieszo: cel jest dokładniej, a schody bywają tuż przed nim
     this.maxOffM = opts.maxOffM ?? p.maxOffM ?? 35;
     this.offFixes = opts.offFixes ?? p.offFixes ?? 3;
     this.lastAlong = 0;
@@ -43,7 +44,7 @@ export class Guidance {
     if (p.dist <= tol) this.lastAlong = along;
 
     const remaining = Math.max(0, r.distance - along);
-    this.arrived = remaining < 25;
+    this.arrived = remaining < this.arriveM;
 
     // Następny manewr: pierwszy krok, którego miejsce jest przed nami.
     let nextIdx = r.steps.findIndex((s, i) => i > 0 && s.at > along + 8 && !isSilent(s));
