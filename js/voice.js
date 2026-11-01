@@ -52,7 +52,7 @@ export class Voice {
     if (!this.player) this.player = new Audio();
     try { this.player.src = toneWavUri(440, 30); this.player.volume = 0.01; this.player.play().catch(() => {}); } catch { /* ignoruj */ }
     if (this.engine === 'robot') return;
-    this.hold(true);
+    // Silnik systemowy: żadnego dźwięku z <audio> obok mowy (na iPhonie potrafi ją wyciszyć).
     if (!this.ok) return;
     // Pierwsza wypowiedź musi paść z dotknięcia: krótka, ale prawdziwa (cicha potrafiła zawisnąć i zablokować kolejkę).
     try {
@@ -189,7 +189,7 @@ export class Voice {
   test() {
     const was = this.enabled;
     this.enabled = true;
-    this.beep(880, 160);
+    if (this.engine === 'robot') this.beep(880, 160);
     this.say('Test głosu. Za trzysta metrów skręć w prawo.', { urgent: true });
     this.enabled = was;
     return this.info();

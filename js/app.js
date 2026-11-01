@@ -15,7 +15,7 @@ const $ = (id) => document.getElementById(id);
 const settings = loadSettings();
 const voice = new Voice();
 voice.enabled = settings.voice;
-voice.engine = settings.voiceEngine === 'system' ? 'system' : 'robot';
+voice.engine = settings.ttsEngine === 'robot' ? 'robot' : 'system';
 const reports = new ReportStore();
 
 const S = {
@@ -841,7 +841,7 @@ function syncMenu() {
   sw('sw-hz', settings.hazardsVoice);
   sw('sw-tilt', settings.tilt);
   document.querySelectorAll('#seg-theme button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.theme));
-  document.querySelectorAll('#seg-engine button').forEach((b) => b.classList.toggle('on', b.dataset.v === (settings.voiceEngine === 'system' ? 'system' : 'robot')));
+  document.querySelectorAll('#seg-engine button').forEach((b) => b.classList.toggle('on', b.dataset.v === (settings.ttsEngine === 'robot' ? 'robot' : 'system')));
 }
 $('btn-menu').onclick = () => { syncMenu(); show('menu', true); };
 $('btn-menu-x').onclick = () => show('menu', false);
@@ -853,7 +853,7 @@ document.querySelectorAll('#seg-theme button').forEach((b) => (b.onclick = () =>
 }));
 
 document.querySelectorAll('#seg-engine button').forEach((b) => (b.onclick = () => {
-  settings.voiceEngine = b.dataset.v; voice.engine = b.dataset.v; voice.hold(false); saveSettings(settings); syncMenu();
+  settings.ttsEngine = b.dataset.v; voice.engine = b.dataset.v; voice.hold(false); saveSettings(settings); syncMenu();
 }));
 
 // ---------- Start ----------
@@ -867,7 +867,7 @@ $('btn-voice-test').onclick = () => {
   const i = voice.test();
   const msg = !i.supported ? 'Ta przeglądarka nie ma syntezatora mowy'
     : i.robot ? 'Głos wbudowany. Po sygnale powinieneś usłyszeć mowę. Brak mowy? Napisz mi, co dalej słychać.'
-    : i.pl ? `Głos polski: ${i.pl}. Najpierw usłyszysz sygnał, potem mowę. Sygnał słychać, a mowy nie? Wtedy to syntezator telefonu.`
+    : i.pl ? `Głos polski: ${i.pl}. Teraz bez sygnału, sama mowa. Słychać Zosię?`
     : `Brak polskiego głosu (głosów: ${i.voices}). Dodaj go: Ustawienia, Dostępność, Treści czytane, Głosy.`;
   toast(msg, 9000);
 };

@@ -1,5 +1,5 @@
 // Service worker: powłoka aplikacji działa bez sieci. Kafelki i dane tras idą przez sieć.
-const VERSION = 'nav-v0.1.9';
+const VERSION = 'nav-v0.1.10';
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
   './vendor/maplibre-gl.js', './vendor/maplibre-gl.css',
