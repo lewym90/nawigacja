@@ -22,7 +22,7 @@ export const MODES = {
     costing: 'pedestrian',
     hazards: false,
     limits: false,
-    alternatives: true,
+    alternatives: false, // pieszo warianty wychodzą prawie identyczne: jedna, najlepsza trasa
     simKmh: 5,
     pitch: 55,
     zoom: () => 18,
@@ -36,7 +36,7 @@ export const MODES = {
     costing: 'bicycle',
     hazards: false,
     limits: false,
-    alternatives: true,
+    alternatives: false,
     simKmh: 18,
     pitch: 55,
     zoom: (kmh) => (kmh > 25 ? 16.8 : 17.4),

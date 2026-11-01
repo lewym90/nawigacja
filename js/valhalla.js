@@ -71,6 +71,13 @@ export function simplifyWalk(mans) {
     const m = mans[k];
     const last = k === mans.length - 1;
     const hasBearing = typeof m.bearing_after === 'number';
+    // przejście przez ulicę, po którym wracamy na dawny kierunek: to jedno „Przejdź przez ulicę”
+    const nx = mans[k + 1];
+    if (featureOf(m) === 'crossing' && k > 0 && !last && (m.length || 0) < 0.03 && heading != null && nx && typeof nx.bearing_after === 'number'
+        && Math.abs(norm180(nx.bearing_after - heading)) < 30) {
+      out.push({ ...m, _mod: 'straight' });
+      continue;
+    }
     if (k === 0 || last || featureOf(m) || !TURN_TYPES.has(m.type) || m.type === 12 || m.type === 13 || !hasBearing || heading == null) {
       out.push({ ...m });
       if (hasBearing) heading = m.bearing_after;
@@ -81,7 +88,9 @@ export function simplifyWalk(mans) {
     // krótki odcinek, po którym wracamy na dawny kierunek (zygzak chodnika)
     const nxt = mans[k + 1];
     const zigzag = (m.length || 0) < 0.02 && nxt && typeof nxt.bearing_after === 'number' && Math.abs(norm180(nxt.bearing_after - heading)) < 30;
-    if (a < 30 || zigzag) { // drobny uskok: dalej idziemy prosto, odcinek dolicza się do poprzedniego kroku
+    const beforeArrive = nxt && nxt.type >= 4 && nxt.type <= 6; // ostatnie metry przed celem
+    const faint = a < 60 && (m.length || 0) < 0.025;           // lekki skręt na krótkim odcinku
+    if (a < 30 || zigzag || faint || (beforeArrive && (m.length || 0) < 0.01)) { // drobny uskok: dalej idziemy prosto, odcinek dolicza się do poprzedniego kroku
       const prev = out[out.length - 1];
       prev.length = (prev.length || 0) + (m.length || 0);
       prev.time = (prev.time || 0) + (m.time || 0);
@@ -149,6 +158,8 @@ export function valhallaToOsrm(json) {
 /** Zapytanie o trasę: costing = auto | pedestrian | bicycle. */
 // Koszty dróg dopasowane do Polski. Domyślnie Valhalla bardzo karze pieszego za „podjazdy” i „alejki”
 // (x5 i x2): na osiedlach to zwykle jedyne i najkrótsze przejścia, więc dawała objazdy wokół bloków.
+export const SNAP_RADIUS = { auto: 10, pedestrian: 15, bicycle: 12 };
+
 export const COSTING_OPTIONS = {
   pedestrian: { pedestrian: { walkway_factor: 1, sidewalk_factor: 1, alley_factor: 1, driveway_factor: 1, use_living_streets: 1, use_tracks: 0.6 } },
   bicycle: { bicycle: { service_penalty: 5, use_living_streets: 1 } },
@@ -160,7 +171,10 @@ export const COSTING_OPTIONS = {
  * wtedy zgodnie z kierunkiem jazdy (bez „zawróć” i objeżdżania bloku, gdy stoisz na wyjeździe).
  */
 export function valhallaRequest(points, { costing = 'auto', alternatives = true, heading = null } = {}) {
-  const locations = points.map(([lon, lat]) => ({ lat, lon }));
+  // radius: Valhalla bierze pod uwagę WSZYSTKIE drogi w tym promieniu, a nie tylko najbliższą. Bez tego
+  // punkt przy chodniku ledwo połączonym z siecią (zamiast sąsiedniej uliczki) daje objazd wokół bloku.
+  const R = SNAP_RADIUS[costing] ?? 10;
+  const locations = points.map(([lon, lat]) => ({ lat, lon, radius: R }));
   if (heading != null && isFinite(heading)) { locations[0].heading = Math.round(((heading % 360) + 360) % 360); locations[0].heading_tolerance = 60; }
   const opts = COSTING_OPTIONS[costing];
   return {
@@ -172,22 +186,114 @@ export function valhallaRequest(points, { costing = 'auto', alternatives = true,
   };
 }
 
+// ---------- Dobór punktu wejścia do sieci dróg (pieszo, rower) ----------
+// Valhalla przyczepia punkt do NAJBLIŻSZEJ drogi, nawet gdy to chodnik ledwo połączony z siecią,
+// a 10 m dalej jest uliczka, którą dojdziesz 5 razy krócej. Dlatego pytamy o kilka najbliższych dróg
+// i wybieramy tę, z której cała trasa (plus dojście do niej) wychodzi najszybciej.
+
+const WALK_MS = 1.3; // m/s: dojście z punktu GPS do wybranej drogi
+
+const rad = (d) => (d * Math.PI) / 180;
+export function distM(a, b) { // a, b: [lon, lat]
+  const dLat = rad(b[1] - a[1]);
+  const dLon = rad(b[0] - a[0]);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[1])) * Math.cos(rad(b[1])) * Math.sin(dLon / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.sqrt(h));
+}
+
+/** Odpowiedź /locate -> kandydaci: po jednym (najbliższym) na drogę, od najbliższego, do maxN. */
+export function pickCandidates(locateJson, from, maxN = 8) {
+  const best = new Map();
+  const edges = (locateJson && locateJson[0] && locateJson[0].edges) || [];
+  for (const e of edges) {
+    if (typeof e.correlated_lat !== 'number') continue;
+    const id = (e.edge_info && e.edge_info.way_id) ?? `${e.correlated_lat},${e.correlated_lon}`;
+    const pt = [e.correlated_lon, e.correlated_lat];
+    const d = distM(from, pt);
+    if (!best.has(id) || d < best.get(id).d) best.set(id, { d, pt });
+  }
+  const list = [...best.values()].sort((x, y) => x.d - y.d).slice(0, maxN);
+  return list.length ? list : [{ d: 0, pt: from }];
+}
+
+/** Macierz czasów (źródła x cele) + dojście -> najlepsza para punktów. */
+export function pickBestPair(matrix, ca, cb) {
+  let best = null;
+  (matrix || []).forEach((row, i) => row.forEach((cell, j) => {
+    if (cell == null || typeof cell.time !== 'number') return;
+    const total = cell.time + (ca[i].d + cb[j].d) / WALK_MS;
+    if (!best || total < best.total) best = { total, i, j };
+  }));
+  return best ? { from: ca[best.i], to: cb[best.j] } : null;
+}
+
+async function getJson(base, path, body, signal) {
+  const res = await fetch(`${base.replace(/\/$/, '')}/${path}?json=${encodeURIComponent(JSON.stringify(body))}`, { signal });
+  if (!res.ok) throw new Error(`Valhalla ${path}: ${res.status}`);
+  return res.json();
+}
+
+export async function snapEnds(base, from, to, costing, { signal, radius = 30, maxN = 8 } = {}) {
+  const loc = (p) => getJson(base, 'locate', { locations: [{ lat: p[1], lon: p[0], radius }], costing, verbose: true }, signal);
+  const [la, lb] = await Promise.all([loc(from), loc(to)]);
+  const ca = pickCandidates(la, from, maxN);
+  const cb = pickCandidates(lb, to, maxN);
+  const m = await getJson(base, 'sources_to_targets', {
+    sources: ca.map((c) => ({ lat: c.pt[1], lon: c.pt[0] })),
+    targets: cb.map((c) => ({ lat: c.pt[1], lon: c.pt[0] })),
+    costing,
+    ...(COSTING_OPTIONS[costing] && Object.keys(COSTING_OPTIONS[costing]).length ? { costing_options: COSTING_OPTIONS[costing] } : {}),
+  }, signal);
+  return pickBestPair(m.sources_to_targets, ca, cb);
+}
+
+/** Dokleja prawdziwy początek i koniec (dojście do drogi), tak by kroki i geometria się zgadzały. */
+export function withEndpoints(osrm, origin, dest, d0, d1) {
+  for (const r of osrm.routes) {
+    const c = r.geometry.coordinates;
+    if (d0 > 1) c.unshift(origin);
+    if (d1 > 1) c.push(dest);
+    const steps = r.legs[0].steps;
+    if (d0 > 1) { steps[0].distance += d0; steps[0].duration += d0 / WALK_MS; }
+    if (d1 > 1 && steps.length > 1) { steps[steps.length - 2].distance += d1; steps[steps.length - 2].duration += d1 / WALK_MS; }
+    r.distance += (d0 > 1 ? d0 : 0) + (d1 > 1 ? d1 : 0);
+    r.duration += ((d0 > 1 ? d0 : 0) + (d1 > 1 ? d1 : 0)) / WALK_MS;
+  }
+  return osrm;
+}
+
+const SNAP_MODES = new Set(['pedestrian', 'bicycle']);
+
 export async function fetchValhallaRoutes(base, points, { costing = 'auto', alternatives = true, heading = null, timeoutMs = 9000 } = {}) {
-  const get = async (hd) => {
+  const get = async (hd, pts, exact) => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-      const q = encodeURIComponent(JSON.stringify(valhallaRequest(points, { costing, alternatives, heading: hd })));
-      const res = await fetch(`${base.replace(/\/$/, '')}/route?json=${q}`, { signal: ctrl.signal });
+      const body = valhallaRequest(pts, { costing, alternatives, heading: hd });
+      if (exact) body.locations.forEach((l) => { delete l.radius; });
+      const res = await fetch(`${base.replace(/\/$/, '')}/route?json=${encodeURIComponent(JSON.stringify(body))}`, { signal: ctrl.signal });
       if (!res.ok) throw new Error(`Valhalla: ${res.status}`);
       return valhallaToOsrm(await res.json());
     } finally {
       clearTimeout(timer);
     }
   };
+  // Pieszo i rowerem: wybieramy najlepszy punkt wejścia do sieci dróg. Gdy się nie uda, zwykła trasa.
+  if (SNAP_MODES.has(costing) && points.length === 2) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 4000);
+      let pair;
+      try { pair = await snapEnds(base, points[0], points[1], costing, { signal: ctrl.signal }); } finally { clearTimeout(timer); }
+      if (pair) {
+        const osrm = await get(null, [pair.from.pt, pair.to.pt], true);
+        return withEndpoints(osrm, points[0], points[1], pair.from.d, pair.to.d);
+      }
+    } catch { /* przechodzimy do zwykłego zapytania */ }
+  }
   // Kierunek jazdy to wskazówka: gdy żadna droga go nie spełnia, liczymy bez niego.
   if (heading != null && isFinite(heading)) {
-    try { return await get(heading); } catch { /* bez kierunku */ }
+    try { return await get(heading, points, false); } catch { /* bez kierunku */ }
   }
-  return get(null);
+  return get(null, points, false);
 }

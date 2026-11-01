@@ -121,7 +121,7 @@ test('pieszo: kroki tekstowe schodów i przejścia', async () => {
       { type: 4, travel_mode: 'pedestrian', bearing_after: 0, begin_shape_index: 3, length: 0, time: 0, instruction: 'Dotarłeś do celu.' },
     ] }] } }))[0];
   const texts = r.steps.map((s) => s.text);
-  assert.ok(texts.includes('Skręć w lewo na przejście dla pieszych'), texts.join(' | '));
+  assert.ok(texts.includes('Przejdź przez ulicę'), texts.join(' | '));
   assert.ok(texts.includes('Idź po schodach'), texts.join(' | '));
 });
 
@@ -132,6 +132,8 @@ test('zapytanie Valhalli: koszty pieszych (podjazdy/alejki bez kary) i kierunek 
   assert.equal(ped.costing_options.pedestrian.alley_factor, 1);
   assert.equal(COSTING_OPTIONS.pedestrian.pedestrian.sidewalk_factor, 1);
   const car = valhallaRequest([[22.5, 51.2], [22.6, 51.3]], { costing: 'auto', heading: 370 });
+  assert.equal(car.locations[0].radius, 10);
+  assert.equal(ped.locations[1].radius, 15);
   assert.equal(car.locations[0].heading, 10);
   assert.equal(car.locations[0].heading_tolerance, 60);
   assert.equal(car.locations[1].heading, undefined);
@@ -148,4 +150,74 @@ test('uproszczenie marszu nie robi „zawróć” z dużego skrętu', async () =
     { type: 4, length: 0, bearing_after: 175, travel_mode: 'pedestrian', instruction: 'y' },
   ];
   assert.match(simplifyWalk(mans)[1]._mod, /sharp right/);
+});
+
+test('prawdziwa odpowiedź Valhalli (Lublin, pieszo): krótka lista kroków bez zygzaków i „zawróć”', async () => {
+  const { readFileSync } = await import('node:fs');
+  const json = JSON.parse(readFileSync(new URL('./fixtures/valhalla-walk-lublin.json', import.meta.url), 'utf8'));
+  const [r] = parseRoutes(valhallaToOsrm(json));
+  const texts = r.steps.map((s) => s.text);
+  assert.ok(Math.abs(r.distance - 669) < 2, `długość ${r.distance}`);
+  assert.ok(r.steps.length <= 5, `za dużo kroków (${r.steps.length}): ${texts.join(' | ')}`);
+  assert.equal(r.steps[0].type, 'depart');
+  assert.equal(r.steps[r.steps.length - 1].type, 'arrive');
+  assert.ok(!texts.some((t) => /Zawróć/.test(t)), texts.join(' | '));
+  assert.ok(texts.includes('Przejdź przez ulicę'), texts.join(' | '));
+  // suma długości kroków = długość trasy
+  const sum = r.steps.reduce((s, x) => s + x.distance, 0);
+  assert.ok(Math.abs(sum - r.distance) < 2, `suma kroków ${sum} vs ${r.distance}`);
+  // żaden krok „skrętu” nie jest krótszy niż 8 m (mikroskręty wchłonięte), poza przejściem
+  assert.ok(r.steps.filter((s) => s.type === 'turn' && !s.feature && s.distance < 8).length === 0);
+});
+
+test('pieszo: wybiera drogę wejścia z najkrótszą trasą (nie tylko najbliższą) i dokleja dojście', async () => {
+  const { fetchValhallaRoutes, pickCandidates, pickBestPair } = await import('../js/valhalla.js');
+  const { readFileSync } = await import('node:fs');
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/valhalla-walk-lublin.json', import.meta.url), 'utf8'));
+  const user = [22.55256, 51.19904]; // [lon, lat]
+  const edge = (way, lat, lon) => ({ edge_info: { way_id: way }, correlated_lat: lat, correlated_lon: lon });
+  const locateOrigin = [{ edges: [edge(1, 51.199043, 22.552495), edge(1, 51.19905, 22.5525), edge(2, 51.198952, 22.552548)] }];
+  const locateDest = [{ edges: [edge(9, 51.198350, 22.544300)] }];
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const u = new URL(url);
+    const body = JSON.parse(u.searchParams.get('json'));
+    calls.push([u.pathname.split('/').pop(), body]);
+    const out = (j) => ({ ok: true, json: async () => j });
+    if (u.pathname.endsWith('/locate')) return out(Math.abs(body.locations[0].lat - 51.19904) < 1e-6 ? locateOrigin : locateDest);
+    if (u.pathname.endsWith('/sources_to_targets')) return out({ sources_to_targets: [[{ time: 600 }], [{ time: 400 }]] }); // droga nr 2 szybsza
+    if (u.pathname.endsWith('/route')) return out(fixture);
+    throw new Error('nieoczekiwane ' + u);
+  };
+  try {
+    const osrm = await fetchValhallaRoutes('https://x/valhalla', [user, [22.5443, 51.19835]], { costing: 'pedestrian', alternatives: false });
+    const routeCall = calls.find((c) => c[0] === 'route')[1];
+    assert.equal(routeCall.locations[0].lat, 51.198952, 'trasa ma ruszać z drogi nr 2, a nie z najbliższego chodnika');
+    assert.equal('radius' in routeCall.locations[0], false);
+    const r = osrm.routes[0];
+    assert.deepEqual(r.geometry.coordinates[0], user, 'linia zaczyna się w punkcie GPS');
+    const sumSteps = r.legs[0].steps.reduce((s, x) => s + x.distance, 0);
+    assert.ok(Math.abs(sumSteps - r.distance) < 2, `kroki ${sumSteps} vs trasa ${r.distance}`);
+    assert.ok(r.distance > 669 && r.distance < 700, `dojście doliczone do trasy: ${r.distance}`);
+  } finally { globalThis.fetch = realFetch; }
+  // pickCandidates: po jednym na drogę, od najbliższego
+  const c = pickCandidates(locateOrigin, user);
+  assert.equal(c.length, 2);
+  assert.ok(c[0].d <= c[1].d);
+  // pickBestPair uwzględnia dojście
+  assert.equal(pickBestPair([[{ time: 100 }], [{ time: 90 }]], [{ d: 0 }, { d: 50 }], [{ d: 0 }]).from.d, 0);
+});
+
+test('auto: bez doboru punktu wejścia (jedno zapytanie), z kierunkiem jazdy', async () => {
+  const { fetchValhallaRoutes } = await import('../js/valhalla.js');
+  const { readFileSync } = await import('node:fs');
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/valhalla-walk-lublin.json', import.meta.url), 'utf8'));
+  const paths = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => { paths.push(new URL(url).pathname.split('/').pop()); return { ok: true, json: async () => fixture }; };
+  try {
+    await fetchValhallaRoutes('https://x/valhalla', [[22.5, 51.2], [22.6, 51.3]], { costing: 'auto', heading: 90 });
+    assert.deepEqual(paths, ['route']);
+  } finally { globalThis.fetch = realFetch; }
 });
