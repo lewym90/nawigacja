@@ -19,7 +19,33 @@ PROMPT = 'Przeczytaj naturalnie, spokojnie i wyraźnie, jak lektor nawigacji sam
 
 os.makedirs(CACHE, exist_ok=True)
 lock = threading.Lock()
-slots = threading.Semaphore(3)  # tyle zapytań do Gemini naraz
+GAP = float(os.environ.get('NAV_TTS_GAP', '7'))  # minimalny odstęp między zapytaniami do Gemini (s)
+gate = threading.Condition()
+gstate = {'next': 0.0, 'urgent': 0}
+last_err = {'msg': ''}
+
+
+def acquire(urgent):
+    """Dozuje zapytania do Gemini: jedno na GAP sekund, pilne wyprzedzają resztę."""
+    with gate:
+        if urgent:
+            gstate['urgent'] += 1
+        try:
+            while True:
+                now = time.time()
+                if now >= gstate['next'] and (urgent or gstate['urgent'] == 0):
+                    gstate['next'] = now + GAP
+                    return
+                gate.wait(timeout=max(0.2, min(2.0, gstate['next'] - now)))
+        finally:
+            if urgent:
+                gstate['urgent'] -= 1
+                gate.notify_all()
+
+
+def backoff(seconds):
+    with gate:
+        gstate['next'] = max(gstate['next'], time.time() + seconds)
 day = {'d': time.strftime('%Y-%m-%d'), 'n': 0}
 inflight = {}
 
@@ -29,12 +55,13 @@ def wav(pcm, rate=24000):
             + b'data' + struct.pack('<I', len(pcm)) + pcm)
 
 
-def synth(text):
+def synth(text, urgent=False):
     body = {'contents': [{'parts': [{'text': PROMPT + text}]}],
             'generationConfig': {'responseModalities': ['AUDIO'],
                                  'speechConfig': {'voiceConfig': {'prebuiltVoiceConfig': {'voiceName': VOICE}}}}}
     last = None
-    for attempt in range(3):
+    for attempt in range(5):
+        acquire(urgent)
         req = urllib.request.Request(
             f'https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent',
             data=json.dumps(body).encode(), headers={'Content-Type': 'application/json', 'x-goog-api-key': KEY})
@@ -42,18 +69,22 @@ def synth(text):
             d = json.load(urllib.request.urlopen(req, timeout=60))
             return wav(base64.b64decode(d['candidates'][0]['content']['parts'][0]['inlineData']['data']))
         except urllib.error.HTTPError as e:
+            raw = e.read().decode('utf-8', 'replace').replace(KEY, '***')
             last = e.code
+            last_err['msg'] = f'{e.code}: {raw[:300]}'
+            print('Gemini', e.code, raw[:400].replace('\n', ' '), file=sys.stderr, flush=True)
             if e.code in (429, 500, 503):
-                time.sleep(1 + attempt)
+                m = re.search(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"', raw)
+                backoff(min(60.0, float(m.group(1)) + 1) if m else 10.0 * (attempt + 1))
                 continue
             raise
-        except (KeyError, IndexError) as e:
+        except (KeyError, IndexError):
             last = 'odpowiedź bez dźwięku'
             time.sleep(1)
     raise RuntimeError(f'Gemini: {last}')
 
 
-def get_audio(text):
+def get_audio(text, urgent=False):
     h = hashlib.sha256(f'{MODEL}|{VOICE}|{text}'.encode()).hexdigest()[:40]
     path = os.path.join(CACHE, h + '.wav')
     if os.path.exists(path):
@@ -77,9 +108,9 @@ def get_audio(text):
                 day['d'], day['n'] = today, 0
             if day['n'] >= DAILY_NEW:
                 raise PermissionError('dzienny limit nowych zdań')
+        data = synth(text, urgent)
+        with lock:
             day['n'] += 1
-        with slots:
-            data = synth(text)
         tmp = path + '.tmp'
         open(tmp, 'wb').write(data)
         os.replace(tmp, path)
@@ -119,7 +150,7 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         if u.path.endswith('/health'):
-            self._send(200, json.dumps({'ok': bool(KEY), 'model': MODEL, 'voice': VOICE, 'new_today': day['n']}).encode(), 'application/json')
+            self._send(200, json.dumps({'ok': bool(KEY), 'model': MODEL, 'voice': VOICE, 'new_today': day['n'], 'gap_s': GAP, 'last_error': last_err['msg']}).encode(), 'application/json')
             return
         o = self.headers.get('Origin', '')
         if o and o not in ALLOWED and not re.match(r'^http://(localhost|127\.0\.0\.1)(:\d+)?$', o):
@@ -130,7 +161,7 @@ class H(BaseHTTPRequestHandler):
             self._send(400, b'zly tekst')
             return
         try:
-            self._send(200, get_audio(t), 'audio/wav', {'Cache-Control': 'public, max-age=31536000, immutable'})
+            self._send(200, get_audio(t, parse_qs(u.query).get('u', ['0'])[0] == '1'), 'audio/wav', {'Cache-Control': 'public, max-age=31536000, immutable'})
         except PermissionError as e:
             self._send(429, str(e).encode())
         except Exception as e:  # noqa: BLE001

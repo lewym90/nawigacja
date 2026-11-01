@@ -209,7 +209,7 @@ export class Voice {
         const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
         const to = setTimeout(() => ctl && ctl.abort(), 40000);
         try {
-          const r = await fetch(`${this.cloudUrl}?t=${encodeURIComponent(key)}`, ctl ? { signal: ctl.signal } : {});
+          const r = await fetch(`${this.cloudUrl}?t=${encodeURIComponent(key)}${urgent ? '&u=1' : ''}`, ctl ? { signal: ctl.signal } : {});
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           const blob = await r.blob();
           if (!blob.size) throw new Error('pusty');
