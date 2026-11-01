@@ -71,7 +71,7 @@ export function simplifyWalk(mans) {
     const m = mans[k];
     const last = k === mans.length - 1;
     const hasBearing = typeof m.bearing_after === 'number';
-    if (k === 0 || last || featureOf(m) || !TURN_TYPES.has(m.type) || !hasBearing || heading == null) {
+    if (k === 0 || last || featureOf(m) || !TURN_TYPES.has(m.type) || m.type === 12 || m.type === 13 || !hasBearing || heading == null) {
       out.push({ ...m });
       if (hasBearing) heading = m.bearing_after;
       continue;
@@ -88,7 +88,7 @@ export function simplifyWalk(mans) {
       continue;
     }
     const side = delta > 0 ? 'right' : 'left';
-    const mod = a < 60 ? `slight ${side}` : a < 125 ? side : a < 160 ? `sharp ${side}` : 'uturn';
+    const mod = a < 60 ? `slight ${side}` : a < 125 ? side : `sharp ${side}`; // „zawróć” tylko gdy tak mówi Valhalla (typ 12/13)
     out.push({ ...m, _mod: mod });
     heading = m.bearing_after;
   }
@@ -147,24 +147,47 @@ export function valhallaToOsrm(json) {
 }
 
 /** Zapytanie o trasę: costing = auto | pedestrian | bicycle. */
-export function valhallaRequest(points, { costing = 'auto', alternatives = true } = {}) {
+// Koszty dróg dopasowane do Polski. Domyślnie Valhalla bardzo karze pieszego za „podjazdy” i „alejki”
+// (x5 i x2): na osiedlach to zwykle jedyne i najkrótsze przejścia, więc dawała objazdy wokół bloków.
+export const COSTING_OPTIONS = {
+  pedestrian: { pedestrian: { walkway_factor: 1, sidewalk_factor: 1, alley_factor: 1, driveway_factor: 1, use_living_streets: 1, use_tracks: 0.6 } },
+  bicycle: { bicycle: { service_penalty: 5, use_living_streets: 1 } },
+  auto: {},
+};
+
+/**
+ * Zapytanie o trasę. heading (stopnie) podajemy przy ponownym liczeniu w ruchu: trasa zaczyna się
+ * wtedy zgodnie z kierunkiem jazdy (bez „zawróć” i objeżdżania bloku, gdy stoisz na wyjeździe).
+ */
+export function valhallaRequest(points, { costing = 'auto', alternatives = true, heading = null } = {}) {
+  const locations = points.map(([lon, lat]) => ({ lat, lon }));
+  if (heading != null && isFinite(heading)) { locations[0].heading = Math.round(((heading % 360) + 360) % 360); locations[0].heading_tolerance = 60; }
+  const opts = COSTING_OPTIONS[costing];
   return {
-    locations: points.map(([lon, lat]) => ({ lat, lon })),
+    locations,
     costing,
+    ...(opts && Object.keys(opts).length ? { costing_options: opts } : {}),
     directions_options: { language: 'pl-PL', units: 'kilometers' },
     ...(alternatives ? { alternates: 2 } : {}),
   };
 }
 
-export async function fetchValhallaRoutes(base, points, { costing = 'auto', alternatives = true, timeoutMs = 9000 } = {}) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const q = encodeURIComponent(JSON.stringify(valhallaRequest(points, { costing, alternatives })));
-    const res = await fetch(`${base.replace(/\/$/, '')}/route?json=${q}`, { signal: ctrl.signal });
-    if (!res.ok) throw new Error(`Valhalla: ${res.status}`);
-    return valhallaToOsrm(await res.json());
-  } finally {
-    clearTimeout(timer);
+export async function fetchValhallaRoutes(base, points, { costing = 'auto', alternatives = true, heading = null, timeoutMs = 9000 } = {}) {
+  const get = async (hd) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const q = encodeURIComponent(JSON.stringify(valhallaRequest(points, { costing, alternatives, heading: hd })));
+      const res = await fetch(`${base.replace(/\/$/, '')}/route?json=${q}`, { signal: ctrl.signal });
+      if (!res.ok) throw new Error(`Valhalla: ${res.status}`);
+      return valhallaToOsrm(await res.json());
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  // Kierunek jazdy to wskazówka: gdy żadna droga go nie spełnia, liczymy bez niego.
+  if (heading != null && isFinite(heading)) {
+    try { return await get(heading); } catch { /* bez kierunku */ }
   }
+  return get(null);
 }

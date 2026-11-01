@@ -124,3 +124,28 @@ test('pieszo: kroki tekstowe schodów i przejścia', async () => {
   assert.ok(texts.includes('Skręć w lewo na przejście dla pieszych'), texts.join(' | '));
   assert.ok(texts.includes('Idź po schodach'), texts.join(' | '));
 });
+
+test('zapytanie Valhalli: koszty pieszych (podjazdy/alejki bez kary) i kierunek startu', async () => {
+  const { valhallaRequest, COSTING_OPTIONS } = await import('../js/valhalla.js');
+  const ped = valhallaRequest([[22.5, 51.2], [22.6, 51.3]], { costing: 'pedestrian' });
+  assert.equal(ped.costing_options.pedestrian.driveway_factor, 1);
+  assert.equal(ped.costing_options.pedestrian.alley_factor, 1);
+  assert.equal(COSTING_OPTIONS.pedestrian.pedestrian.sidewalk_factor, 1);
+  const car = valhallaRequest([[22.5, 51.2], [22.6, 51.3]], { costing: 'auto', heading: 370 });
+  assert.equal(car.locations[0].heading, 10);
+  assert.equal(car.locations[0].heading_tolerance, 60);
+  assert.equal(car.locations[1].heading, undefined);
+  assert.equal('costing_options' in car, false);
+  const none = valhallaRequest([[22.5, 51.2], [22.6, 51.3]], { costing: 'auto' });
+  assert.equal(none.locations[0].heading, undefined);
+});
+
+test('uproszczenie marszu nie robi „zawróć” z dużego skrętu', async () => {
+  const { simplifyWalk } = await import('../js/valhalla.js');
+  const mans = [
+    { type: 1, length: 0.05, bearing_after: 0, travel_mode: 'pedestrian', instruction: 'x' },
+    { type: 10, length: 0.05, bearing_after: 175, travel_mode: 'pedestrian', instruction: 'x' },
+    { type: 4, length: 0, bearing_after: 175, travel_mode: 'pedestrian', instruction: 'y' },
+  ];
+  assert.match(simplifyWalk(mans)[1]._mod, /sharp right/);
+});

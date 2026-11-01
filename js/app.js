@@ -764,7 +764,7 @@ async function reroute(fix) {
   toast(travel().say.off, 4000);
   voice.say('Przeliczam trasę', { prio: 3 });
   try {
-    const rs = await getRoutes(CONFIG, [[fix.lng, fix.lat], [S.dest.lng, S.dest.lat]], { costing: travel().costing, alternatives: false });
+    const rs = await getRoutes(CONFIG, [[fix.lng, fix.lat], [S.dest.lng, S.dest.lat]], { costing: travel().costing, alternatives: false, heading: (fix.speed || 0) > 1.5 ? fix.heading : null });
     if (S.mode !== 'nav' || S.nav !== N) return;
     const route = rs[0];
     applyHazards([route]);
@@ -919,7 +919,7 @@ $('btn-voice-log').onclick = () => {
   const el = $('voice-log');
   el.hidden = !el.hidden;
   const hz = hd.status || {};
-  el.textContent = `Wersja ${APP_VERSION}, silnik: ${voice.engine}, głos: ${voice.voice ? voice.voice.name : 'brak'}, mowa włączona: ${voice.enabled}\nDane: plik OSM ${hz.osmFile ?? '?'} pkt, GITD ${hz.gitd ?? '?'} pkt, Overpass ${hz.live || '…'}, limity prędkości ${hz.limits || '…'}\n` + (S.pos ? `Pozycja: ${S.pos.lat.toFixed(5)}, ${S.pos.lng.toFixed(5)}\n` : '') + (voice.events.length ? voice.events.join('\n') : 'Brak zdarzeń. Uruchom symulację i wróć tutaj.');
+  el.textContent = `Wersja ${APP_VERSION}, silnik: ${voice.engine}, głos: ${voice.voice ? voice.voice.name : 'brak'}, mowa włączona: ${voice.enabled}\nDane: plik OSM ${hz.osmFile ?? '?'} pkt, GITD ${hz.gitd ?? '?'} pkt, Overpass ${hz.live || '…'}, limity prędkości ${hz.limits || '…'}\n` + (S.routes.meta ? `Trasa: ${S.routes.meta.engine}/${S.routes.meta.costing} ${S.routes.meta.from[1].toFixed(5)}, ${S.routes.meta.from[0].toFixed(5)} → ${S.routes.meta.to[1].toFixed(5)}, ${S.routes.meta.to[0].toFixed(5)}\n` : '') + (S.pos ? `Pozycja: ${S.pos.lat.toFixed(5)}, ${S.pos.lng.toFixed(5)}\n` : '') + (voice.events.length ? voice.events.join('\n') : 'Brak zdarzeń. Uruchom symulację i wróć tutaj.');
 };
 
 // ---------- Start ----------
