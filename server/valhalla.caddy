@@ -6,5 +6,7 @@ handle_path /valhalla/* {
 	header Vary "Origin"
 	@pre method OPTIONS
 	respond @pre 204
-	reverse_proxy 127.0.0.1:8002
+	reverse_proxy 127.0.0.1:8002 {
+		header_down -Access-Control-Allow-Origin
+	}
 }

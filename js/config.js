@@ -11,14 +11,14 @@ export const CONFIG = {
 
   // Silnik tras zgodny z API OSRM. Docelowo: własny Valhalla/OSRM na serwerze.
   routingUrl: 'https://router.project-osrm.org',
-  routingOwnUrl: '', // własny Valhalla, np. https://188-68-247-201.sslip.io/valhalla (puste = tylko publiczny OSRM)
+  routingOwnUrl: 'https://188-68-247-201.sslip.io/valhalla', // własny Valhalla (puste = tylko publiczny OSRM)
 
   // Overpass: fotoradary i odcinkowe pomiary z OSM.
   overpassUrl: 'https://overpass-api.de/api/interpreter',
 
   // Ograniczenia prędkości wzdłuż trasy (Valhalla, dane OSM). Docelowo własny serwer.
   ttsUrl: 'https://188-68-247-201.sslip.io/nav-tts',
-  limitsUrl: 'https://valhalla1.openstreetmap.de',
+  limitsUrl: 'https://188-68-247-201.sslip.io/valhalla',
 
   // Wyszukiwanie adresów (Photon, oparty na OSM).
   geocodeUrl: 'https://photon.komoot.io/api/',
@@ -34,7 +34,7 @@ export const CONFIG = {
   zoom: 12,
 };
 
-export const APP_VERSION = '0.5.1';
+export const APP_VERSION = '0.6.0';
 
 export const STORAGE = { settings: 'nav.settings', lastDest: 'nav.lastDest' };
 
