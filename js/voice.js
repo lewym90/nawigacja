@@ -84,6 +84,16 @@ export class Voice {
     return this.voice;
   }
 
+  /** Cicha wypowiedź przy pierwszym dotknięciu ekranu: odblokowuje mowę po ponownym uruchomieniu aplikacji. */
+  prime() {
+    try {
+      if (!this.ok || this.engine === 'robot') return;
+      const u = new SpeechSynthesisUtterance(' ');
+      u.volume = 0;
+      speechSynthesis.speak(u);
+    } catch { /* ignoruj */ }
+  }
+
   unlock() {
     // Silnik systemowy: nic poza samą mową. Dźwięk <audio> tuż przed nią wyciszał ją na iPhonie.
     if (this.engine !== 'robot' && this.engine !== 'cloud') return;

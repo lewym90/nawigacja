@@ -76,9 +76,9 @@ with sync_playwright() as p:
     page.screenshot(path=f'{OUT}/1-idle.png')
 
     page.fill('#q', 'Rynek Zamość')
-    page.wait_for_selector('#results button', timeout=5000)
+    page.wait_for_selector('#results .r-main:has-text("Rynek Testowy")', timeout=5000)
     page.screenshot(path=f'{OUT}/2-search.png')
-    page.click('#results button')
+    page.click('#results button:has-text("Rynek Testowy")')
     page.wait_for_selector('.route-card', timeout=8000)
     page.wait_for_selector('.route-card .tag.cam', timeout=8000)
     page.wait_for_timeout(1200)
@@ -95,6 +95,16 @@ with sync_playwright() as p:
     print('KARTY:', cards)
 
     # Symulacja: skok do 2300 m, by zobaczyć fotoradar
+    # ostatnie cele i moje adresy
+    page.click('#save-row button[data-k=home]')
+    page.click('#btn-cancel')
+    page.click('#q')
+    page.wait_for_selector('#results .sec:has-text("Ostatnie")', timeout=3000)
+    quick = page.eval_on_selector_all('#results li', 'els => els.map(e => e.innerText.replace(/\\n+/g, " / "))')
+    print('LISTA PO DOTKNIĘCIU:', quick)
+    assert any('Dom' in q for q in quick) and any('Rynek Testowy' in q for q in quick), quick
+    page.click('#results button:has-text("Rynek Testowy")')
+    page.wait_for_selector('.route-card', timeout=8000)
     page.click('#btn-sim')
     page.wait_for_timeout(1500)
     page.evaluate('window.__nav.S.sim.along = 2250')
@@ -136,6 +146,17 @@ with sync_playwright() as p:
     page.click('#btn-end')
     page.wait_for_timeout(1200)
     page.screenshot(path=f'{OUT}/8-after.png')
+    # powrót do trwającej nawigacji po ponownym uruchomieniu strony
+    ctx.grant_permissions(['geolocation'])
+    ctx.set_geolocation({'latitude': 51.2, 'longitude': 22.5684})
+    page.evaluate("localStorage.setItem('nav.session', JSON.stringify({dest: {main: 'Rynek Testowy', sub: '', lng: %f, lat: %f}, t: Date.now()}))" % (end[0], end[1]))
+    page.reload()
+    page.wait_for_selector('#nav-panel:not([hidden])', timeout=15000)
+    print('WZNOWIENIE PO RESTARCIE: panel nawigacji widoczny =', page.is_visible('#nav-panel'), '| tryb =', page.evaluate('window.__nav.S.mode'))
+    assert page.evaluate('window.__nav.S.mode') == 'nav'
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    page.wait_for_timeout(300)
+    assert page.evaluate('window.__nav.S.mode') == 'nav'
     br.close()
 
 print('BŁĘDY KONSOLI:', len(errors))

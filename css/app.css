@@ -270,3 +270,13 @@ body.has-section #banner { top: calc(var(--safe-t) + 340px); }
 
 /* iOS (ekran początkowy) skraca okno o ok. 60 pt, jeśli sam dokument nie jest przewijalny (czarny pasek na dole). Niewidoczny odstęp czyni go przewijalnym; interfejs jest position: fixed i się nie rusza (tak samo jak w Poczcie i Kalendarzu). */
 #docspacer { position: absolute; top: 0; left: 0; width: 1px; height: calc(100vh + 120px); visibility: hidden; pointer-events: none; }
+
+/* Ostatnie cele i moje adresy */
+#results .sec { padding: 10px 16px 4px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+#results li.row2 { display: flex; align-items: center; }
+#results li.row2 > button:first-child { flex: 1; min-width: 0; }
+#results .r-x { flex: none; width: 44px; height: 44px; border: 0; background: none; color: var(--muted); display: grid; place-items: center; }
+#results .r-add .r-main { color: var(--gold); }
+#save-row { display: flex; align-items: center; gap: 8px; padding: 4px 16px 10px; font-size: 13px; color: var(--muted); }
+#save-row button { border: 1px solid var(--line); background: var(--surface-2); color: var(--text); border-radius: 999px; padding: 7px 13px; font-size: 14px; }
+#save-row button.done { border-color: var(--gold); color: var(--gold); }

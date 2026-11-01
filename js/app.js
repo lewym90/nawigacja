@@ -1,3 +1,4 @@
+import { Places } from './places.js';
 import { CONFIG, APP_VERSION, loadSettings, saveSettings, STORAGE } from './config.js';
 import { buildStyle, isNight } from './mapstyle.js';
 import { fetchRoutes, fmtDist, fmtDuration, limitAt } from './routing.js';
@@ -145,9 +146,11 @@ function meEl() {
 }
 
 const speedFilter = new SpeedFilter();
+let geoId = null;
 function startGeo() {
   if (!navigator.geolocation) { toast('Ta przeglądarka nie ma GPS'); return; }
-  navigator.geolocation.watchPosition(
+  if (geoId != null) { try { navigator.geolocation.clearWatch(geoId); } catch { /* ignoruj */ } }
+  geoId = navigator.geolocation.watchPosition(
     (p) => {
       if (S.sim) return; // w symulacji ignorujemy prawdziwy GPS
       const c = p.coords;
@@ -163,6 +166,7 @@ let firstFixDone = false;
 function onFix(fix) {
   S.lastFix = fix;
   S.pos = fix;
+  if (S.restore && S.mode === 'idle' && !S.sim) { const d = S.restore.dest; S.restore = null; restoreNav(d); }
   if (S.mode !== 'nav') {
     if (!meMarker) meMarker = new maplibregl.Marker({ element: meEl() }).setLngLat([fix.lng, fix.lat]).addTo(map);
     else meMarker.setLngLat([fix.lng, fix.lat]);
@@ -186,11 +190,55 @@ $('btn-locate').onclick = () => {
 let searchCtrl = null;
 let searchTimer;
 const input = $('q');
+const places = new Places((() => { try { return localStorage; } catch { return { getItem: () => null, setItem() {} }; } })());
+S.assign = null;
+
+/** Lista pod polem: moje adresy (dom, praca, inne) i 5 ostatnich celów. */
+function showQuick() {
+  const ul = $('results');
+  const saved = places.saved();
+  const rec = places.recents();
+  const rows = [];
+  const items = [];
+  const push = (html, fn) => { rows.push(html); items.push(fn); };
+  const home = saved.find((x) => x.kind === 'home');
+  const work = saved.find((x) => x.kind === 'work');
+  rows.push('<li class="sec">Moje adresy</li>'); items.push(null);
+  for (const x of saved) {
+    push(`<li class="row2"><button data-a="go"><span class="r-ico">${x.kind === 'home' ? icon.home(22) : x.kind === 'work' ? icon.work(22) : icon.pin(22)}</span><span><div class="r-main">${esc(x.label)}</div><div class="r-sub">${esc(x.kind === 'other' ? x.sub || x.main : x.main + (x.sub ? ', ' + x.sub : ''))}</div></span></button><button class="r-x" data-a="del" aria-label="Usuń">${icon.close(18)}</button></li>`, { x, saved: true });
+  }
+  if (!home) push(`<li class="r-add"><button data-a="add-home"><span class="r-ico">${icon.plus(22)}</span><span><div class="r-main">Dodaj dom</div></span></button></li>`, { add: 'home' });
+  if (!work) push(`<li class="r-add"><button data-a="add-work"><span class="r-ico">${icon.plus(22)}</span><span><div class="r-main">Dodaj pracę</div></span></button></li>`, { add: 'work' });
+  if (rec.length) {
+    rows.push('<li class="sec">Ostatnie</li>'); items.push(null);
+    rec.forEach((x, i) => push(`<li class="row2"><button data-a="go"><span class="r-ico">${icon.clock(22)}</span><span><div class="r-main">${esc(x.main)}</div><div class="r-sub">${esc(x.sub)}</div></span></button><button class="r-x" data-a="del" aria-label="Usuń">${icon.close(18)}</button></li>`, { x, rec: i }));
+  }
+  ul.innerHTML = rows.join('');
+  ul.querySelectorAll('li').forEach((li, idx) => {
+    const it = items[idx];
+    if (!it) return;
+    li.querySelectorAll('button').forEach((b) => (b.onclick = (ev) => {
+      ev.preventDefault();
+      if (it.add) { S.assign = { kind: it.add }; input.value = ''; input.placeholder = it.add === 'home' ? 'Wpisz adres domu' : 'Wpisz adres pracy'; show('results', false); input.focus(); return; }
+      if (b.dataset.a === 'del') { if (it.saved) places.removeSaved(it.x.id); else places.removeRecent(it.rec); showQuick(); return; }
+      S.assign = null;
+      chooseDest({ main: it.x.main, sub: it.x.sub, lng: it.x.lng, lat: it.x.lat });
+    }));
+  });
+  S.quickShown = true;
+  show('results', true);
+}
+input.addEventListener('focus', () => {
+  const q = input.value.trim();
+  if (S.dest && q === S.dest.main) input.select(); // dotknięcie pola po wybraniu celu: nowe wpisanie zastępuje stare
+  if (input.value.trim().length < 3 || S.dest) showQuick();
+});
 
 input.addEventListener('input', () => {
   clearTimeout(searchTimer);
   const q = input.value.trim();
-  if (q.length < 3) { show('results', false); return; }
+  if (q.length < 3) { if (document.activeElement === input) showQuick(); else show('results', false); return; }
+  if (S.quickShown) { show('results', false); S.quickShown = false; } // nie zostawiamy starej listy pod wpisywanym tekstem
   searchTimer = setTimeout(() => runSearch(q), 300);
 });
 input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(searchTimer); const q = input.value.trim(); if (q.length >= 2) runSearch(q); input.blur(); } });
@@ -223,6 +271,7 @@ export function parsePhoton(json) {
 }
 
 function renderResults(list) {
+  S.quickShown = false;
   const ul = $('results');
   if (!list.length) ul.innerHTML = '<li class="empty">Brak wyników.</li>';
   else {
@@ -237,7 +286,17 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 // ---------- Trasa: podgląd ----------
 async function chooseDest(d) {
   show('results', false);
+  if (S.assign) {
+    const a = S.assign; S.assign = null;
+    input.placeholder = 'Dokąd jedziemy?'; input.value = ''; input.blur();
+    if (a.kind === 'other') { places.save('other', d, a.label); } else places.save(a.kind, d);
+    toast(`Zapisano: ${a.kind === 'home' ? 'Dom' : a.kind === 'work' ? 'Praca' : a.label || d.main}`, 2500);
+    return;
+  }
   input.value = d.main;
+  places.addRecent(d);
+  S.saveFrom = d;
+  document.querySelectorAll('#save-row button').forEach((b) => b.classList.remove('done'));
   S.dest = d;
   try { localStorage.setItem(STORAGE.lastDest, JSON.stringify(d)); } catch { /* ignoruj */ }
   await planRoute();
@@ -553,6 +612,7 @@ function startNav({ sim = false } = {}) {
   if (!sim && !S.pos) { toast('Brak sygnału GPS. Wyjdź na otwartą przestrzeń albo użyj symulacji.', 4000); return; }
   voice.unlock();
   lockScreen();
+  if (!sim) saveSession();
   voice.prefetch(['Ruszaj', 'Przeliczam trasę', 'Dojechałeś do celu', 'Koniec odcinka', 'Skręć w lewo', 'Skręć w prawo',
     ...new Set((route.steps || []).map((st) => st.short || st.text).filter(Boolean))]);
   if (!route.limitsTried) {
@@ -623,6 +683,7 @@ function smoothHeading(target) {
 }
 
 function navTick(fix) {
+  if (!S.sim && Date.now() - (S.sessT || 0) > 5000) saveSession();
   const N = S.nav;
   if (!N) return;
   const g = N.guidance.update(fix);
@@ -795,6 +856,7 @@ async function reroute(fix) {
 }
 
 function endNav() {
+  clearSession();
   voice.hold(false);
   clearTimeout(resumeTimer);
   if (navMarker) { navMarker.remove(); navMarker = null; }
@@ -972,3 +1034,58 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 
 // Haki do testów i diagnostyki (nie zmieniają działania aplikacji).
 window.__nav = { S, map, voice, settings, onFix, chooseDest, startNav, endNav, parsePhoton, reports };
+
+// Zapis aktualnego celu jako dom / praca / inne
+document.querySelectorAll('#save-row button').forEach((b) => (b.onclick = () => {
+  const d = S.dest;
+  if (!d) return;
+  let label = '';
+  if (b.dataset.k === 'other') {
+    label = (window.prompt('Nazwa miejsca (np. Rodzice)', d.main) || '').trim();
+    if (!label) return;
+  }
+  places.save(b.dataset.k, d, label);
+  b.classList.add('done');
+  toast(`Zapisano: ${b.dataset.k === 'home' ? 'Dom' : b.dataset.k === 'work' ? 'Praca' : label}`, 2000);
+}));
+
+// ---------- Powrót do nawigacji po przełączeniu aplikacji ----------
+const SESSION_KEY = 'nav.session';
+const SESSION_MAX_AGE = 45 * 60 * 1000;
+function saveSession() {
+  S.sessT = Date.now();
+  if (!S.dest) return;
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify({ dest: S.dest, t: S.sessT })); } catch { /* ignoruj */ }
+}
+function clearSession() { S.sessT = 0; try { localStorage.removeItem(SESSION_KEY); } catch { /* ignoruj */ } }
+function loadSession() {
+  try {
+    const v = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+    return v && v.dest && Date.now() - v.t < SESSION_MAX_AGE ? v : null;
+  } catch { return null; }
+}
+
+async function restoreNav(d) {
+  toast(`Wracam do nawigacji: ${d.main}`, 4000);
+  await chooseDest(d);
+  if (S.routes.length && S.pos) startNav();
+}
+
+/** Aplikacja wróciła na wierzch: ponów GPS, ekran i widok jazdy, żeby nie trzeba było nic klikać. */
+function resumeNav() {
+  if (S.mode !== 'nav' || S.sim) return;
+  startGeo();
+  lockScreen();
+  S.follow = true;
+  try { voice.queue = []; if (voice.ok) speechSynthesis.cancel(); voice._finish(); } catch { /* ignoruj */ }
+  try { map.resize(); } catch { /* ignoruj */ }
+  if (!S.lastFix || Date.now() - (S.lastFix.t || 0) > 4000) toast('Wznawiam GPS…', 2500);
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') resumeNav(); });
+window.addEventListener('pageshow', (e) => { if (e.persisted) resumeNav(); });
+
+// Po ponownym uruchomieniu (system zamknął stronę w tle) odtwarzamy trwającą nawigację po pierwszym odczycie GPS.
+S.restore = loadSession();
+if (S.restore) setTimeout(() => { if (S.restore) { S.restore = null; clearSession(); } }, 20000);
+// Pierwsza mowa na iPhonie musi wyjść z dotknięcia: „rozgrzewamy” syntezator przy pierwszym dotyku.
+window.addEventListener('pointerdown', () => voice.prime(), { once: true, passive: true });
