@@ -82,6 +82,14 @@ with sync_playwright() as p:
     page.wait_for_selector('.route-card .tag.cam', timeout=8000)
     page.wait_for_timeout(1200)
     page.screenshot(path=f'{OUT}/3-preview.png')
+    err = page.evaluate('''() => { let worst = 0, n = 0;
+      for (const m of window.__nav.S.markers.values()) {
+        const p = window.__nav.map.project(m.getLngLat()); const r = m.getElement().getBoundingClientRect();
+        const cx = r.left + r.width / 2; const by = r.bottom; const mc = window.__nav.map.getContainer().getBoundingClientRect();
+        worst = Math.max(worst, Math.hypot(cx - (mc.left + p.x), (by - (mc.top + p.y)))); n++; }
+      return [n, Math.round(worst)]; }''')
+    print('PINEZKI (liczba, największe odchylenie px):', err)
+    assert err[0] == 0 or err[1] <= 6, 'pinezki leżą w złym miejscu'
     cards = page.eval_on_selector_all('.route-card', 'els => els.map(e => e.innerText.replace(/\\n+/g, " | "))')
     print('KARTY:', cards)
 
