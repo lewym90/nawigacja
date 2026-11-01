@@ -153,6 +153,8 @@ export class Voice {
 
   _system(text) {
     if (!this.ok) { this._finish(); this._next(); return; }
+    // iPhone: po dźwięku z elementu <audio> mowa systemowa potrafi milczeć, dopóki go nie zwolnimy
+    if (this.player) { try { this.player.pause(); this.player.removeAttribute('src'); this.player.load(); } catch { /* ignoruj */ } }
     const u = new SpeechSynthesisUtterance(text);
     if (this.voice) { u.voice = this.voice; u.lang = this.voice.lang; } else u.lang = 'pl-PL';
     u.rate = 1.02;
@@ -214,7 +216,7 @@ export class Voice {
           resolve(URL.createObjectURL(blob));
         } catch (e) { reject(e); } finally { clearTimeout(to); }
       } };
-      if (urgent) this.cloudQ.unshift(job); else this.cloudQ.push(job);
+      if (urgent) job.run(); else this.cloudQ.push(job); // pilne omija kolejkę (serwer odpowiada od razu, gdy zdanie zna)
     });
     this.cloudCache.set(key, p);
     p.catch(() => this.cloudCache.delete(key));
@@ -225,7 +227,7 @@ export class Voice {
 
   _bump(key) {
     const i = this.cloudQ.findIndex((j) => j.key === key);
-    if (i > 0) this.cloudQ.unshift(this.cloudQ.splice(i, 1)[0]);
+    if (i >= 0) this.cloudQ.splice(i, 1)[0].run();
   }
 
   _pump() {
@@ -257,7 +259,7 @@ export class Voice {
       // czekamy najwyżej 6 s; spóźnione nagranie i tak zostaje w pamięci na następny raz
       const url = await Promise.race([
         this._fetchCloud(text, { urgent: true }),
-        new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error('zbyt wolno'), { slow: true })), 6000)),
+        new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error('zbyt wolno'), { slow: true })), 8000)),
       ]);
       this.cloudFails = 0;
       if (this.cur !== stamp || gen !== (this.gen || 0)) return;
