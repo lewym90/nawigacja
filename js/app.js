@@ -106,7 +106,8 @@ function installLayers() {
     map.addSource('sel', { type: 'geojson', data: emptyFC() });
   }
   if (!map.getSource('secs')) map.addSource('secs', { type: 'geojson', data: emptyFC() });
-  const before = map.getLayer('road-label') ? 'road-label' : undefined;
+  // Trasa leży POD budynkami 3D, żeby bloki ją zasłaniały jak w rzeczywistości.
+  const before = map.getLayer('building-3d') ? 'building-3d' : (map.getLayer('road-label') ? 'road-label' : undefined);
   const route = night ? '#4c9bff' : '#1f6fe0';
   const routeCase = night ? '#0a2a52' : '#ffffff';
   const add = (def) => { if (!map.getLayer(def.id)) map.addLayer(def, before); };
