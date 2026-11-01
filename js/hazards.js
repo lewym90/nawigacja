@@ -4,6 +4,7 @@
 
 import { project, pointAt, bearing, angleDiff, haversine } from './geo.js';
 import { fmtDist } from './routing.js';
+import { distWords, plNum } from './speech-pl.js';
 
 export const TYPES = {
   camera: { label: 'Fotoradar', say: 'Fotoradar' },
@@ -264,12 +265,12 @@ export class HazardWatch {
       const mark = (lv) => this.done.has(`${h.id}:${lv}`) || (this.done.add(`${h.id}:${lv}`), false);
       if (dist <= 150) {
         level = 'final';
-        if (!mark('final') && speeding) say.push(`Zwolnij. ${TYPES[h.type].say}${lim ? `, limit ${lim}` : ''}`);
+        if (!mark('final') && speeding) say.push(`Zwolnij. ${TYPES[h.type].say}${lim ? `, ograniczenie ${plNum(lim)}` : ''}`);
       } else if (dist <= alertAt) {
         if (level !== 'final') level = 'alert';
         if (!mark('alert')) {
-          const limTxt = lim && (h.type === 'camera' || h.type === 'redlight') ? `, limit ${lim}` : '';
-          say.push(`${TYPES[h.type].say} za ${sayDist(dist)}${limTxt}`);
+          const limTxt = lim && ['camera', 'redlight', 'section'].includes(h.type) ? `, ograniczenie prędkości ${plNum(lim)} na godzinę` : '';
+          say.push(`${TYPES[h.type].say} za ${distWords(Math.max(50, dist))}${limTxt}`);
         }
       } else if (level === 'none') {
         level = 'info';

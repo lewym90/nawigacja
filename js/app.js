@@ -17,7 +17,8 @@ const $ = (id) => document.getElementById(id);
 const settings = loadSettings();
 const voice = new Voice();
 voice.enabled = settings.voice;
-voice.engine = settings.ttsEngine === 'robot' ? 'robot' : 'system';
+voice.engine = ['cloud', 'robot'].includes(settings.ttsEngine) ? settings.ttsEngine : 'system';
+voice.cloudUrl = CONFIG.ttsUrl || '';
 voice.prefName = settings.voiceName || '';
 const reports = new ReportStore();
 
@@ -552,6 +553,8 @@ function startNav({ sim = false } = {}) {
   if (!sim && !S.pos) { toast('Brak sygnału GPS. Wyjdź na otwartą przestrzeń albo użyj symulacji.', 4000); return; }
   voice.unlock();
   lockScreen();
+  voice.prefetch(['Ruszaj', 'Przeliczam trasę', 'Dojechałeś do celu', 'Koniec odcinka', 'Skręć w lewo', 'Skręć w prawo',
+    ...new Set((route.steps || []).map((st) => st.short || st.text).filter(Boolean))]);
   if (!route.limitsTried) {
     route.limitsTried = true;
     loadRouteLimits(CONFIG.limitsUrl, route).then((r) => { S.hzStatus = { ...(S.hzStatus || {}), limits: r.ok ? `ok (${Math.round(r.covered * 100)}% trasy ma znany limit)` : 'niedostępne' }; }).catch(() => {});
@@ -901,7 +904,7 @@ function syncMenu() {
   sw('sw-hz', settings.hazardsVoice);
   sw('sw-tilt', settings.tilt);
   document.querySelectorAll('#seg-theme button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.theme));
-  document.querySelectorAll('#seg-engine button').forEach((b) => b.classList.toggle('on', b.dataset.v === (settings.ttsEngine === 'robot' ? 'robot' : 'system')));
+  document.querySelectorAll('#seg-engine button').forEach((b) => b.classList.toggle('on', b.dataset.v === (['cloud', 'robot'].includes(settings.ttsEngine) ? settings.ttsEngine : 'system')));
 }
 $('btn-menu').onclick = () => { syncMenu(); show('menu', true); };
 $('btn-menu-x').onclick = () => show('menu', false);

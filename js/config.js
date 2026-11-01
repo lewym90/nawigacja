@@ -16,6 +16,7 @@ export const CONFIG = {
   overpassUrl: 'https://overpass-api.de/api/interpreter',
 
   // Ograniczenia prędkości wzdłuż trasy (Valhalla, dane OSM). Docelowo własny serwer.
+  ttsUrl: 'https://188-68-247-201.sslip.io/nav-tts',
   limitsUrl: 'https://valhalla1.openstreetmap.de',
 
   // Wyszukiwanie adresów (Photon, oparty na OSM).
@@ -32,7 +33,7 @@ export const CONFIG = {
   zoom: 12,
 };
 
-export const APP_VERSION = '0.2.2';
+export const APP_VERSION = '0.3.0';
 
 export const STORAGE = { settings: 'nav.settings', lastDest: 'nav.lastDest' };
 
@@ -41,7 +42,7 @@ export const DEFAULT_SETTINGS = {
   theme: 'auto', // auto | day | night
   tilt: true,
   hazardsVoice: true,
-  ttsEngine: 'system', // robot = wbudowany | system = głos telefonu
+  ttsEngine: 'cloud', // cloud = nagrania z własnego serwera (wraca do telefonu) | system = głos telefonu | robot = wbudowany
 };
 
 export function loadSettings() {

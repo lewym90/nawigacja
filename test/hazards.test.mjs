@@ -90,7 +90,7 @@ test('HazardWatch: ostrzega raz na poziom, mówi limit, ostrzega o prędkości',
   }
   assert.ok(finalSeen);
   assert.equal(said.filter((s) => /^Fotoradar za/.test(s)).length, 1);
-  assert.ok(said.some((s) => /limit 50/.test(s)));
+  assert.ok(said.some((s) => /ograniczenie prędkości pięćdziesiąt na godzinę/.test(s)));
   assert.equal(said.filter((s) => /^Zwolnij/.test(s)).length, 1);
 });
 

@@ -64,6 +64,7 @@ with sync_playwright() as p:
     page.route('https://tiles.openfreemap.org/fonts/**', lambda r: r.fulfill(status=404, body=b''))
     page.route('https://router.project-osrm.org/**', lambda r: fulfill_json(r, {'code': 'Ok', 'routes': [osrm(0), osrm(0.01, 1800)]}))
     page.route('https://valhalla1.openstreetmap.de/**', lambda r: fulfill_json(r, {'edges': [{'length': 0.5, 'speed_limit': 50}]}))
+    page.route('https://188-68-247-201.sslip.io/**', lambda r: r.fulfill(status=200, headers={'access-control-allow-origin': '*', 'content-type': 'audio/wav'}, body=b'RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x80\xbb\x00\x00\x00w\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00'))
     page.route('https://overpass-api.de/**', lambda r: fulfill_json(r, overpass()))
     end = route_coords()[-1]
     page.route('https://photon.komoot.io/**', lambda r: fulfill_json(r, {'features': [
