@@ -2,15 +2,16 @@ import { Places } from './places.js';
 import { CONFIG, APP_VERSION, VOICES, loadSettings, saveSettings, STORAGE } from './config.js';
 import { buildStyle, isNight } from './mapstyle.js';
 import { getRoutes } from './provider.js';
+import { modeOf, DEFAULT_MODE } from './modes.js';
 import { fmtDist, fmtDuration, limitAt } from './routing.js';
 import { Guidance } from './guidance.js';
 import { SpeedFilter } from './speed.js';
 import { loadRouteLimits } from './limits.js';
 import {
-  parseOverpass, overpassQuery, mergeHazards, mergeSources, onRoute, sectionsOnRoute,
   HazardWatch, SectionTracker, ReportStore, TYPES,
 } from './hazards.js';
 import { corridorBoxesRange, haversine, bearing, sliceLine } from './geo.js';
+import { createHazardData, WINDOW_M } from './hazard-data.js';
 import { Voice } from './voice.js';
 import { Simulator } from './sim.js';
 import { icon, arrow, hazardPin } from './icons.js';
@@ -23,15 +24,16 @@ voice.setVoice(settings.ttsEngine);
 voice.cloudUrl = CONFIG.ttsUrl || '';
 voice.prefName = settings.voiceName || '';
 const reports = new ReportStore();
+const hd = createHazardData(CONFIG, reports);
+const { loadHazards, itemsFor, applyHazards } = hd;
 
 const S = {
+  travel: DEFAULT_MODE, // auto | pedestrian | bicycle (modes.js)
   mode: 'idle', // idle | preview | nav
   pos: null,
   dest: null,
   routes: [],
   sel: 0,
-  osm: { cameras: [], sections: [] },
-  local: { cameras: [], sections: [], suppress: [] },
   hazardsReady: false,
   nav: null,
   follow: true,
@@ -41,6 +43,8 @@ const S = {
   lastFix: null,
   wl: null,
 };
+
+const travel = () => modeOf(S.travel);
 
 // ---------- Interfejs: ikony i drobiazgi ----------
 $('search-ico').innerHTML = icon.search(22);
@@ -308,7 +312,7 @@ async function planRoute() {
   const from = S.pos ? [S.pos.lng, S.pos.lat] : map.getCenter().toArray();
   toast('Wyznaczam trasę…', 8000);
   try {
-    S.routes = await getRoutes(CONFIG, [from, [d.lng, d.lat]]);
+    S.routes = await getRoutes(CONFIG, [from, [d.lng, d.lat]], { costing: travel().costing, alternatives: travel().alternatives });
   } catch (e) {
     toast('Nie udało się wyznaczyć trasy. Spróbuj ponownie.', 4000);
     return;
@@ -327,8 +331,9 @@ async function planRoute() {
   pin.className = 'dest-pin';
   pin.innerHTML = icon.pin(40);
   destMarker = new maplibregl.Marker({ element: pin, anchor: 'bottom' }).setLngLat([d.lng, d.lat]).addTo(map);
-  S.osm = { cameras: [], sections: [] };
+  hd.resetLive();
   const routesNow = S.routes;
+  if (!travel().hazards) { S.hazardsReady = true; routesNow.forEach((r) => { r.hz = { cams: [], secs: [] }; }); renderRouteCards(); return; }
   loadHazards(routesNow).then(({ live }) => {
     if (S.mode !== 'preview' || S.routes !== routesNow) return;
     S.hazardsReady = true;
@@ -390,109 +395,6 @@ function plural(n, one, few, many) {
 }
 
 // ---------- Dane o zagrożeniach ----------
-const ovCache = new Map();
-
-const WINDOW_M = 60000;
-
-async function loadLocal() {
-  if (S.localLoaded) return;
-  S.localLoaded = true;
-  try {
-    const r = await fetch(CONFIG.localHazardsUrl, { cache: 'no-cache' });
-    if (r.ok) S.local = await r.json();
-  } catch { /* brak pliku: pracujemy na samym OSM */ }
-}
-
-async function loadStatic() {
-  if (S.staticLoaded) return;
-  S.staticLoaded = true;
-  const get = async (u) => {
-    try { const r = await fetch(u, { cache: 'no-cache' }); return r.ok ? await r.json() : null; } catch { return null; }
-  };
-  const [osm, gitd] = await Promise.all([get(CONFIG.staticOsmUrl), get(CONFIG.staticGitdUrl)]);
-  S.static = { osm, gitd };
-  const n = (x) => (x ? (x.cameras || []).length + (x.sections || []).length : 0);
-  S.hzStatus = { ...(S.hzStatus || {}), osmFile: n(osm), gitd: n(gitd) };
-}
-
-// Publiczny Overpass odrzuca zbyt wiele zapytań naraz: dwa równoległe, z ponowieniami.
-async function fetchBoxes(boxes) {
-  const parts = [];
-  let failed = 0;
-  const queue = [...boxes];
-  const worker = async () => {
-    while (queue.length) {
-      const b = queue.shift();
-      const key = b.map((v) => v.toFixed(3)).join();
-      if (ovCache.has(key)) { parts.push(ovCache.get(key)); continue; }
-      let ok = false;
-      for (let attempt = 0; attempt < 3 && !ok; attempt++) {
-        try {
-          const ctrl = new AbortController();
-          const t = setTimeout(() => ctrl.abort(), 30000);
-          const res = await fetch(CONFIG.overpassUrl, { method: 'POST', body: new URLSearchParams({ data: overpassQuery(b) }), signal: ctrl.signal });
-          clearTimeout(t);
-          if (res.status === 429 || res.status >= 500) throw new Error(String(res.status));
-          if (!res.ok) break;
-          const parsed = parseOverpass(await res.json());
-          ovCache.set(key, parsed);
-          parts.push(parsed);
-          ok = true;
-        } catch {
-          await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
-        }
-      }
-      if (!ok) failed++;
-    }
-  };
-  await Promise.all([worker(), worker()]);
-  return { parts, failed };
-}
-
-function addOsm(parts) {
-  const seen = new Set(S.osm.cameras.map((c) => c.id));
-  const seenS = new Set(S.osm.sections.map((c) => c.id));
-  for (const p of parts) {
-    for (const c of p.cameras) if (!seen.has(c.id)) { seen.add(c.id); S.osm.cameras.push(c); }
-    for (const c of p.sections) if (!seenS.has(c.id)) { seenS.add(c.id); S.osm.sections.push(c); }
-  }
-}
-
-/** Trasy krótkie: jedno zapytanie na obwiednię. Długie (>80 km): okno [fromM, toM] wzdłuż trasy. */
-// Trzy źródła: plik OSM (cała Polska), plik GITD i Overpass na żywo. Pliki są dostępne od razu;
-// Overpass dochodzi w tle i niepowodzenie niczego nie psuje (nie pokazujemy o nim komunikatów).
-async function loadHazards(routes, { fromM = 0, toM = WINDOW_M } = {}) {
-  await Promise.all([loadLocal(), loadStatic()]);
-  const live = (async () => {
-    const boxes = new Map();
-    const long = routes.some((r) => r.distance > 80000);
-    if (!long) {
-      const all = routes.flatMap((r) => r.coords);
-      const ub = all.reduce((a, [x, y]) => [Math.min(a[0], x), Math.min(a[1], y), Math.max(a[2], x), Math.max(a[3], y)], [180, 90, -180, -90]);
-      boxes.set('u', [ub[0] - 0.005, ub[1] - 0.004, ub[2] + 0.005, ub[3] + 0.004]);
-    } else {
-      for (const r of routes) corridorBoxesRange(r.line, fromM, toM).forEach((b) => boxes.set(b.map((v) => v.toFixed(3)).join(), b));
-    }
-    try {
-      const { parts, failed } = await fetchBoxes([...boxes.values()]);
-      addOsm(parts);
-      S.hzStatus = { ...(S.hzStatus || {}), live: failed ? (parts.length ? 'częściowo' : 'niedostępne') : 'ok' };
-      return { failed };
-    } catch {
-      S.hzStatus = { ...(S.hzStatus || {}), live: 'niedostępne' };
-      return { failed: 1 };
-    }
-  })();
-  return { live };
-}
-
-function itemsFor(route) {
-  return [
-    ...route.hz.cams,
-    ...route.hz.secs.map((s) => ({ id: s.id, type: 'section', along: s.startAlong, limit: s.limit, lng: s.start[0], lat: s.start[1] })),
-  ].sort((a, b) => a.along - b.along);
-}
-
 function rebuildWatch(N) {
   applyHazards([N.route]);
   const done = N.watch.done;
@@ -516,23 +418,6 @@ function maybeExtendHazards(N, along) {
     if (!failed) N.loadedTo = to;
     rebuildWatch(N);
   }).finally(() => { N.loading = false; });
-}
-
-function allPoints() {
-  const st = S.static || {};
-  const merged = mergeSources([S.osm, st.osm, st.gitd], S.local);
-  return { cameras: merged.cameras, sections: merged.sections };
-}
-
-function applyHazards(routes) {
-  const { cameras, sections } = allPoints();
-  const rep = reports.active();
-  for (const r of routes) {
-    r.hz = {
-      cams: onRoute(r, [...cameras, ...rep.map((x) => ({ ...x }))]),
-      secs: sectionsOnRoute(r, sections),
-    };
-  }
 }
 
 // ---------- Znaczniki zagrożeń ----------
@@ -617,9 +502,9 @@ function startNav({ sim = false } = {}) {
   if (!sim) saveSession();
   voice.prefetch(['Ruszaj', 'Przeliczam trasę', 'Dojechałeś do celu', 'Koniec odcinka', 'Skręć w lewo', 'Skręć w prawo',
     ...new Set((route.steps || []).map((st) => st.short || st.text).filter(Boolean))]);
-  if (!route.limitsTried) {
+  if (travel().limits && !route.limitsTried) {
     route.limitsTried = true;
-    loadRouteLimits(CONFIG.limitsUrl, route).then((r) => { S.hzStatus = { ...(S.hzStatus || {}), limits: r.ok ? `ok (${Math.round(r.covered * 100)}% trasy ma znany limit)` : 'niedostępne' }; }).catch(() => {});
+    loadRouteLimits(CONFIG.limitsUrl, route).then((r) => { hd.status = { ...hd.status, limits: r.ok ? `ok (${Math.round(r.covered * 100)}% trasy ma znany limit)` : 'niedostępne' }; }).catch(() => {});
   }
   if (!route.hz) applyHazards([route]);
 
@@ -838,7 +723,7 @@ async function reroute(fix) {
   toast('Zjechałeś z trasy. Przeliczam…', 4000);
   voice.say('Przeliczam trasę', { prio: 3 });
   try {
-    const rs = await getRoutes(CONFIG, [[fix.lng, fix.lat], [S.dest.lng, S.dest.lat]], { alternatives: false });
+    const rs = await getRoutes(CONFIG, [[fix.lng, fix.lat], [S.dest.lng, S.dest.lat]], { costing: travel().costing, alternatives: false });
     if (S.mode !== 'nav' || S.nav !== N) return;
     const route = rs[0];
     applyHazards([route]);
@@ -883,7 +768,7 @@ $('btn-sim').onclick = () => {
   if (!route) return;
   startNav({ sim: true });
   S.simSpeedup = 4;
-  S.sim = new Simulator(route, { speedup: S.simSpeedup, onFix: (f) => onFix(f) });
+  S.sim = new Simulator(route, { speedKmh: travel().simKmh, speedup: S.simSpeedup, onFix: (f) => onFix(f) });
   S.sim.start();
   toast('Symulacja jazdy: dotknij prędkości, by ją zmienić', 4000);
 };
@@ -991,7 +876,7 @@ document.querySelectorAll('#seg-engine button').forEach((b) => (b.onclick = () =
 $('btn-voice-log').onclick = () => {
   const el = $('voice-log');
   el.hidden = !el.hidden;
-  const hz = S.hzStatus || {};
+  const hz = hd.status || {};
   el.textContent = `Wersja ${APP_VERSION}, silnik: ${voice.engine}, głos: ${voice.voice ? voice.voice.name : 'brak'}, mowa włączona: ${voice.enabled}\nDane: plik OSM ${hz.osmFile ?? '?'} pkt, GITD ${hz.gitd ?? '?'} pkt, Overpass ${hz.live || '…'}, limity prędkości ${hz.limits || '…'}\n` + (voice.events.length ? voice.events.join('\n') : 'Brak zdarzeń. Uruchom symulację i wróć tutaj.');
 };
 
