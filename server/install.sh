@@ -22,9 +22,10 @@ RestartSec=3
 WantedBy=multi-user.target
 UNIT
 systemctl daemon-reload
-systemctl enable --now nav-tts
+systemctl enable nav-tts
+systemctl restart nav-tts
 sleep 1
-curl -s http://127.0.0.1:8787/nav-tts/health; echo
+. /etc/nav-tts.env 2>/dev/null; curl -s "http://127.0.0.1:${NAV_TTS_PORT:-8787}/nav-tts/health"; echo
 echo
 echo "Teraz dopisz do Caddy w bloku 188-68-247-201.sslip.io:"
 echo "    handle /nav-tts* {"

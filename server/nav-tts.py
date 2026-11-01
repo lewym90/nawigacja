@@ -19,6 +19,7 @@ PROMPT = 'Przeczytaj naturalnie, spokojnie i wyraźnie, jak lektor nawigacji sam
 
 os.makedirs(CACHE, exist_ok=True)
 lock = threading.Lock()
+slots = threading.Semaphore(3)  # tyle zapytań do Gemini naraz
 day = {'d': time.strftime('%Y-%m-%d'), 'n': 0}
 inflight = {}
 
@@ -77,7 +78,8 @@ def get_audio(text):
             if day['n'] >= DAILY_NEW:
                 raise PermissionError('dzienny limit nowych zdań')
             day['n'] += 1
-        data = synth(text)
+        with slots:
+            data = synth(text)
         tmp = path + '.tmp'
         open(tmp, 'wb').write(data)
         os.replace(tmp, path)
@@ -103,7 +105,10 @@ class H(BaseHTTPRequestHandler):
         for k, v in (extra or {}).items():
             self.send_header(k, v)
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # telefon przestał czekać; nagranie i tak zostaje w pamięci serwera
 
     def do_OPTIONS(self):
         self.send_response(204)

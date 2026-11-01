@@ -47,6 +47,8 @@ export class Voice {
     this.player = null;
     this.cache = new Map();
     this.cloudCache = new Map();
+    this.cloudQ = [];
+    this.cloudActive = 0;
     this.cloudUrl = '';
     this.robot = null;
     this.events = [];
@@ -193,31 +195,51 @@ export class Voice {
   /** Adres nagrania z serwera (to samo zdanie = ten sam plik, serwer i telefon go pamiętają). */
   _cloudKey(text) { return text.replace(/\s+/g, ' ').trim(); }
 
-  /** Pobiera nagranie z serwera; zwraca adres blob: albo rzuca błąd po limicie czasu. */
-  _fetchCloud(text, timeoutMs = 6000) {
+  /** Pobiera nagranie z serwera (kolejka: najwyżej 3 naraz; pilne wchodzi na początek). Zwraca adres blob:. */
+  _fetchCloud(text, { urgent = false } = {}) {
     const key = this._cloudKey(text);
-    if (this.cloudCache.has(key)) return this.cloudCache.get(key);
-    const p = (async () => {
-      const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      const to = setTimeout(() => ctl && ctl.abort(), timeoutMs);
-      try {
-        const r = await fetch(`${this.cloudUrl}?t=${encodeURIComponent(key)}`, ctl ? { signal: ctl.signal } : {});
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const blob = await r.blob();
-        if (!blob.size) throw new Error('pusty');
-        return URL.createObjectURL(blob);
-      } finally { clearTimeout(to); }
-    })();
+    if (this.cloudCache.has(key)) {
+      if (urgent) this._bump(key);
+      return this.cloudCache.get(key);
+    }
+    const p = new Promise((resolve, reject) => {
+      const job = { key, run: async () => {
+        const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const to = setTimeout(() => ctl && ctl.abort(), 40000);
+        try {
+          const r = await fetch(`${this.cloudUrl}?t=${encodeURIComponent(key)}`, ctl ? { signal: ctl.signal } : {});
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const blob = await r.blob();
+          if (!blob.size) throw new Error('pusty');
+          resolve(URL.createObjectURL(blob));
+        } catch (e) { reject(e); } finally { clearTimeout(to); }
+      } };
+      if (urgent) this.cloudQ.unshift(job); else this.cloudQ.push(job);
+    });
     this.cloudCache.set(key, p);
     p.catch(() => this.cloudCache.delete(key));
-    if (this.cloudCache.size > 120) this.cloudCache.delete(this.cloudCache.keys().next().value);
+    if (this.cloudCache.size > 150) this.cloudCache.delete(this.cloudCache.keys().next().value);
+    this._pump();
     return p;
+  }
+
+  _bump(key) {
+    const i = this.cloudQ.findIndex((j) => j.key === key);
+    if (i > 0) this.cloudQ.unshift(this.cloudQ.splice(i, 1)[0]);
+  }
+
+  _pump() {
+    while (this.cloudActive < 3 && this.cloudQ.length) {
+      const job = this.cloudQ.shift();
+      this.cloudActive++;
+      job.run().finally(() => { this.cloudActive--; this._pump(); });
+    }
   }
 
   /** Z wyprzedzeniem prosi serwer o nagrania, żeby w czasie jazdy były gotowe. */
   prefetch(texts) {
     if (this.engine !== 'cloud' || !this.cloudUrl || Date.now() < (this.cloudBlockedUntil || 0)) return;
-    for (const t of texts) { const f = forSpeech(t); if (f) this._fetchCloud(f, 15000).catch(() => {}); }
+    for (const t of texts) { const f = forSpeech(t); if (f) this._fetchCloud(f).catch(() => {}); }
   }
 
   async _cloud(text) {
@@ -232,7 +254,11 @@ export class Voice {
     };
     this.timer = setTimeout(done, this.maxUtteranceMs + 6000);
     try {
-      const url = await this._fetchCloud(text, 4500);
+      // czekamy najwyżej 6 s; spóźnione nagranie i tak zostaje w pamięci na następny raz
+      const url = await Promise.race([
+        this._fetchCloud(text, { urgent: true }),
+        new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error('zbyt wolno'), { slow: true })), 6000)),
+      ]);
       this.cloudFails = 0;
       if (this.cur !== stamp || gen !== (this.gen || 0)) return;
       if (!this.player) this.player = new Audio();
@@ -244,9 +270,9 @@ export class Voice {
       this.log(`chmura: ${text.slice(0, 30)}`);
       await a.play();
     } catch (err) {
-      this.cloudFails = (this.cloudFails || 0) + 1;
+      if (!(err && err.slow)) this.cloudFails = (this.cloudFails || 0) + 1;
       this.log(`chmura niedostępna (${(err && err.message) || err}), mówi telefon`);
-      if (this.cloudFails >= 2) this.cloudBlockedUntil = Date.now() + 60000;
+      if (this.cloudFails >= 3) this.cloudBlockedUntil = Date.now() + 60000;
       if (this.cur !== stamp) return;
       // cichy powrót do głosu telefonu
       clearTimeout(this.timer);
