@@ -10,7 +10,7 @@ import {
   HazardWatch, SectionTracker, ReportStore, TYPES,
 } from './hazards.js';
 import { corridorBoxesRange, haversine, bearing, sliceLine } from './geo.js';
-import { Voice, qualityLabel } from './voice.js';
+import { Voice } from './voice.js';
 import { Simulator } from './sim.js';
 import { icon, arrow, hazardPin } from './icons.js';
 
@@ -986,13 +986,6 @@ document.querySelectorAll('#seg-engine button').forEach((b) => (b.onclick = () =
   voice.say('Cześć, jestem ' + (b.dataset.v === 'ewa' ? 'Ewa' : 'Zosia') + '. Za trzysta metrów skręć w prawo.', { urgent: true });
 }));
 
-$('btn-voice-pick').onclick = () => {
-  const v = voice.cycleVoice();
-  if (!v) { toast('Brak polskich głosów w telefonie', 3000); return; }
-  settings.voiceName = voice.prefName; saveSettings(settings);
-  voice.say('Tak będę mówić. Za trzysta metrów skręć w prawo.', { urgent: true });
-  toast(`Głos: ${v.name} (${qualityLabel(v)}). Dotknij ponownie, by zmienić.`, 4000);
-};
 $('btn-voice-log').onclick = () => {
   const el = $('voice-log');
   el.hidden = !el.hidden;
