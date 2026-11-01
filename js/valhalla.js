@@ -33,6 +33,16 @@ const MAP = {
   37: ['merge', 'right'], 38: ['merge', 'left'],
 };
 
+// Cechy dróg pieszych rozpoznajemy po opisie manewru (Valhalla nie ma na to osobnego pola w /route).
+export function featureOf(m) {
+  const t = `${m.instruction || ''} ${m.verbal_pre_transition_instruction || ''}`;
+  if (/schod|stair|steps\b/i.test(t)) return 'stairs';
+  if (/ruchom|escalator/i.test(t)) return 'escalator';
+  if (/wind[aęy]|elevator/i.test(t)) return 'elevator';
+  if (/przejści|crosswalk|crossing|cross the|przez ulic/i.test(t)) return 'crossing';
+  return null;
+}
+
 function nameOf(m) {
   const names = (m.street_names && m.street_names.length ? m.street_names : m.begin_street_names) || [];
   // Valhalla miesza nazwy i numery dróg: nazwa to pierwszy wpis z literami, numer to np. „S17”, „DK 17”
@@ -65,6 +75,8 @@ export function tripToOsrmRoute(trip) {
       }
       const { name, ref } = nameOf(m);
       const maneuver = { type: map[0], modifier: map[1] || undefined, location: shape[m.begin_shape_index || 0] };
+      const feature = m.travel_mode === 'pedestrian' ? featureOf(m) : null;
+      if (feature) maneuver.feature = feature;
       if (m.type === 26) maneuver.exit = m.roundabout_exit_count || undefined;
       steps.push({ name, ref, distance: meters, duration: seconds, maneuver });
       if (m.type === 26) roundaboutIdx = steps.length - 1;

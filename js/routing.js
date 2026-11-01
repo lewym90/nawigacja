@@ -58,6 +58,12 @@ function instructFull(step) {
   const toward = on;
   const dir = MOD_PL[mod] || '';
 
+  // Cechy dróg pieszych: schody, przejścia, windy.
+  if (m.feature === 'stairs') return { text: `Idź po schodach${toward}`, icon: iconFor(mod) };
+  if (m.feature === 'escalator') return { text: 'Wjedź schodami ruchomymi', icon: 'straight' };
+  if (m.feature === 'elevator') return { text: 'Skorzystaj z windy', icon: 'straight' };
+  if (m.feature === 'crossing') return { text: `Przejdź przez ulicę${dir && dir !== 'prosto' ? ` i skręć ${dir}` : ''}${toward}`, icon: iconFor(mod) };
+
   switch (type) {
     case 'depart':
       return { text: 'Ruszaj', icon: 'straight' };
@@ -177,6 +183,7 @@ export function parseRoute(r, index = 0) {
         name: onStreet(st.name, st.ref),
         type: st.maneuver && st.maneuver.type,
         modifier: st.maneuver && st.maneuver.modifier,
+        feature: st.maneuver && st.maneuver.feature,
         location: st.maneuver && st.maneuver.location,
         // Odległość od początku trasy, w której wykonuje się ten manewr.
         at: acc,

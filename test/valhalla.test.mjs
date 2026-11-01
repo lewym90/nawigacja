@@ -68,3 +68,18 @@ test('opis trasy wskazuje ulicę, która odróżnia warianty (a nie wspólny poc
   assert.deepEqual(rs.map((r) => r.via), ['Krańcowa', 'Zamojska', 'Lubelska']);
   assert.equal(parseRoutes({ code: 'Ok', routes: [mk([['Granata', 9000]])] })[0].via, 'Granata');
 });
+
+test('pieszo: schody i przejścia z opisu manewru, krótkie komunikaty', () => {
+  const osrm = valhallaToOsrm({ trip: { status: 0, summary: { length: 0.3, time: 240 }, legs: [{ shape: enc([[22.5, 51.2], [22.5, 51.201], [22.501, 51.201], [22.501, 51.202]]),
+    maneuvers: [
+      { type: 1, travel_mode: 'pedestrian', begin_shape_index: 0, length: 0.1, time: 70, street_names: ['ul. Krótka'], instruction: 'Walk north on ul. Krótka.' },
+      { type: 15, travel_mode: 'pedestrian', begin_shape_index: 1, length: 0.1, time: 60, street_names: ['ul. Długa'], instruction: 'Turn left onto ul. Długa. Take the stairs.' },
+      { type: 10, travel_mode: 'pedestrian', begin_shape_index: 2, length: 0.1, time: 60, street_names: ['ul. Szeroka'], instruction: 'Cross the street and turn right.' },
+      { type: 4, travel_mode: 'pedestrian', begin_shape_index: 3, length: 0, time: 0 },
+    ] }] } });
+  const [r] = parseRoutes(osrm);
+  assert.equal(r.steps[1].feature, 'stairs');
+  assert.match(r.steps[1].text, /po schodach/);
+  assert.equal(r.steps[2].feature, 'crossing');
+  assert.match(r.steps[2].text, /Przejdź przez ulicę/);
+});

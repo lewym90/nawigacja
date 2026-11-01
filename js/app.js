@@ -2,7 +2,8 @@ import { Places } from './places.js';
 import { CONFIG, APP_VERSION, VOICES, loadSettings, saveSettings, STORAGE } from './config.js';
 import { buildStyle, isNight } from './mapstyle.js';
 import { getRoutes } from './provider.js';
-import { modeOf, DEFAULT_MODE } from './modes.js';
+import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
+import { Compass } from './compass.js';
 import { fmtDist, fmtDuration, limitAt } from './routing.js';
 import { Guidance } from './guidance.js';
 import { SpeedFilter } from './speed.js';
@@ -24,11 +25,12 @@ voice.setVoice(settings.ttsEngine);
 voice.cloudUrl = CONFIG.ttsUrl || '';
 voice.prefName = settings.voiceName || '';
 const reports = new ReportStore();
+const compass = new Compass();
 const hd = createHazardData(CONFIG, reports);
 const { loadHazards, itemsFor, applyHazards } = hd;
 
 const S = {
-  travel: DEFAULT_MODE, // auto | pedestrian | bicycle (modes.js)
+  travel: modeOf(settings.travel).id, // auto | pedestrian | bicycle (modes.js)
   mode: 'idle', // idle | preview | nav
   pos: null,
   dest: null,
@@ -307,6 +309,19 @@ async function chooseDest(d) {
   await planRoute();
 }
 
+function renderTravelSeg() {
+  $('seg-travel').innerHTML = Object.values(MODES).map((m) => `<button data-v="${m.id}" role="tab" class="${m.id === S.travel ? 'on' : ''}">${m.label}</button>`).join('');
+  $('seg-travel').querySelectorAll('button').forEach((b) => (b.onclick = async () => {
+    if (b.dataset.v === S.travel) return;
+    S.travel = b.dataset.v;
+    settings.travel = S.travel;
+    saveSettings(settings);
+    renderTravelSeg();
+    if (S.dest) await planRoute();
+  }));
+}
+renderTravelSeg();
+
 async function planRoute() {
   const d = S.dest;
   const from = S.pos ? [S.pos.lng, S.pos.lat] : map.getCenter().toArray();
@@ -473,7 +488,7 @@ function setMode(m) {
   show('preview', m === 'preview');
   show('nav-panel', m === 'nav');
   show('maneuver', m === 'nav');
-  show('speedbox', m === 'nav');
+  show('speedbox', m === 'nav' && travel().id !== 'pedestrian');
   show('btn-report', m === 'nav');
   show('btn-sound', m === 'nav');
   show('btn-locate', m !== 'nav');
@@ -500,7 +515,7 @@ function startNav({ sim = false } = {}) {
   voice.unlock();
   lockScreen();
   if (!sim) saveSession();
-  voice.prefetch(['Ruszaj', 'Przeliczam trasę', 'Dojechałeś do celu', 'Koniec odcinka', 'Skręć w lewo', 'Skręć w prawo',
+  voice.prefetch([travel().say.go, 'Przeliczam trasę', travel().say.arrive, 'Koniec odcinka', 'Skręć w lewo', 'Skręć w prawo',
     ...new Set((route.steps || []).map((st) => st.short || st.text).filter(Boolean))]);
   if (travel().limits && !route.limitsTried) {
     route.limitsTried = true;
@@ -512,7 +527,7 @@ function startNav({ sim = false } = {}) {
 
   S.nav = {
     route,
-    guidance: new Guidance(route),
+    guidance: new Guidance(route, { profile: travel().guide }),
     watch: new HazardWatch(items),
     loadedTo: route.distance > 80000 ? WINDOW_M : route.distance,
     loading: false,
@@ -531,11 +546,13 @@ function startNav({ sim = false } = {}) {
   document.activeElement && document.activeElement.blur();
   $('results').hidden = true;
   const start = S.pos ? [S.pos.lng, S.pos.lat] : route.coords[0];
-  map.easeTo({ center: start, zoom: 16, pitch: settings.tilt ? 55 : 0, bearing: S.heading, duration: 900, padding: camPadding() });
+  map.easeTo({ center: start, zoom: Math.min(16, travel().zoom(0)), pitch: camPitch(), bearing: S.heading, duration: 900, padding: camPadding() });
   placePuck();
   // Pierwsza wypowiedź musi wyjść od razu z dotknięcia „Start”: tylko wtedy iPhone odblokuje mowę na całą jazdę.
-  voice.say('Ruszaj', { prio: 3, ttl: 4000 });
+  voice.say(travel().say.go, { prio: 3, ttl: 4000 });
 }
+
+function camPitch() { return settings.tilt ? travel().pitch : 0; }
 
 function camPadding() {
   const h = window.innerHeight;
@@ -580,7 +597,9 @@ function navTick(fix) {
 
   // Kierunek kamery: z GPS przy ruchu, inaczej wg trasy.
   let target = S.heading;
-  if (fix.heading != null && isFinite(fix.heading) && speedMs > 1.5) target = fix.heading;
+  const cmp = travel().compass ? compass.get() : null;
+  if (fix.heading != null && isFinite(fix.heading) && speedMs > (cmp != null ? 1.1 : 1.5)) target = fix.heading;
+  else if (cmp != null) target = cmp;
   else if (g.next && N.route.line) target = trackBearing(N.route, g.along);
   const hd = smoothHeading(target);
 
@@ -628,12 +647,12 @@ function navTick(fix) {
   // Kamera i znacznik pojazdu
   const useSnap = g.offDist < 25 && g.point;
   const c = useSnap ? g.point : [fix.lng, fix.lat];
-  const zoom = kmh > 100 ? 14.8 : kmh > 70 ? 15.4 : kmh > 40 ? 16 : 16.6;
+  const zoom = travel().zoom(kmh);
   N.cam = { c, hd, zoom };
   if (!S.follow && navMarker) { navMarker.setLngLat(c); navMarker.setRotation(hd); }
   if (S.follow) {
     const dur = fix.sim ? Math.max(120, 900 / (S.simSpeedup || 1)) : 950;
-    map.easeTo({ center: c, bearing: hd, zoom, pitch: settings.tilt ? 55 : 0, duration: dur, easing: (t) => t, padding: camPadding() });
+    map.easeTo({ center: c, bearing: hd, zoom, pitch: camPitch(), duration: dur, easing: (t) => t, padding: camPadding() });
   }
 
   // Zjechanie z trasy
@@ -643,8 +662,8 @@ function navTick(fix) {
     reroute(fix);
   }
   if (g.arrived && !N.arrivedTimer) {
-    voice.say('Dojechałeś do celu', { prio: 3 });
-    toast('Dojechałeś do celu', 5000);
+    voice.say(travel().say.arrive, { prio: 3 });
+    toast(travel().say.arrive, 5000);
     N.arrivedTimer = setTimeout(endNav, 6000);
   }
 }
@@ -720,7 +739,7 @@ function updateSections(N, g, fix) {
 
 async function reroute(fix) {
   const N = S.nav;
-  toast('Zjechałeś z trasy. Przeliczam…', 4000);
+  toast(travel().say.off, 4000);
   voice.say('Przeliczam trasę', { prio: 3 });
   try {
     const rs = await getRoutes(CONFIG, [[fix.lng, fix.lat], [S.dest.lng, S.dest.lat]], { costing: travel().costing, alternatives: false });
@@ -745,6 +764,7 @@ async function reroute(fix) {
 
 function endNav() {
   clearSession();
+  compass.stop();
   voice.hold(false);
   clearTimeout(resumeTimer);
   if (navMarker) { navMarker.remove(); navMarker = null; }
@@ -762,7 +782,7 @@ function endNav() {
   if (S.pos) { meMarker = new maplibregl.Marker({ element: meEl() }).setLngLat([S.pos.lng, S.pos.lat]).addTo(map); }
 }
 
-$('btn-start').onclick = () => startNav();
+$('btn-start').onclick = () => { if (travel().compass) compass.start(); startNav(); };
 $('btn-sim').onclick = () => {
   const route = S.routes[S.sel];
   if (!route) return;
@@ -815,7 +835,7 @@ function resumeFollow() {
   show('puck', true);
   // Od razu wracamy kamerą za pojazd, nie czekamy na kolejny odczyt GPS.
   const cam = S.nav && S.nav.cam;
-  if (cam) map.easeTo({ center: cam.c, bearing: cam.hd, zoom: cam.zoom, pitch: settings.tilt ? 55 : 0, duration: 600, padding: camPadding() });
+  if (cam) map.easeTo({ center: cam.c, bearing: cam.hd, zoom: cam.zoom, pitch: camPitch(), duration: 600, padding: camPadding() });
 }
 
 map.on('movestart', (e) => { if (S.mode === 'nav' && e.originalEvent) pauseFollow(); });

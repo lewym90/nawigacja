@@ -34,7 +34,7 @@ export const CONFIG = {
   zoom: 12,
 };
 
-export const APP_VERSION = '0.6.2';
+export const APP_VERSION = '0.7.0';
 
 export const STORAGE = { settings: 'nav.settings', lastDest: 'nav.lastDest' };
 
@@ -42,6 +42,7 @@ export const DEFAULT_SETTINGS = {
   voice: true,
   theme: 'auto', // auto | day | night
   tilt: true,
+  travel: 'auto', // auto | pedestrian | bicycle (modes.js)
   hazardsVoice: true,
   ttsEngine: 'system', // system = Zosia (głos telefonu) | ewa = nagrania z własnego serwera (Pocket) | agata = Gemini (nieaktywna)
 };

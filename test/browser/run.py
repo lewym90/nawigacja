@@ -49,6 +49,32 @@ def overpass():
         {'type': 'relation', 'id': 9, 'tags': {'type': 'enforcement', 'enforcement': 'average_speed', 'maxspeed': '70'},
          'members': [{'type': 'node', 'ref': 3, 'role': 'from'}, {'type': 'node', 'ref': 4, 'role': 'to'}]}]}
 
+
+def enc6(pts):
+    out = []; pl = pg = 0
+    def e(v):
+        v = ~(v << 1) if v < 0 else v << 1
+        r = ''
+        while v >= 32:
+            r += chr((32 | (v & 31)) + 63); v >>= 5
+        return r + chr(v + 63)
+    for lng, lat in pts:
+        la, lo = round(lat * 1e6), round(lng * 1e6)
+        out.append(e(la - pl) + e(lo - pg)); pl, pg = la, lo
+    return ''.join(out)
+
+def valhalla_route(route):
+    import json as _j
+    body = _j.loads(__import__('urllib.parse').parse.parse_qs(__import__('urllib.parse').parse.urlparse(route.request.url).query)['json'][0])
+    if body.get('costing') != 'pedestrian':
+        return fulfill_json(route, {'error': 'brak', 'error_code': 171})
+    pts = route_coords(0)[:30]
+    trip = {'status': 0, 'summary': {'length': 2.9, 'time': 2100}, 'legs': [{'shape': enc6(pts), 'maneuvers': [
+        {'type': 1, 'travel_mode': 'pedestrian', 'begin_shape_index': 0, 'length': 1.5, 'time': 1000, 'street_names': ['ul. Piesza'], 'instruction': 'Walk north.'},
+        {'type': 10, 'travel_mode': 'pedestrian', 'begin_shape_index': 15, 'length': 1.4, 'time': 1100, 'street_names': ['ul. Spacerowa'], 'instruction': 'Turn right. Take the stairs.'},
+        {'type': 4, 'travel_mode': 'pedestrian', 'begin_shape_index': 29, 'length': 0, 'time': 0}]}]}
+    fulfill_json(route, {'trip': trip})
+
 errors = []
 with sync_playwright() as p:
     br = p.chromium.launch(args=['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader'])
@@ -65,6 +91,7 @@ with sync_playwright() as p:
     page.route('https://router.project-osrm.org/**', lambda r: fulfill_json(r, {'code': 'Ok', 'routes': [osrm(0), osrm(0.01, 1800)]}))
     page.route('https://valhalla1.openstreetmap.de/**', lambda r: fulfill_json(r, {'edges': [{'length': 0.5, 'speed_limit': 50}]}))
     page.route('https://188-68-247-201.sslip.io/**', lambda r: r.fulfill(status=200, headers={'access-control-allow-origin': '*', 'content-type': 'audio/wav'}, body=b'RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x80\xbb\x00\x00\x00w\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00'))
+    page.route('https://188-68-247-201.sslip.io/valhalla/route**', valhalla_route)
     page.route('https://overpass-api.de/**', lambda r: fulfill_json(r, overpass()))
     end = route_coords()[-1]
     page.route('https://photon.komoot.io/**', lambda r: fulfill_json(r, {'features': [
@@ -93,6 +120,15 @@ with sync_playwright() as p:
     assert err[0] == 0 or err[1] <= 6, 'pinezki leżą w złym miejscu'
     cards = page.eval_on_selector_all('.route-card', 'els => els.map(e => e.innerText.replace(/\\n+/g, " | "))')
     print('KARTY:', cards)
+    # tryb pieszy: przełącznik, trasa z Valhalli, brak fotoradarów
+    assert page.eval_on_selector_all('#seg-travel button', 'els => els.length') == 3, 'brak przełącznika trybu'
+    page.click('#seg-travel button[data-v=pedestrian]')
+    page.wait_for_function("document.querySelectorAll('.route-card').length >= 1 && /Piesza|Spacerowa/.test(document.getElementById('routes').innerText) || document.querySelectorAll('.route-card').length === 1", timeout=8000)
+    pcards = page.eval_on_selector_all('.route-card', 'els => els.map(e => e.innerText.replace(/\\n+/g, " | "))')
+    print('KARTY PIESZO:', pcards)
+    assert len(pcards) == 1 and 'fotoradar' not in pcards[0], 'tryb pieszy ma pokazać 1 trasę bez fotoradarów'
+    page.click('#seg-travel button[data-v=auto]')
+    page.wait_for_function("document.querySelectorAll('.route-card').length === 2", timeout=8000)
 
     # Symulacja: skok do 2300 m, by zobaczyć fotoradar
     # ostatnie cele i moje adresy

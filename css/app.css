@@ -282,3 +282,7 @@ body.has-section #banner { top: calc(var(--safe-t) + 340px); }
 #save-row button.done { border-color: var(--gold); color: var(--gold); }
 
 .seg button:disabled { opacity: .38; }
+
+/* Wybór sposobu poruszania się (auto / pieszo / rower) */
+#seg-travel { margin: 0 0 10px; }
+#seg-travel button { flex: 1; padding: 9px 4px; font-size: 15px; }

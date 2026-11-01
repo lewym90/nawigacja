@@ -11,8 +11,10 @@ export const MODES = {
     limits: true,         // limity prędkości z drogi
     alternatives: true,
     simKmh: null,         // null = realistyczna jazda samochodem (sim.js)
-    followPitch: 54,
-    announce: { far: 600, near: 300 }, // m: kiedy zapowiadać manewr przy typowej prędkości
+    pitch: 55,
+    zoom: (kmh) => (kmh > 100 ? 14.8 : kmh > 70 ? 15.4 : kmh > 40 ? 16 : 16.6),
+    guide: {}, // domyślne progi z guidance.js
+    say: { arrive: 'Dojechałeś do celu', off: 'Zjechałeś z trasy. Przeliczam…', go: 'Ruszaj' },
   },
   pedestrian: {
     id: 'pedestrian',
@@ -22,8 +24,11 @@ export const MODES = {
     limits: false,
     alternatives: true,
     simKmh: 5,
-    followPitch: 0,
-    announce: { far: 60, near: 25 },
+    pitch: 0,
+    zoom: () => 18,
+    compass: true,        // kierunek z kompasu telefonu, gdy stoisz lub idziesz wolno
+    guide: { maxOffM: 22, offFixes: 4, minSpeed: 1.2, nowMin: 12, nowMax: 28, nowSec: 5, remindMin: 70, remindMax: 220, remindSec: 60, preMargin: 25, passedPrev: 18, chainFar: 45, chainNear: 28 },
+    say: { arrive: 'Jesteś na miejscu', off: 'Zszedłeś z trasy. Przeliczam…', go: 'Idź' },
   },
   bicycle: {
     id: 'bicycle',
@@ -33,8 +38,10 @@ export const MODES = {
     limits: false,
     alternatives: true,
     simKmh: 18,
-    followPitch: 40,
-    announce: { far: 150, near: 60 },
+    pitch: 45,
+    zoom: (kmh) => (kmh > 25 ? 16.8 : 17.4),
+    guide: { maxOffM: 28, offFixes: 3, minSpeed: 4, nowMin: 25, nowMax: 70, nowSec: 5, remindMin: 150, remindMax: 500, remindSec: 40, preMargin: 40, passedPrev: 35, chainFar: 90, chainNear: 55 },
+    say: { arrive: 'Dojechałeś do celu', off: 'Zjechałeś z trasy. Przeliczam…', go: 'Ruszaj' },
   },
 };
 

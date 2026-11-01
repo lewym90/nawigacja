@@ -10,8 +10,14 @@ export class Guidance {
     this.offCount = 0;
     this.announced = new Set();
     this.preFrom = new Map();
-    this.maxOffM = opts.maxOffM ?? 35;
-    this.offFixes = opts.offFixes ?? 3;
+    // profil prowadzenia (modes.js): progi zapowiedzi zależne od tego, czy jedziemy, jedziemy rowerem czy idziemy
+    const p = opts.profile || {};
+    this.P = {
+      minSpeed: 4, nowMin: 40, nowMax: 130, nowSec: 4.5, remindMin: 350, remindMax: 1400, remindSec: 32,
+      preMargin: 80, passedPrev: 70, chainFar: 250, chainNear: 150, ...p,
+    };
+    this.maxOffM = opts.maxOffM ?? p.maxOffM ?? 35;
+    this.offFixes = opts.offFixes ?? p.offFixes ?? 3;
     this.lastAlong = 0;
     this.arrived = false;
   }
@@ -82,9 +88,10 @@ export class Guidance {
     const out = [];
     const steps = this.route.steps;
     const isLast = step.type === 'arrive';
-    const v = Math.max(speed, 4); // m/s; na postoju zakładamy ok. 14 km/h
-    const remindDist = Math.min(1400, Math.max(350, v * 32));
-    const nowDist = Math.min(130, Math.max(40, v * 4.5));
+    const P = this.P;
+    const v = Math.max(speed, P.minSpeed); // m/s; na postoju zakładamy typową prędkość trybu
+    const remindDist = Math.min(P.remindMax, Math.max(P.remindMin, v * P.remindSec));
+    const nowDist = Math.min(P.nowMax, Math.max(P.nowMin, v * P.nowSec));
     const has = (n) => this.announced.has(`${idx}:${n}`);
     const mark = (...ns) => ns.forEach((n) => this.announced.add(`${idx}:${n}`));
 
@@ -93,24 +100,24 @@ export class Guidance {
     let afterIdx = -1;
     for (let j = idx + 1; j < steps.length; j++) { if (!isSilent(steps[j])) { after = steps[j]; afterIdx = j; break; } }
     const gap = after && after.type !== 'arrive' ? after.at - step.at : Infinity;
-    const chain = (near) => (gap < (near ? 150 : 250) ? `${near ? ', a zaraz potem ' : ', a potem '}${lower(after.short || after.text)}` : '');
+    const chain = (near) => (gap < (near ? P.chainNear : P.chainFar) ? `${near ? ', a zaraz potem ' : ', a potem '}${lower(after.short || after.text)}` : '');
 
     if (dist <= nowDist && !has('now')) {
       mark('pre', 'rem', 'now');
       // następny manewr podany w tym samym zdaniu nie dostaje już własnej komendy „teraz”
-      if (after && after.type !== 'arrive' && gap < 150) ['pre', 'rem', 'now'].forEach((n) => this.announced.add(`${afterIdx}:${n}`));
+      if (after && after.type !== 'arrive' && gap < P.chainNear) ['pre', 'rem', 'now'].forEach((n) => this.announced.add(`${afterIdx}:${n}`));
       out.push(isLast ? 'Dojechałeś do celu' : `${step.short || step.text}${chain(true)}`);
       return out;
     }
     const prevAt = idx > 0 ? steps[idx - 1].at : 0;
-    const passedPrev = idx <= 1 || along - prevAt >= 70; // nie nakładamy się na poprzedni komunikat
+    const passedPrev = idx <= 1 || along - prevAt >= P.passedPrev; // nie nakładamy się na poprzedni komunikat
     const text = () => (isLast ? `Za ${distWords(dist)} cel podróży` : `Za ${distWords(dist)} ${lower(step.text)}${chain(false)}`);
-    if (!has('pre') && passedPrev && dist > nowDist + 80) {
+    if (!has('pre') && passedPrev && dist > nowDist + P.preMargin) {
       mark('pre');
       this.preFrom.set(idx, dist);
       if (dist <= remindDist) mark('rem');
       out.push(text());
-    } else if (has('pre') && !has('rem') && dist <= remindDist && dist > nowDist + 80 && (this.preFrom.get(idx) || 0) > remindDist * 1.5) {
+    } else if (has('pre') && !has('rem') && dist <= remindDist && dist > nowDist + P.preMargin && (this.preFrom.get(idx) || 0) > remindDist * 1.5) {
       mark('rem');
       out.push(text());
     }
