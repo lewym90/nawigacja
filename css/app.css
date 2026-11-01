@@ -247,3 +247,5 @@ body.day .route-card.sel .rc-name { color: var(--route); }
 .hint b { color: var(--text); }
 
 body.has-section #banner { top: calc(var(--safe-t) + 312px); }
+
+.nav-arrow { width: 46px; height: 46px; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5)); }

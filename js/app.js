@@ -6,7 +6,7 @@ import {
   parseOverpass, overpassQuery, mergeHazards, onRoute, sectionsOnRoute,
   HazardWatch, SectionTracker, ReportStore, TYPES,
 } from './hazards.js';
-import { corridorBoxes, haversine, bearing, angleDiff } from './geo.js';
+import { corridorBoxesRange, haversine, bearing } from './geo.js';
 import { Voice } from './voice.js';
 import { Simulator } from './sim.js';
 import { icon, arrow } from './icons.js';
@@ -260,6 +260,7 @@ async function planRoute() {
   pin.className = 'dest-pin';
   pin.innerHTML = icon.pin(40);
   destMarker = new maplibregl.Marker({ element: pin, anchor: 'bottom' }).setLngLat([d.lng, d.lat]).addTo(map);
+  S.osm = { cameras: [], sections: [] };
   loadHazards(S.routes).then(() => {
     if (S.mode !== 'preview') return;
     S.hazardsReady = true;
@@ -317,48 +318,108 @@ function plural(n, one, few, many) {
 // ---------- Dane o zagrożeniach ----------
 const ovCache = new Map();
 
-async function loadHazards(routes) {
-  // Własna warstwa poprawek (raz).
-  if (!S.localLoaded) {
-    S.localLoaded = true;
-    try {
-      const r = await fetch(CONFIG.localHazardsUrl, { cache: 'no-cache' });
-      if (r.ok) S.local = await r.json();
-    } catch { /* brak pliku: pracujemy na samym OSM */ }
-  }
-  const boxes = new Map();
-  const all = routes.flatMap((r) => r.coords);
-  const ub = all.reduce((a, [x, y]) => [Math.min(a[0], x), Math.min(a[1], y), Math.max(a[2], x), Math.max(a[3], y)], [180, 90, -180, -90]);
-  const diag = haversine([ub[0], ub[1]], [ub[2], ub[3]]);
-  if (diag < 60000) {
-    boxes.set('u', [ub[0] - 0.005, ub[1] - 0.004, ub[2] + 0.005, ub[3] + 0.004]);
-  } else {
-    for (const r of routes) corridorBoxes(r.line, 400, 25000).forEach((b) => boxes.set(b.map((v) => v.toFixed(2)).join(), b));
-  }
+const WINDOW_M = 60000;
+
+async function loadLocal() {
+  if (S.localLoaded) return;
+  S.localLoaded = true;
+  try {
+    const r = await fetch(CONFIG.localHazardsUrl, { cache: 'no-cache' });
+    if (r.ok) S.local = await r.json();
+  } catch { /* brak pliku: pracujemy na samym OSM */ }
+}
+
+// Publiczny Overpass odrzuca zbyt wiele zapytań naraz: dwa równoległe, z ponowieniami.
+async function fetchBoxes(boxes) {
   const parts = [];
   let failed = 0;
-  await Promise.all([...boxes.values()].map(async (b) => {
-    const key = b.map((v) => v.toFixed(3)).join();
-    if (ovCache.has(key)) { parts.push(ovCache.get(key)); return; }
-    try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 30000);
-      const res = await fetch(CONFIG.overpassUrl, { method: 'POST', body: new URLSearchParams({ data: overpassQuery(b) }), signal: ctrl.signal });
-      clearTimeout(t);
-      if (!res.ok) throw new Error(String(res.status));
-      const parsed = parseOverpass(await res.json());
-      ovCache.set(key, parsed);
-      parts.push(parsed);
-    } catch { failed++; }
-  }));
-  if (failed) toast('Część danych o fotoradarach nie wczytała się', 3500);
-  const osm = { cameras: parts.flatMap((p) => p.cameras), sections: parts.flatMap((p) => p.sections) };
-  // deduplikacja po id
-  const seen = new Set();
-  osm.cameras = osm.cameras.filter((c) => !seen.has(c.id) && seen.add(c.id));
-  const seenS = new Set();
-  osm.sections = osm.sections.filter((c) => !seenS.has(c.id) && seenS.add(c.id));
-  S.osm = osm;
+  const queue = [...boxes];
+  const worker = async () => {
+    while (queue.length) {
+      const b = queue.shift();
+      const key = b.map((v) => v.toFixed(3)).join();
+      if (ovCache.has(key)) { parts.push(ovCache.get(key)); continue; }
+      let ok = false;
+      for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+        try {
+          const ctrl = new AbortController();
+          const t = setTimeout(() => ctrl.abort(), 30000);
+          const res = await fetch(CONFIG.overpassUrl, { method: 'POST', body: new URLSearchParams({ data: overpassQuery(b) }), signal: ctrl.signal });
+          clearTimeout(t);
+          if (res.status === 429 || res.status >= 500) throw new Error(String(res.status));
+          if (!res.ok) break;
+          const parsed = parseOverpass(await res.json());
+          ovCache.set(key, parsed);
+          parts.push(parsed);
+          ok = true;
+        } catch {
+          await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+        }
+      }
+      if (!ok) failed++;
+    }
+  };
+  await Promise.all([worker(), worker()]);
+  return { parts, failed };
+}
+
+function addOsm(parts) {
+  const seen = new Set(S.osm.cameras.map((c) => c.id));
+  const seenS = new Set(S.osm.sections.map((c) => c.id));
+  for (const p of parts) {
+    for (const c of p.cameras) if (!seen.has(c.id)) { seen.add(c.id); S.osm.cameras.push(c); }
+    for (const c of p.sections) if (!seenS.has(c.id)) { seenS.add(c.id); S.osm.sections.push(c); }
+  }
+}
+
+/** Trasy krótkie: jedno zapytanie na obwiednię. Długie (>80 km): okno [fromM, toM] wzdłuż trasy. */
+async function loadHazards(routes, { fromM = 0, toM = WINDOW_M } = {}) {
+  await loadLocal();
+  const boxes = new Map();
+  const long = routes.some((r) => r.distance > 80000);
+  if (!long) {
+    const all = routes.flatMap((r) => r.coords);
+    const ub = all.reduce((a, [x, y]) => [Math.min(a[0], x), Math.min(a[1], y), Math.max(a[2], x), Math.max(a[3], y)], [180, 90, -180, -90]);
+    boxes.set('u', [ub[0] - 0.005, ub[1] - 0.004, ub[2] + 0.005, ub[3] + 0.004]);
+  } else {
+    for (const r of routes) corridorBoxesRange(r.line, fromM, toM).forEach((b) => boxes.set(b.map((v) => v.toFixed(3)).join(), b));
+  }
+  const { parts, failed } = await fetchBoxes([...boxes.values()]);
+  if (failed) toast('Część danych o fotoradarach nie wczytała się. Spróbuję ponownie dalej na trasie.', 4000);
+  addOsm(parts);
+  return { failed };
+}
+
+function itemsFor(route) {
+  return [
+    ...route.hz.cams,
+    ...route.hz.secs.map((s) => ({ id: s.id, type: 'section', along: s.startAlong, limit: s.limit, lng: s.start[0], lat: s.start[1] })),
+  ].sort((a, b) => a.along - b.along);
+}
+
+function rebuildWatch(N) {
+  applyHazards([N.route]);
+  const done = N.watch.done;
+  N.watch = new HazardWatch(itemsFor(N.route));
+  N.watch.done = done;
+  const known = new Map(N.trackers.map((t) => [t.s.id, t]));
+  N.trackers = N.route.hz.secs.map((s) => known.get(s.id) || { s, t: new SectionTracker(s, s.limit) });
+  renderHazardMarkers(N.route);
+}
+
+// Na długich trasach dane wczytujemy partiami, z wyprzedzeniem 25 km.
+function maybeExtendHazards(N, along) {
+  const route = N.route;
+  if (route.distance <= 80000 || N.loading || N.loadedTo >= route.distance) return;
+  if (along < N.loadedTo - 25000) return;
+  N.loading = true;
+  const from = N.loadedTo;
+  const to = Math.min(route.distance, from + WINDOW_M);
+  loadHazards([route], { fromM: from, toM: to }).then(({ failed }) => {
+    if (S.nav !== N) return;
+    if (!failed) N.loadedTo = to;
+    rebuildWatch(N);
+  }).finally(() => { N.loading = false; });
 }
 
 function allPoints() {
@@ -432,15 +493,14 @@ function startNav({ sim = false } = {}) {
   lockScreen();
   if (!route.hz) applyHazards([route]);
 
-  const items = [
-    ...route.hz.cams,
-    ...route.hz.secs.map((s) => ({ id: s.id, type: 'section', along: s.startAlong, limit: s.limit, lng: s.start[0], lat: s.start[1] })),
-  ].sort((a, b) => a.along - b.along);
+  const items = itemsFor(route);
 
   S.nav = {
     route,
     guidance: new Guidance(route),
     watch: new HazardWatch(items),
+    loadedTo: route.distance > 80000 ? WINDOW_M : route.distance,
+    loading: false,
     trackers: route.hz.secs.map((s) => ({ s, t: new SectionTracker(s, s.limit) })),
     lastReroute: 0,
     lastAdvice: 0,
@@ -546,10 +606,13 @@ function navTick(fix) {
   chip.hidden = !far;
   if (far) chip.innerHTML = `${icon.warn(16)}${TYPES[far.type].label} za ${fmtDist(far.along - g.along)}`;
 
-  // Kamera
+  maybeExtendHazards(N, g.along);
+
+  // Kamera i znacznik pojazdu
+  const useSnap = g.offDist < 25 && g.point;
+  const c = useSnap ? g.point : [fix.lng, fix.lat];
+  if (!S.follow && navMarker) { navMarker.setLngLat(c); navMarker.setRotation(hd); }
   if (S.follow) {
-    const useSnap = g.offDist < 25 && g.point;
-    const c = useSnap ? g.point : [fix.lng, fix.lat];
     const dur = fix.sim ? Math.max(120, 900 / (S.simSpeedup || 1)) : 950;
     const zoom = kmh > 100 ? 14.8 : kmh > 70 ? 15.4 : kmh > 40 ? 16 : 16.6;
     map.easeTo({ center: c, bearing: hd, zoom, pitch: settings.tilt ? 55 : 0, duration: dur, easing: (t) => t, padding: camPadding() });
@@ -646,12 +709,11 @@ async function reroute(fix) {
     if (S.mode !== 'nav' || S.nav !== N) return;
     const route = rs[0];
     applyHazards([route]);
-    const items = [
-      ...route.hz.cams,
-      ...route.hz.secs.map((s) => ({ id: s.id, type: 'section', along: s.startAlong, limit: s.limit, lng: s.start[0], lat: s.start[1] })),
-    ].sort((a, b) => a.along - b.along);
+    const items = itemsFor(route);
     N.route = route;
     N.guidance.reset(route);
+    N.loadedTo = 0;
+    N.loading = false;
     N.watch = new HazardWatch(items);
     N.trackers = route.hz.secs.map((s) => ({ s, t: new SectionTracker(s, s.limit) }));
     S.routes = [route];
@@ -664,6 +726,8 @@ async function reroute(fix) {
 }
 
 function endNav() {
+  clearTimeout(resumeTimer);
+  if (navMarker) { navMarker.remove(); navMarker = null; }
   if (S.nav && S.nav.arrivedTimer) clearTimeout(S.nav.arrivedTimer);
   if (S.sim) { S.sim.stop(); S.sim = null; S.simSpeedup = 1; }
   S.nav = null;
@@ -701,16 +765,36 @@ $('speed').onclick = () => {
   toast(`Symulacja: ${next} km/h`, 1500);
 };
 
-// Przeciągnięcie mapy w jeździe wstrzymuje podążanie.
-map.on('dragstart', (e) => {
-  if (S.mode === 'nav' && e.originalEvent) {
-    S.follow = false;
-    show('btn-locate', true);
+// Każdy gest użytkownika na mapie (przeciągnięcie, szczypanie, obrót) wstrzymuje podążanie.
+// Wtedy zamiast stałej strzałki na ekranie pojawia się znacznik w prawdziwym miejscu na mapie.
+let navMarker = null;
+let resumeTimer = null;
+
+function pauseFollow() {
+  S.follow = false;
+  show('btn-locate', true);
+  show('puck', false);
+  if (!navMarker && S.lastFix) {
+    const el = document.createElement('div');
+    el.className = 'nav-arrow';
+    el.innerHTML = '<svg viewBox="0 0 64 64" width="46" height="46" aria-hidden="true"><path d="M32 8 L47 50 L32 42 L17 50Z" fill="#f3efe6" stroke="#0b0b0d" stroke-width="3.5" stroke-linejoin="round"/></svg>';
+    navMarker = new maplibregl.Marker({ element: el, rotationAlignment: 'map', pitchAlignment: 'map' })
+      .setLngLat([S.lastFix.lng, S.lastFix.lat]).setRotation(S.heading).addTo(map);
   }
-});
-$('btn-locate').addEventListener('click', () => {
-  if (S.mode === 'nav') { S.follow = true; show('btn-locate', false); }
-});
+  clearTimeout(resumeTimer);
+  resumeTimer = setTimeout(resumeFollow, 12000); // po 12 s bez dotyku wracamy do jazdy
+}
+
+function resumeFollow() {
+  clearTimeout(resumeTimer);
+  S.follow = true;
+  show('btn-locate', false);
+  if (navMarker) { navMarker.remove(); navMarker = null; }
+  if (S.mode === 'nav') show('puck', true);
+}
+
+map.on('movestart', (e) => { if (S.mode === 'nav' && e.originalEvent) pauseFollow(); });
+$('btn-locate').addEventListener('click', () => { if (S.mode === 'nav') resumeFollow(); });
 
 // ---------- Zgłoszenia ----------
 $('btn-report').onclick = () => show('report', true);

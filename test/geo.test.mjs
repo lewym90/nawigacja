@@ -66,3 +66,17 @@ test('bbox zawiera punkty z marginesem', () => {
   const b = bbox([[22.5, 51.2], [22.6, 51.3]], 500);
   assert.ok(b[0] < 22.5 && b[1] < 51.2 && b[2] > 22.6 && b[3] > 51.3);
 });
+
+test('corridorBoxesRange: pokrywa tylko żądany fragment trasy', async () => {
+  const { corridorBoxesRange } = await import('../js/geo.js');
+  const a = [22.5, 51.2];
+  const pts = [a];
+  for (let i = 1; i <= 200; i++) pts.push(destination(a, 0, i * 1000)); // 200 km na północ
+  const line = buildLine(pts);
+  const boxes = corridorBoxesRange(line, 60000, 120000, 400, 20000);
+  assert.equal(boxes.length, 3);
+  const minLat = Math.min(...boxes.map((b) => b[1]));
+  const maxLat = Math.max(...boxes.map((b) => b[3]));
+  assert.ok(Math.abs((minLat - 51.2) * 111195 - 60000) < 1000);
+  assert.ok(Math.abs((maxLat - 51.2) * 111195 - 120000) < 1000);
+});

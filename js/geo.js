@@ -152,3 +152,17 @@ export function corridorBoxes(line, marginM = 400, stepM = 25000) {
   }
   return boxes;
 }
+
+/** Obwiednie dla fragmentu trasy [fromM, toM] (do wczytywania danych „z wyprzedzeniem”). */
+export function corridorBoxesRange(line, fromM, toM, marginM = 400, stepM = 20000) {
+  const boxes = [];
+  const end = Math.min(line.total, toM);
+  for (let s = Math.max(0, fromM); s < end; s += stepM) {
+    const e = Math.min(end, s + stepM);
+    const pts = [];
+    for (let a = s; a <= e; a += Math.max(200, (e - s) / 40)) pts.push(pointAt(line, a).point);
+    pts.push(pointAt(line, e).point);
+    boxes.push(bbox(pts, marginM));
+  }
+  return boxes;
+}
