@@ -14,6 +14,7 @@ export const icon = {
   pin: (s) => S('<path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0113 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>', s),
   home: (s) => S('<path d="M4 11l8-6.5 8 6.5"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/>', s),
   work: (s) => S('<rect x="3.5" y="8" width="17" height="11" rx="2"/><path d="M9 8V6a1 1 0 011-1h4a1 1 0 011 1v2M3.5 13h17"/>', s),
+  tune: (s) => S('<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>', s),
   plus: (s) => S('<path d="M12 5v14M5 12h14"/>', s),
   clock: (s) => S('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', s),
   flag: (s) => S('<path d="M6 21V4M6 5h11l-2.5 4L17 13H6"/>', s),

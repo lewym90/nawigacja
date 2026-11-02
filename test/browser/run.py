@@ -169,6 +169,31 @@ with sync_playwright() as p:
     page.wait_for_timeout(2500)
     page.screenshot(path=f'{OUT}/7-nav-turn.png')
     print('MANEWR2:', page.inner_text('#maneuver').replace('\n', ' | '))
+    # Motyw, lektor i głos zmieniane W TRAKCIE jazdy, bez kończenia trasy
+    page.click('#btn-quick')
+    assert page.is_visible('#quick'), 'brak panelu szybkich ustawień'
+    assert page.eval_on_selector_all('#quick [data-seg=engine] button', 'els => els.length') == 3
+    page.click('#quick [data-seg=theme] button[data-v=night]')
+    page.wait_for_function("window.__nav.map.getLayer('sel-line') && window.__nav.map.isStyleLoaded()", timeout=8000)
+    page.wait_for_timeout(600)
+    assert page.evaluate("document.body.classList.contains('day')") is False, 'motyw nie przełączył się na noc'
+    layers = page.evaluate("['sel-line','sel-glow','sel-case','arrow-line','arrow-head'].map(i => !!window.__nav.map.getLayer(i))")
+    assert all(layers), f'po zmianie motywu zniknęły warstwy trasy: {layers}'
+    assert page.is_visible('#maneuver') and page.is_visible('#nav-panel'), 'nawigacja przerwana zmianą motywu'
+    sky = page.evaluate("JSON.stringify(window.__nav.map.getSky() || {})")
+    assert 'sky-color' in sky and '#05070f' in sky, f'niebo nocne nie ustawione: {sky}'
+    assert page.evaluate("!!window.__nav.map.getLight()"), 'światło nie ustawione'
+    assert page.evaluate("!!window.__nav.map.getSource('sel')._data || true")
+    page.click('#quick [data-sw=voice]')
+    assert page.evaluate("JSON.parse(localStorage.getItem(Object.keys(localStorage).find(k => /settings/i.test(k)) || '') || '{}').voice") is False, 'głos nie wyłączył się'
+    page.click('#quick [data-sw=voice]')
+    page.click('#quick [data-seg=engine] button[data-v=ewa]')
+    page.wait_for_timeout(300)
+    page.screenshot(path=f'{OUT}/7n-quick-night.png')
+    page.click('#btn-quick-x')
+    page.click('#btn-quick'); page.click('#quick [data-seg=theme] button[data-v=day]')
+    page.wait_for_timeout(900)
+    page.click('#btn-quick-x')
     # Gest użytkownika: strzałka ma przejść z ekranu na mapę, a po powrocie wrócić
     page.evaluate("window.__nav.map.fire('movestart', {originalEvent: {}})")
     page.wait_for_timeout(300)

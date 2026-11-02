@@ -43,6 +43,7 @@
     <div class="m-dist" id="m-dist"></div>
     <div class="m-text" id="m-text"></div>
   </div>
+  <div class="m-prog" aria-hidden="true"><i id="m-prog"></i></div>
 </section>
 <section id="banner" class="glass info" hidden role="status" aria-live="polite">
   <div class="b-ico" id="b-ico"></div>
@@ -55,13 +56,14 @@
 
 <div id="speedbox" hidden>
   <div id="limit" hidden>50</div>
-  <div id="speed" class="glass"><b id="speed-v">0</b><small>km/h</small></div>
+  <div id="speed" class="gauge" data-state="ok" style="--p:0"><div class="g-in"><b id="speed-v">0</b><small>km/h</small></div></div>
 </div>
 
 <div id="fabs">
   <button id="btn-locate" class="fab" aria-label="Moja pozycja"></button>
   <button id="btn-report" class="fab gold" aria-label="Zgłoś zdarzenie" hidden></button>
   <button id="btn-sound" class="fab" aria-label="Głos" hidden></button>
+  <button id="btn-quick" class="fab" aria-label="Szybkie ustawienia" hidden></button>
 </div>
 
 <button id="btn-resume" class="resume" hidden><span id="resume-ico"></span>Wróć do nawigacji</button>
@@ -86,6 +88,7 @@
 
 <!-- Pasek nawigacji -->
 <section id="nav-panel" class="panel" hidden>
+  <div class="n-prog" aria-hidden="true"><i id="n-prog"></i></div>
   <div>
     <div class="eta" id="n-time">–</div>
     <div class="eta-sub" id="n-sub"></div>
@@ -101,15 +104,29 @@
   <div id="report-grid"></div>
 </section>
 
+<!-- Szybkie ustawienia w trakcie jazdy (bez kończenia trasy) -->
+<section id="quick" class="panel" hidden>
+  <div class="grab"></div>
+  <div class="p-title"><b>Szybkie ustawienia</b><button id="btn-quick-x" class="icon-btn" aria-label="Zamknij"></button></div>
+  <div class="m-row"><span>Motyw</span><div class="seg" data-seg="theme"><button data-v="auto">Auto</button><button data-v="day">Dzień</button><button data-v="night">Noc</button></div></div>
+  <div class="m-row"><span>Lektor</span><div class="seg" data-seg="engine"></div></div>
+  <div class="m-row"><span>Głos</span><button class="switch" role="switch" aria-label="Głos" data-sw="voice"><i></i></button></div>
+  <div class="m-row"><span>Ostrzeżenia głosowe</span><button class="switch" role="switch" aria-label="Ostrzeżenia głosowe" data-sw="hazardsVoice"><i></i></button></div>
+  <div class="m-row"><span>Widok 3D</span><button class="switch" role="switch" aria-label="Widok 3D" data-sw="tilt"><i></i></button></div>
+  <div class="m-row"><span>Trasa kolorem limitu</span><button class="switch" role="switch" aria-label="Trasa kolorem limitu" data-sw="routeColor"><i></i></button></div>
+  <p class="fine">Zmiany działają od razu, trasa i prowadzenie trwają. Kolor trasy: chłodny = wolno, ciepły = szybko (wg limitu prędkości na danym odcinku).</p>
+</section>
+
 <!-- Menu -->
 <section id="menu" class="panel" hidden>
   <div class="grab"></div>
   <div class="p-title"><b>Ustawienia</b><button id="btn-menu-x" class="icon-btn" aria-label="Zamknij"></button></div>
-  <div class="m-row"><span>Głos</span><button id="sw-voice" class="switch" role="switch" aria-label="Głos"><i></i></button></div>
-  <div class="m-row"><span>Ostrzeżenia głosowe</span><button id="sw-hz" class="switch" role="switch" aria-label="Ostrzeżenia głosowe"><i></i></button></div>
-  <div class="m-row"><span>Widok 3D w jeździe</span><button id="sw-tilt" class="switch" role="switch" aria-label="Widok 3D"><i></i></button></div>
-  <div class="m-row"><span>Motyw</span><div class="seg" id="seg-theme"><button data-v="auto">Auto</button><button data-v="day">Dzień</button><button data-v="night">Noc</button></div></div>
-  <div class="m-row"><span>Lektor</span><div class="seg" id="seg-engine"></div></div>
+  <div class="m-row"><span>Głos</span><button id="sw-voice" class="switch" role="switch" aria-label="Głos" data-sw="voice"><i></i></button></div>
+  <div class="m-row"><span>Ostrzeżenia głosowe</span><button id="sw-hz" class="switch" role="switch" aria-label="Ostrzeżenia głosowe" data-sw="hazardsVoice"><i></i></button></div>
+  <div class="m-row"><span>Widok 3D w jeździe</span><button id="sw-tilt" class="switch" role="switch" aria-label="Widok 3D" data-sw="tilt"><i></i></button></div>
+  <div class="m-row"><span>Trasa kolorem limitu</span><button class="switch" role="switch" aria-label="Trasa kolorem limitu" data-sw="routeColor"><i></i></button></div>
+  <div class="m-row"><span>Motyw</span><div class="seg" id="seg-theme" data-seg="theme"><button data-v="auto">Auto</button><button data-v="day">Dzień</button><button data-v="night">Noc</button></div></div>
+  <div class="m-row"><span>Lektor</span><div class="seg" id="seg-engine" data-seg="engine"></div></div>
   <div class="m-row"><span>Diagnostyka głosu</span><button id="btn-voice-log" class="btn-ghost" style="padding:10px 14px;font-size:14px">Pokaż</button></div>
   <pre id="voice-log" hidden style="white-space:pre-wrap;font-size:11px;line-height:1.35;margin:0 0 10px;padding:10px;border-radius:10px;background:var(--surface-2);color:var(--text);max-height:30vh;overflow:auto;user-select:text;-webkit-user-select:text"></pre>
   <div class="m-row"><span>Dźwięk</span><button id="btn-voice-test" class="btn-ghost" style="padding:10px 14px;font-size:14px">Sprawdź głos</button></div>

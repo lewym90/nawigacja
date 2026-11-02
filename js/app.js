@@ -5,6 +5,9 @@ import { ROUTE_PREFS, DEFAULT_PREF } from './valhalla.js';
 import { getRoutes } from './provider.js';
 import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
 import { Compass } from './compass.js';
+import {
+  atmosphere, routeGradient, gradientExpr, ROUTE_PLAIN, maneuverArrow, wantsArrow, lookAheadBearing, signedAngle, turnZoomBoost, speedRing,
+} from './cockpit.js';
 import { fmtDist, fmtDuration, limitAt } from './routing.js';
 import { Guidance } from './guidance.js';
 import { SpeedFilter } from './speed.js';
@@ -105,7 +108,7 @@ if (window.visualViewport) window.visualViewport.addEventListener('resize', fitM
 function installLayers() {
   if (!map.getSource('alt')) {
     map.addSource('alt', { type: 'geojson', data: emptyFC() });
-    map.addSource('sel', { type: 'geojson', data: emptyFC() });
+    map.addSource('sel', { type: 'geojson', data: emptyFC(), lineMetrics: true }); // lineMetrics: gradient wzdłuż trasy
   }
   if (!map.getSource('secs')) map.addSource('secs', { type: 'geojson', data: emptyFC() });
   // Trasa leży POD budynkami 3D, żeby bloki ją zasłaniały jak w rzeczywistości.
@@ -114,19 +117,58 @@ function installLayers() {
   const routeCase = night ? '#0a2a52' : '#ffffff';
   const add = (def) => { if (!map.getLayer(def.id)) map.addLayer(def, before); };
   add({ id: 'alt-line', type: 'line', source: 'alt', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': night ? '#5a5a66' : '#9a9588', 'line-width': 6, 'line-opacity': 0.9 } });
-  add({ id: 'sel-case', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': routeCase, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 8, 16, 20] } });
-  add({ id: 'sel-line', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': route, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 4.5, 16, 11] } });
+  const grad = ['interpolate', ['linear'], ['line-progress'], 0, route, 1, route];
+  add({ id: 'sel-glow', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 10, 16, 34], 'line-blur': ['interpolate', ['linear'], ['zoom'], 8, 6, 16, 14], 'line-opacity': night ? 0.5 : 0.28 } });
+  add({ id: 'sel-case', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, routeCase, 1, routeCase], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 8, 16, 20] } });
+  add({ id: 'sel-line', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 4.5, 16, 11] } });
   add({ id: 'sec-line', type: 'line', source: 'secs', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#ffcf3a', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.5, 16, 6], 'line-dasharray': [2, 1.3] } });
+  // strzałka skrętu „namalowana” na jezdni (leży na ziemi, więc w widoku 3D jest w perspektywie)
+  if (!map.getSource('arrow')) map.addSource('arrow', { type: 'geojson', data: emptyFC() });
+  const aw = ['interpolate', ['linear'], ['zoom'], 14, 3, 17, 9, 19, 24];
+  add({ id: 'arrow-case', type: 'line', source: 'arrow', filter: ['==', ['geometry-type'], 'LineString'], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#1a1405', 'line-width': ['interpolate', ['linear'], ['zoom'], 14, 6, 17, 13, 19, 28], 'line-opacity': 0.85 } });
+  add({ id: 'arrow-line', type: 'line', source: 'arrow', filter: ['==', ['geometry-type'], 'LineString'], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#ffe9a8', 'line-width': aw } });
+  add({ id: 'arrow-head-case', type: 'line', source: 'arrow', filter: ['==', ['geometry-type'], 'Polygon'], layout: { 'line-join': 'round' }, paint: { 'line-color': '#1a1405', 'line-width': ['interpolate', ['linear'], ['zoom'], 14, 2, 19, 8], 'line-opacity': 0.85 } });
+  add({ id: 'arrow-head', type: 'fill', source: 'arrow', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#ffe9a8' } });
   drawRoutes();
   drawSections(S.routes[S.sel]);
+  applyAtmosphere();
+  if (S.nav) { S.nav.arrowIdx = null; S.nav.paintedAlong = null; }
 }
 const emptyFC = () => ({ type: 'FeatureCollection', features: [] });
 map.on('style.load', installLayers);
+
+// Kolor trasy: gradient wzdłuż linii wg limitu prędkości; przejechany fragment znika pod kołami.
+function paintRoute(consumed = 0) {
+  if (!map.getLayer('sel-line')) return;
+  const r = S.nav ? S.nav.route : S.routes[S.sel];
+  const plain = night ? ROUTE_PLAIN.night : ROUTE_PLAIN.day;
+  const stops = r
+    ? routeGradient(r, { plain, colorByLimit: settings.routeColor !== false, consumed: S.nav ? consumed : 0, shade: night ? 1 : 0.8 })
+    : [[0, plain], [1, plain]];
+  const expr = gradientExpr(stops);
+  map.setPaintProperty('sel-line', 'line-gradient', expr);
+  map.setPaintProperty('sel-glow', 'line-gradient', expr);
+  // obwódka też „znika” z przejechanym fragmentem
+  const caseCol = night ? '#0a2a52' : '#ffffff';
+  map.setPaintProperty('sel-case', 'line-gradient', gradientExpr(routeGradient(r || { distance: 1 }, { plain: caseCol, colorByLimit: false, consumed: r && S.nav ? consumed : 0 })));
+}
+
+// Światło i niebo zależne od pory dnia (dzień: ciepłe słońce z właściwej strony, noc: zimny księżyc).
+function applyAtmosphere() {
+  try {
+    const at = S.pos || { lat: map.getCenter().lat, lng: map.getCenter().lng };
+    const a = atmosphere(night, new Date(), at.lat, at.lng);
+    map.setLight(a.light);
+    if (map.setSky) map.setSky(a.sky);
+  } catch { /* starsza przeglądarka bez nieba: mapa działa bez tego */ }
+}
+setInterval(applyAtmosphere, 300000);
 
 function drawRoutes() {
   if (!map.getSource('sel')) return;
   const sel = S.routes[S.sel];
   map.getSource('sel').setData(sel ? { type: 'Feature', geometry: { type: 'LineString', coordinates: sel.coords } } : emptyFC());
+  paintRoute();
   const alts = S.routes.filter((_, i) => i !== S.sel);
   map.getSource('alt').setData(
     S.mode === 'preview' && alts.length
@@ -530,6 +572,8 @@ function setMode(m) {
   show('speedbox', m === 'nav' && travel().id !== 'pedestrian');
   show('btn-report', m === 'nav');
   show('btn-sound', m === 'nav');
+  show('btn-quick', m === 'nav');
+  if (m !== 'nav') show('quick', false);
   show('btn-locate', m !== 'nav');
   show('puck', m === 'nav');
   show('btn-resume', false);
@@ -558,7 +602,7 @@ function startNav({ sim = false } = {}) {
     ...new Set((route.steps || []).map((st) => st.short || st.text).filter(Boolean))]);
   if (travel().limits && !route.limitsTried) {
     route.limitsTried = true;
-    loadRouteLimits(CONFIG.limitsUrl, route).then((r) => { hd.status = { ...hd.status, limits: r.ok ? `ok (${Math.round(r.covered * 100)}% trasy ma znany limit)` : 'niedostępne' }; }).catch(() => {});
+    loadRouteLimits(CONFIG.limitsUrl, route).then((r) => { hd.status = { ...hd.status, limits: r.ok ? `ok (${Math.round(r.covered * 100)}% trasy ma znany limit)` : 'niedostępne' }; if (r.ok && S.nav && S.nav.route === route) paintRoute(S.nav.paintedAlong || 0); }).catch(() => {});
   }
   if (!route.hz) applyHazards([route]);
 
@@ -650,13 +694,25 @@ function navTick(fix) {
   if (lim) { limEl.textContent = lim; }
   const over = lim ? kmh > lim + 2 : false;
   limEl.classList.toggle('over', over);
-  $('speed').classList.toggle('over', over);
+  const ring = speedRing(kmh, lim);
+  const sp = $('speed');
+  sp.style.setProperty('--p', ring.pct.toFixed(1));
+  sp.dataset.state = ring.state;
+  sp.dataset.notch = ring.notch ? '1' : '0';
+  $('puck').dataset.state = ring.state;
 
   // Karta manewru
   const nx = g.next;
   $('m-arrow').innerHTML = arrow(nx.icon, 50);
   $('m-dist').textContent = nx.type === 'arrive' && g.distToNext < 30 ? 'Cel' : fmtDist(g.distToNext);
   $('m-text').textContent = nx.text;
+  { // postęp do manewru i wyróżnienie tuż przed skrętem
+    const prevAt = g.nextIdx > 0 ? N.route.steps[g.nextIdx - 1].at : 0;
+    const span = Math.max(150, Math.min(900, nx.at - prevAt));
+    $('m-prog').style.width = `${Math.round(Math.max(0, Math.min(1, 1 - g.distToNext / span)) * 100)}%`;
+    $('maneuver').classList.toggle('hot', wantsArrow(nx) && g.distToNext < 120);
+  }
+  $('n-prog').style.width = `${Math.round(Math.max(0, Math.min(1, g.along / (N.route.distance || 1))) * 1000) / 10}%`;
 
   // Czas i dystans
   const arr = new Date((fix.t || Date.now()) + g.remTime * 1000);
@@ -682,16 +738,23 @@ function navTick(fix) {
   if (far) chip.innerHTML = `${icon.warn(16)}${TYPES[far.type].label} za ${fmtDist(far.along - g.along)}`;
 
   maybeExtendHazards(N, g.along);
+  updateRoadArrow(N, g);
+  if (N.paintedAlong == null || g.along - N.paintedAlong > 120) { N.paintedAlong = g.along; paintRoute(g.along); }
 
   // Kamera i znacznik pojazdu
   const useSnap = g.offDist < 25 && g.point;
   const c = useSnap ? g.point : [fix.lng, fix.lat];
-  const zoom = travel().zoom(kmh);
-  N.cam = { c, hd, zoom };
+  // Kamera patrzy w zakręt (kierunek GPS przechylony ku temu, co trasa robi dalej), a tuż przed skrętem zbliża się.
+  const lookAhead = speedMs > 4 && g.offDist < 25 && travel().id !== 'pedestrian';
+  const camHd = lookAhead ? lookAheadBearing(N.route, g.along, hd) : hd;
+  const zoom = travel().zoom(kmh) + turnZoomBoost(g.distToNext, nx);
+  N.cam = { c, hd: camHd, zoom };
+  const pv = document.getElementById('puck-svg');
+  if (pv) pv.style.transform = `rotate(${Math.round(signedAngle(camHd, hd))}deg)`;
   if (!S.follow && navMarker) { navMarker.setLngLat(c); navMarker.setRotation(hd); }
   if (S.follow) {
     const dur = fix.sim ? Math.max(120, 900 / (S.simSpeedup || 1)) : 950;
-    map.easeTo({ center: c, bearing: hd, zoom, pitch: camPitch(), duration: dur, easing: (t) => t, padding: camPadding() });
+    map.easeTo({ center: c, bearing: camHd, zoom, pitch: camPitch(), duration: dur, easing: (t) => t, padding: camPadding() });
   }
 
   // Zjechanie z trasy
@@ -705,6 +768,24 @@ function navTick(fix) {
     toast(travel().say.arrive, 5000);
     N.arrivedTimer = setTimeout(endNav, 6000);
   }
+}
+
+// Strzałka skrętu na jezdni: pokazujemy ją na ostatnich ~220 m przed skrętem (nie przy jeździe prosto).
+function updateRoadArrow(N, g) {
+  const src = map.getSource('arrow');
+  if (!src) return;
+  const nx = g.next;
+  const want = wantsArrow(nx) && g.distToNext < 220 && g.distToNext > 6;
+  const key = want ? g.nextIdx : null;
+  if (key === N.arrowIdx) return;
+  N.arrowIdx = key;
+  if (!want) { src.setData(emptyFC()); return; }
+  const arrowGeo = maneuverArrow(N.route.line, nx.at);
+  if (!arrowGeo) { src.setData(emptyFC()); return; }
+  src.setData({ type: 'FeatureCollection', features: [
+    { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: arrowGeo.shaft } },
+    { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [arrowGeo.head] } },
+  ] });
 }
 
 function trackBearing(route, along) {
@@ -926,33 +1007,50 @@ $('btn-sound').onclick = () => {
   voice.enabled = !voice.enabled;
   settings.voice = voice.enabled;
   saveSettings(settings);
-  $('btn-sound').innerHTML = voice.enabled ? icon.sound(24) : icon.mute(24);
+  syncSoundIcon();
+  syncMenu();
   toast(voice.enabled ? 'Głos włączony' : 'Głos wyłączony', 1500);
 };
 
+// Ustawienia: jedne przełączniki dla menu i panelu „Szybkie ustawienia” (działają od razu, także w trakcie jazdy).
+const SWITCHES = {
+  voice: (v) => { settings.voice = v; voice.enabled = v; syncSoundIcon(); },
+  hazardsVoice: (v) => { settings.hazardsVoice = v; },
+  tilt: (v) => { settings.tilt = v; if (S.mode === 'nav' && S.follow && S.nav) map.easeTo({ pitch: camPitch(), duration: 600 }); },
+  routeColor: (v) => { settings.routeColor = v; paintRoute(S.nav ? S.nav.paintedAlong || 0 : 0); },
+};
+function syncSoundIcon() { $('btn-sound').innerHTML = voice.enabled ? icon.sound(24) : icon.mute(24); }
 function syncMenu() {
-  const sw = (id, on) => { $(id).classList.toggle('on', !!on); $(id).setAttribute('aria-checked', String(!!on)); };
-  sw('sw-voice', settings.voice);
-  sw('sw-hz', settings.hazardsVoice);
-  sw('sw-tilt', settings.tilt);
-  document.querySelectorAll('#seg-theme button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.theme));
-  document.querySelectorAll('#seg-engine button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.ttsEngine));
+  document.querySelectorAll('[data-sw]').forEach((el) => {
+    const on = settings[el.dataset.sw] !== false && !!settings[el.dataset.sw];
+    el.classList.toggle('on', on); el.setAttribute('aria-checked', String(on));
+  });
+  document.querySelectorAll('[data-seg=theme] button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.theme));
+  document.querySelectorAll('[data-seg=engine] button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.ttsEngine));
 }
-$('seg-engine').innerHTML = VOICES.map((v) => `<button data-v="${v.id}"${v.enabled ? '' : ' disabled title="Niedostępna"'}>${v.label}</button>`).join('');
+document.querySelectorAll('[data-seg=engine]').forEach((el) => {
+  el.innerHTML = VOICES.map((v) => `<button data-v="${v.id}"${v.enabled ? '' : ' disabled title="Niedostępna"'}>${v.label}</button>`).join('');
+});
 $('btn-menu').onclick = () => { syncMenu(); show('menu', true); };
 $('btn-menu-x').onclick = () => show('menu', false);
-$('sw-voice').onclick = () => { settings.voice = !settings.voice; voice.enabled = settings.voice; saveSettings(settings); syncMenu(); };
-$('sw-hz').onclick = () => { settings.hazardsVoice = !settings.hazardsVoice; saveSettings(settings); syncMenu(); };
-$('sw-tilt').onclick = () => { settings.tilt = !settings.tilt; saveSettings(settings); syncMenu(); };
-document.querySelectorAll('#seg-theme button').forEach((b) => (b.onclick = () => {
+$('btn-quick').innerHTML = icon.tune(24);
+$('btn-quick').onclick = () => { syncMenu(); show('quick', $('quick').hidden); };
+$('btn-quick-x').onclick = () => show('quick', false);
+map.on('click', () => show('quick', false));
+document.querySelectorAll('[data-sw]').forEach((el) => (el.onclick = () => {
+  const key = el.dataset.sw;
+  SWITCHES[key](!settings[key]);
+  saveSettings(settings); syncMenu();
+}));
+document.querySelectorAll('[data-seg=theme] button').forEach((b) => (b.onclick = () => {
   settings.theme = b.dataset.v; saveSettings(settings); syncMenu(); applyTheme();
 }));
-
-document.querySelectorAll('#seg-engine button').forEach((b) => (b.onclick = () => {
+document.querySelectorAll('[data-seg=engine] button').forEach((b) => (b.onclick = () => {
   if (b.disabled) { toast('Agata jest jeszcze niedostępna', 2000); return; }
   settings.ttsEngine = b.dataset.v; voice.setVoice(b.dataset.v); saveSettings(settings); syncMenu();
   voice.unlock();
-  voice.say('Cześć, jestem ' + (b.dataset.v === 'ewa' ? 'Ewa' : 'Zosia') + '. Za trzysta metrów skręć w prawo.', { urgent: true });
+  const who = b.dataset.v === 'ewa' ? 'Ewa' : 'Zosia';
+  voice.say(S.mode === 'nav' ? `Teraz mówi ${who}.` : `Cześć, jestem ${who}. Za trzysta metrów skręć w prawo.`, { urgent: true });
 }));
 
 $('btn-voice-log').onclick = () => {

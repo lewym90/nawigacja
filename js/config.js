@@ -34,7 +34,7 @@ export const CONFIG = {
   zoom: 12,
 };
 
-export const APP_VERSION = '0.7.11';
+export const APP_VERSION = '0.8.0';
 
 export const STORAGE = { settings: 'nav.settings', lastDest: 'nav.lastDest' };
 
@@ -45,6 +45,7 @@ export const DEFAULT_SETTINGS = {
   travel: 'auto', // auto | pedestrian | bicycle (modes.js)
   routePref: 'balanced', // samochód: fast | balanced | short (valhalla.js ROUTE_PREFS)
   hazardsVoice: true,
+  routeColor: true, // trasa kolorowana limitem prędkości
   ttsEngine: 'system', // system = Zosia (głos telefonu) | ewa = nagrania z własnego serwera (Pocket) | agata = Gemini (nieaktywna)
 };
 

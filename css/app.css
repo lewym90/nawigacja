@@ -212,8 +212,8 @@ body.day .route-card.sel .rc-name { color: var(--route); }
 #report-grid button:active { background: var(--surface-solid); }
 
 /* ---------- Menu ---------- */
-#menu .m-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 4px; border-bottom: 1px solid var(--line); font-size: 16px; }
-#menu .m-row:last-of-type { border-bottom: 0; }
+#menu .m-row, #quick .m-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 4px; border-bottom: 1px solid var(--line); font-size: 16px; }
+#menu .m-row:last-of-type, #quick .m-row:last-of-type { border-bottom: 0; }
 .seg { display: flex; background: var(--surface-2); border-radius: 12px; padding: 3px; gap: 2px; }
 .seg button { border: 0; background: transparent; padding: 7px 12px; border-radius: 9px; font-size: 14px; color: var(--muted); }
 .seg button.on { background: var(--gold); color: var(--gold-ink); font-weight: 700; }
@@ -289,3 +289,53 @@ body.has-section #banner { top: calc(var(--safe-t) + 340px); }
 #seg-pref button { flex: 1; padding: 7px 4px; font-size: 14px; }
 #seg-pref[hidden] { display: none; }
 #seg-travel button { flex: 1; padding: 9px 4px; font-size: 15px; }
+
+/* ---------- Kokpit (0.8) ---------- */
+:root { --ring-bg: rgba(255, 255, 255, 0.13); --rc: #4cb8ff; }
+body.day { --ring-bg: rgba(0, 0, 0, 0.13); --rc: #1f6fe0; }
+
+/* Prędkościomierz: pierścień 270° wypełnia się z prędkością; znacznik na 80% = limit */
+#speed.gauge {
+  --rc-now: var(--rc);
+  width: 96px; height: 96px; border-radius: 50%; position: relative; padding: 0; text-align: center;
+  background: conic-gradient(from 225deg, var(--rc-now) 0, var(--rc-now) calc(var(--p) * 2.7deg), var(--ring-bg) calc(var(--p) * 2.7deg), var(--ring-bg) 270deg, transparent 270deg);
+  box-shadow: var(--shadow), 0 0 22px color-mix(in srgb, var(--rc-now) 45%, transparent);
+  transition: box-shadow 0.3s;
+}
+#speed.gauge .g-in {
+  position: absolute; inset: 9px; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: var(--surface-solid); border: 1px solid var(--line);
+}
+#speed.gauge .g-in b { font-size: 33px; font-weight: 800; line-height: 1; letter-spacing: -0.03em; }
+#speed.gauge .g-in small { font-size: 10px; color: var(--muted); margin-top: 2px; letter-spacing: 0.06em; }
+#speed.gauge[data-notch="1"]::after {
+  content: ''; position: absolute; left: 50%; top: -1px; width: 3px; height: 13px; margin-left: -1.5px; border-radius: 2px;
+  background: var(--text); transform-origin: 50% 49px; transform: rotate(81deg); opacity: 0.9;
+}
+#speed.gauge[data-state="near"] { --rc-now: #ffd24d; }
+#speed.gauge[data-state="over"] { --rc-now: #ff8a3d; }
+#speed.gauge[data-state="way"] { --rc-now: #ff4d4d; animation: pulse 0.7s ease-in-out infinite; }
+#speed.gauge[data-state="over"] .g-in b, #speed.gauge[data-state="way"] .g-in b { color: var(--rc-now); }
+
+/* Pojazd: poświata w kolorze stanu prędkości */
+#puck::before { background: radial-gradient(circle, color-mix(in srgb, var(--rc-puck, var(--rc)) 38%, transparent), transparent 70%); inset: -4px; }
+#puck[data-state="near"] { --rc-puck: #ffd24d; }
+#puck[data-state="over"] { --rc-puck: #ff8a3d; }
+#puck[data-state="way"] { --rc-puck: #ff4d4d; }
+#puck svg { transition: transform 0.45s ease-out; }
+
+/* Karta manewru: pasek postępu do skrętu, tuż przed skrętem złota poświata */
+#maneuver { padding-bottom: 20px; }
+#maneuver .m-dist { font-size: 40px; }
+#maneuver .m-prog { position: absolute; left: 18px; right: 18px; bottom: 8px; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+#maneuver .m-prog i { display: block; height: 100%; width: 0; border-radius: 2px; background: linear-gradient(90deg, var(--gold), #fff1c4); transition: width 0.5s linear; }
+#maneuver.hot { border-color: var(--gold); box-shadow: var(--shadow), 0 0 0 1px var(--gold), 0 0 28px color-mix(in srgb, var(--gold) 55%, transparent); }
+#maneuver.hot .m-arrow { animation: pulse 0.9s ease-in-out infinite; }
+
+/* Pasek postępu całej trasy na górze panelu */
+#nav-panel { position: fixed; }
+#nav-panel .n-prog { position: absolute; top: 0; left: 22px; right: 22px; height: 3px; border-radius: 0 0 3px 3px; background: var(--line); overflow: hidden; }
+#nav-panel .n-prog i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #4cb8ff, #a56bff, #ff4f9a); transition: width 1s linear; }
+
+#quick .m-row { min-height: 52px; }
+#quick .p-title { margin-bottom: 4px; }
