@@ -4,8 +4,9 @@ on:
   schedule:
     - cron: '17 3 * * *'   # codziennie w nocy
   workflow_dispatch: {}     # także ręcznie: zakładka Actions -> Uruchom
-  push:                     # po zmianie skryptu uruchamia się sam
-    paths: ['tools/build-hazards.mjs', 'tools/build-roadpoints.mjs', 'tools/build-fuel.mjs', 'js/fuel.js', 'js/roadwise.js', '.github/workflows/hazards.yml']
+concurrency:
+  group: hazards-data
+  cancel-in-progress: false
 
 permissions:
   contents: write
