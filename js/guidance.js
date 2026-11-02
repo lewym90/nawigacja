@@ -1,6 +1,6 @@
 // Prowadzenie po trasie: pozycja na trasie, zjechanie z trasy, zapowiedzi skrętów.
 
-import { project } from './geo.js';
+import { project, bearing, angleDiff } from './geo.js';
 import { distWords } from './speech-pl.js';
 
 export class Guidance {
@@ -8,6 +8,8 @@ export class Guidance {
     this.route = route;
     this.hint = 0;
     this.offCount = 0;
+    this.wrongCount = 0;
+    this.prevDist = 0;
     this.announced = new Set();
     this.preFrom = new Map();
     // profil prowadzenia (modes.js): progi zapowiedzi zależne od tego, czy jedziemy, jedziemy rowerem czy idziemy
@@ -37,7 +39,17 @@ export class Guidance {
     const tol = Math.max(this.maxOffM, acc * 1.5);
     if (p.dist > tol) this.offCount++;
     else this.offCount = 0;
-    const offRoute = this.offCount >= this.offFixes && acc < 80;
+    // Szybsze wykrycie pominiętego skrętu: jedziemy wyraźnie w inną stronę niż trasa w tym miejscu (kierunek GPS
+    // vs kierunek odcinka trasy, >50° przez dwa odczyty) i już się od niej oddalamy, zanim dojdziemy do pasa
+    // tolerancji. Tylko przy prędkości, gdy kierunek z GPS jest wiarygodny.
+    let wrongWay = false;
+    if ((fix.speed ?? 0) > 3 && fix.heading != null && isFinite(fix.heading) && p.dist > 12 && acc < 30) {
+      const a = r.line.coords[p.idx]; const b = r.line.coords[Math.min(p.idx + 1, r.line.coords.length - 1)];
+      if (a && b) wrongWay = angleDiff(bearing(a, b), fix.heading) > 50;
+    }
+    this.wrongCount = wrongWay && p.dist > this.prevDist ? this.wrongCount + 1 : 0;
+    this.prevDist = p.dist;
+    const offRoute = (this.offCount >= this.offFixes || this.wrongCount >= 2) && acc < 80;
 
     // Nie cofamy się o więcej niż drobny dryf GPS.
     const along = p.dist <= tol ? Math.max(p.along, this.lastAlong - 15) : this.lastAlong;
@@ -129,6 +141,8 @@ export class Guidance {
     this.route = route;
     this.hint = 0;
     this.offCount = 0;
+    this.wrongCount = 0;
+    this.prevDist = 0;
     this.announced.clear();
     this.preFrom.clear();
     this.lastAlong = 0;

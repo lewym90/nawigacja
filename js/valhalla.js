@@ -384,7 +384,7 @@ export async function avoidMinorRoads(base, osrm, requestFn, { signal } = {}) {
   return best;
 }
 
-export async function fetchValhallaRoutes(base, points, { costing = 'auto', alternatives = true, heading = null, pref = DEFAULT_PREF, timeoutMs = 9000 } = {}) {
+export async function fetchValhallaRoutes(base, points, { costing = 'auto', alternatives = true, heading = null, pref = DEFAULT_PREF, avoidMinor = true, timeoutMs = 9000 } = {}) {
   const get = async (hd, pts, exact, exclude = null) => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -417,7 +417,7 @@ export async function fetchValhallaRoutes(base, points, { costing = 'auto', alte
     try { first = await get(heading, points, false); hd = heading; } catch { /* bez kierunku */ }
   }
   if (!first) first = await get(null, points, false);
-  if (costing !== 'auto' || points.length !== 2 || !first.routes.length) return first;
+  if (costing !== 'auto' || !avoidMinor || points.length !== 2 || !first.routes.length) return first;
   try { // samochód: bez polnych i serwisowych dróg w środku trasy (nie może opóźnić ani zepsuć trasy pierwotnej)
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 9000);

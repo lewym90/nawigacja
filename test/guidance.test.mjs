@@ -117,3 +117,35 @@ test('fetchRoutes: ponawia bez adnotacji, gdy silnik odrzuci zapytanie (400)', a
   assert.match(calls[1], /annotations=false/);
   assert.equal(rs.length, 1);
 });
+
+test('Guidance: pominięty skręt wykryty po dwóch odczytach dzięki kierunkowi jazdy', async () => {
+  const { bearing } = await import('../js/geo.js');
+  const route = fakeRoute();
+  const c = route.line.coords; const start = c[10];
+  const rb = bearing(c[10], c[11]);
+  const drive = (headingOffset, withHeading) => {
+    const g = new Guidance(route);
+    for (let i = 1; i <= 8; i++) {
+      const p = destination(start, (rb + headingOffset) % 360, 14 * i); // 14 m/s, fix co sekundę
+      const fix = { lng: p[0], lat: p[1], speed: 14, accuracy: 5, ...(withHeading ? { heading: (rb + headingOffset) % 360 } : {}) };
+      if (g.update(fix).offRoute) return i;
+    }
+    return null;
+  };
+  assert.ok(drive(90, true) <= 2, 'z kierunkiem: najpóźniej drugi odczyt');
+  assert.ok(drive(90, false) >= 4, 'bez kierunku: dopiero po przekroczeniu pasa tolerancji');
+});
+
+test('Guidance: jazda równolegle do trasy (inny pas, drobny dryf kierunku) nie wywołuje przeliczania', async () => {
+  const { bearing } = await import('../js/geo.js');
+  const route = fakeRoute();
+  const c = route.line.coords; const rb = bearing(c[10], c[11]);
+  const g = new Guidance(route);
+  let flagged = false;
+  for (let i = 0; i < 10; i++) {
+    const base = c[10 + i] || c[c.length - 1];
+    const p = destination(base, (rb + 90) % 360, 18); // 18 m obok trasy
+    flagged ||= g.update({ lng: p[0], lat: p[1], speed: 12, accuracy: 6, heading: (rb + 15) % 360 }).offRoute;
+  }
+  assert.equal(flagged, false);
+});

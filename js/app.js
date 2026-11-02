@@ -12,7 +12,7 @@ import { loadRouteLimits } from './limits.js';
 import {
   HazardWatch, SectionTracker, ReportStore, TYPES,
 } from './hazards.js';
-import { corridorBoxesRange, haversine, bearing, sliceLine } from './geo.js';
+import { corridorBoxesRange, haversine, bearing, sliceLine, project } from './geo.js';
 import { createHazardData, WINDOW_M } from './hazard-data.js';
 import { Voice } from './voice.js';
 import { Simulator } from './sim.js';
@@ -696,7 +696,7 @@ function navTick(fix) {
 
   // Zjechanie z trasy
   const now = Date.now();
-  if (g.offRoute && now - N.lastReroute > 10000) {
+  if (g.offRoute && now - N.lastReroute > 6000) {
     N.lastReroute = now;
     reroute(fix);
   }
@@ -776,29 +776,52 @@ function updateSections(N, g, fix) {
   }
 }
 
+function applyNewRoute(N, route) {
+  applyHazards([route]);
+  const items = itemsFor(route);
+  N.route = route;
+  N.guidance.reset(route);
+  N.loadedTo = 0;
+  N.loading = false;
+  N.watch = new HazardWatch(items);
+  N.trackers = route.hz.secs.map((s) => ({ s, t: new SectionTracker(s, s.limit) }));
+  S.routes = [route];
+  S.sel = 0;
+  drawRoutes();
+  renderHazardMarkers(route);
+}
+
+// Zjechanie z trasy: najpierw jak najszybciej zwykła trasa od miejsca, w którym jesteśmy (jeden strzał do serwera,
+// z kierunkiem jazdy, więc nie każe zawracać), a dopiero potem w tle wersja bez dróg gruntowych/serwisowych.
 async function reroute(fix) {
   const N = S.nav;
+  if (N.rerouting) return;
+  N.rerouting = true;
   toast(travel().say.off, 4000);
   voice.say('Przeliczam trasę', { prio: 3 });
+  const dest = [S.dest.lng, S.dest.lat];
+  const head = (f) => ((f.speed || 0) > 1.5 ? f.heading : null);
   try {
-    const rs = await getRoutes(CONFIG, [[fix.lng, fix.lat], [S.dest.lng, S.dest.lat]], { costing: travel().costing, alternatives: false, pref: S.pref, heading: (fix.speed || 0) > 1.5 ? fix.heading : null });
+    const rs = await getRoutes(CONFIG, [[fix.lng, fix.lat], dest], { costing: travel().costing, alternatives: false, pref: S.pref, heading: head(fix), avoidMinor: false });
     if (S.mode !== 'nav' || S.nav !== N) return;
-    const route = rs[0];
-    applyHazards([route]);
-    const items = itemsFor(route);
-    N.route = route;
-    N.guidance.reset(route);
-    N.loadedTo = 0;
-    N.loading = false;
-    N.watch = new HazardWatch(items);
-    N.trackers = route.hz.secs.map((s) => ({ s, t: new SectionTracker(s, s.limit) }));
-    S.routes = [route];
-    S.sel = 0;
-    drawRoutes();
-    renderHazardMarkers(route);
+    applyNewRoute(N, rs[0]);
   } catch {
     toast('Nie udało się przeliczyć trasy', 3500);
+    return;
+  } finally {
+    N.rerouting = false;
   }
+  if (travel().costing !== 'auto') return;
+  const quick = N.route;
+  try { // dopracowanie w tle: podmieniamy tylko gdy jest lepsze i nadal jesteśmy na jej przebiegu
+    const f2 = S.lastFix || fix;
+    const rs2 = await getRoutes(CONFIG, [[f2.lng, f2.lat], dest], { costing: 'auto', alternatives: false, pref: S.pref, heading: head(f2) });
+    if (S.mode !== 'nav' || S.nav !== N || N.route !== quick) return;
+    if (!String(rs2.meta && rs2.meta.avoid).startsWith('poprawiona')) return;
+    const now = S.lastFix || f2;
+    if (project(rs2[0].line, [now.lng, now.lat]).dist > 25) return;
+    applyNewRoute(N, rs2[0]);
+  } catch { /* zostaje szybka trasa */ }
 }
 
 function endNav() {
