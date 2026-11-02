@@ -21,7 +21,7 @@ test('słońce: południe słoneczne w Lublinie latem i zimą', () => {
 
 test('atmosfera: noc zimna i ciemna, dzień ciepły ze słońcem po właściwej stronie', () => {
   const n = atmosphere(true, new Date('2026-11-02T20:00:00Z'), ...LUBLIN);
-  assert.ok(n.light.intensity < 0.4 && n.sky['sky-color'] === '#05070f');
+  assert.ok(n.light.intensity < 0.4 && n.sky['sky-color'] === '#040716');
   const d = atmosphere(false, new Date('2026-06-21T10:29:00Z'), ...LUBLIN);
   assert.ok(Math.abs(d.light.position[1] - 180) < 6);
   assert.ok(d.light.position[2] > 20 && d.light.position[2] < 45); // polar = 90 - wysokość
@@ -104,11 +104,11 @@ test('kamera patrzy w zakręt, ale o ograniczony kąt', () => {
   const line = buildLine([p0, destination(p0, 0, 100), destination(p0, 0, 200), p1, destination(p1, 90, 100), destination(p1, 90, 300), p2]);
   const route = { line, distance: line.total };
   const far = lookAheadBearing(route, 20, 0);
-  assert.ok(far < 5 || far > 355, 'daleko od zakrętu: bez zmiany'); // 20+90 m jeszcze prosto
+  assert.ok(far < 5 || far > 355, 'daleko od zakrętu: bez zmiany'); // 20+120 m jeszcze prosto
   const near = lookAheadBearing(route, 260, 0);
-  assert.ok(near > 15 && near <= 38, `przy zakręcie: ${near}`);
-  const way = lookAheadBearing(route, 260, 350); // GPS już skręca w lewo, trasa w prawo: nadal max 38°
-  assert.ok(Math.abs(signedAngle(350, way)) <= 38.01);
+  assert.ok(near > 15 && near <= 55, `przy zakręcie: ${near}`);
+  const way = lookAheadBearing(route, 260, 350); // GPS już skręca w lewo, trasa w prawo: nadal max 55°
+  assert.ok(Math.abs(signedAngle(350, way)) <= 55.01);
   assert.equal(lookAheadBearing({ line: { total: 10 } }, 0, 77), 77);
 });
 

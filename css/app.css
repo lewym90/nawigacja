@@ -362,3 +362,41 @@ body.day { --ring-bg: rgba(0, 0, 0, 0.13); --rc: #1f6fe0; }
 #report-grid .fixbtn svg { color: var(--accent, #4cb8ff); }
 #fixsheet .m-row { border-bottom: 0; }
 #fix-list .fine { margin: 6px 4px 10px; }
+
+/* ======================= Kokpit 0.9: własny wygląd (szkło, poświata, akcent) ======================= */
+:root { --accent: #5ee1ff; --accent-2: #8a7bff; --glass: rgba(9, 14, 34, 0.62); --glass-line: rgba(140, 170, 255, 0.22); --glass-text: #f2f5ff; --glass-muted: #a9b6dc; }
+body.day { --accent: #0a74ff; --accent-2: #7a4dff; --glass: rgba(255, 255, 255, 0.62); --glass-line: rgba(255, 255, 255, 0.7); --glass-text: #101a33; --glass-muted: #4c5a7c; }
+
+#maneuver, #nav-panel, #banner {
+  background: var(--glass); color: var(--glass-text);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6);
+  border: 1px solid var(--glass-line);
+  box-shadow: 0 12px 40px rgba(0, 10, 40, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+#maneuver { left: 12px; right: 12px; top: calc(var(--safe-t) + 8px); border-radius: 26px; padding: 10px 18px 16px; gap: 14px; }
+#maneuver .m-arrow { color: var(--accent); width: 58px; filter: drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 80%, transparent)); }
+#maneuver .m-dist { font-size: 42px; font-weight: 800; letter-spacing: -0.03em; }
+#maneuver .m-text { color: var(--glass-muted); font-size: 15px; }
+#maneuver .m-then { color: var(--glass-muted); }
+#maneuver .m-prog { background: color-mix(in srgb, var(--glass-text) 14%, transparent); }
+#maneuver .m-prog i { background: linear-gradient(90deg, var(--accent-2), var(--accent)); box-shadow: 0 0 10px var(--accent); }
+#maneuver.hot { box-shadow: 0 12px 40px rgba(0, 10, 40, 0.35), 0 0 0 2px var(--accent), 0 0 34px color-mix(in srgb, var(--accent) 60%, transparent); }
+
+/* dolny pasek: pływająca szklana kapsuła zamiast białego arkusza */
+#nav-panel { left: 12px; right: 12px; bottom: calc(var(--safe-b) + 10px); border-radius: 28px; border-top: 1px solid var(--glass-line); padding: 14px 16px 14px 20px; }
+#nav-panel .eta { color: var(--glass-text); }
+#nav-panel .eta-sub { color: var(--glass-muted); }
+#nav-panel .n-prog { position: absolute; left: 22px; right: 22px; top: 0; height: 3px; border-radius: 2px; background: transparent; overflow: hidden; }
+#nav-panel .n-prog i { background: linear-gradient(90deg, var(--accent-2), var(--accent)); box-shadow: 0 0 8px var(--accent); }
+.btn-end { background: color-mix(in srgb, var(--glass-text) 10%, transparent); color: var(--glass-text); border: 1px solid var(--glass-line); border-radius: 18px; }
+
+/* prędkościomierz i boczne przyciski jako szkło */
+#speed.gauge .g-in { background: var(--glass); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border: 1px solid var(--glass-line); color: var(--glass-text); }
+#speed.gauge .g-in small { color: var(--glass-muted); }
+#speedbox { bottom: calc(var(--safe-b) + 112px); }
+#fabs { bottom: calc(var(--safe-b) + 112px); gap: 9px; }
+.fab { width: 50px; height: 50px; background: var(--glass); color: var(--glass-text); border: 1px solid var(--glass-line); -webkit-backdrop-filter: blur(16px) saturate(1.5); backdrop-filter: blur(16px) saturate(1.5); box-shadow: 0 8px 24px rgba(0, 10, 40, 0.3); }
+.fab.gold { color: #ffcf5a; }
+#banner { color: var(--glass-text); top: calc(var(--safe-t) + 96px); }
+#map { background: #E3EBF3; }
+body:not(.day) #map { background: #070B1A; }

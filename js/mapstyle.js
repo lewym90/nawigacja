@@ -2,24 +2,27 @@
 // Dwa warianty: noc i dzień. Styl nie kopiuje żadnej mapy komercyjnej.
 
 const PALETTE = {
+  // Noc: granat i „świecące” drogi; wyższe budynki jaśnieją na niebiesko
   night: {
-    bg: '#0D0D10', land: '#121216', park: '#12231B', wood: '#102019', water: '#0A1626', waterLine: '#0F2038',
-    building: '#1B1B22', buildingTop: '#23232C', industrial: '#15151B', hospital: '#1B1519', school: '#16161C',
-    roadMinor: '#24242C', roadMinorCase: '#0D0D10', roadMid: '#33333E', roadMidCase: '#0D0D10',
-    roadMain: '#4A4A58', roadMainCase: '#0D0D10', roadMajor: '#7A6A3A', roadMajorCase: '#2B2411',
-    rail: '#2A2A33', path: '#2E2E37', pathPed: '#8A8576', steps: '#E0A85A', cycle: '#3C8F6B', boundary: '#3A3A44',
-    label: '#A09B91', labelMajor: '#D8D3C7', halo: '#0D0D10', placeCity: '#E7E2D6', placeTown: '#BDB8AD',
+    bg: '#070B1A', land: '#0A1026', park: '#0B2230', wood: '#0A1D29', water: '#0A2A57', waterLine: '#123A74',
+    building: '#141C3A', buildingTop: '#3B52A0', industrial: '#0E1530', hospital: '#2A1530', school: '#101A38',
+    roadMinor: '#1B2550', roadMinorCase: '#070B1A', roadMid: '#2A3A78', roadMidCase: '#070B1A',
+    roadMain: '#4660B8', roadMainCase: '#0A1026', roadMajor: '#FF9F3A', roadMajorCase: '#5A3210',
+    rail: '#2A3566', path: '#26336B', pathPed: '#8FA0D0', steps: '#FFB454', cycle: '#37D6A0', boundary: '#34406E',
+    label: '#8FA0D0', labelMajor: '#D4DCF5', halo: '#070B1A', placeCity: '#E4EAFB', placeTown: '#AEBBE0',
   },
+  // Dzień: chłodny, jasny błękit zamiast beżu; droga główna ciepła, zieleń i woda wyraźne
   day: {
-    bg: '#E9E6DE', land: '#EFECE4', park: '#D3E3CB', wood: '#C7DBC0', water: '#B9D3E6', waterLine: '#A9C7DE',
-    building: '#DDD8CC', buildingTop: '#E8E3D8', industrial: '#E4E0D6', hospital: '#F0DDDD', school: '#EAE4D2',
-    roadMinor: '#FFFFFF', roadMinorCase: '#D8D3C6', roadMid: '#FFFFFF', roadMidCase: '#CFC9BA',
-    roadMain: '#FDF1D2', roadMainCase: '#C9BE9E', roadMajor: '#F5D58A', roadMajorCase: '#BFA45A',
-    rail: '#C8C3B6', path: '#D6D0C2', pathPed: '#8E8776', steps: '#C47A1E', cycle: '#2E8B62', boundary: '#B8B2A4',
-    label: '#6B665C', labelMajor: '#2E2B25', halo: '#F4F1EA', placeCity: '#23211C', placeTown: '#4A463E',
+    bg: '#E3EBF3', land: '#EAF0F6', park: '#CBE8D4', wood: '#BCE0C9', water: '#9CC8EE', waterLine: '#86B8E4',
+    building: '#E1E7F0', buildingTop: '#A5B5D2', industrial: '#E2E7EF', hospital: '#F5DDE3', school: '#EEF0DC',
+    roadMinor: '#FFFFFF', roadMinorCase: '#CBD5E3', roadMid: '#FFFFFF', roadMidCase: '#B7C4D8',
+    roadMain: '#FFEBB5', roadMainCase: '#D9B565', roadMajor: '#FFC24D', roadMajorCase: '#D98E1E',
+    rail: '#B9C4D6', path: '#CBD5E3', pathPed: '#6F7C94', steps: '#C47A1E', cycle: '#1E9E73', boundary: '#AEB9CC',
+    label: '#5A6785', labelMajor: '#1E2A45', halo: '#F3F6FA', placeCity: '#1B2540', placeTown: '#3A4666',
   },
 };
 
+const mix = (a, b, t) => { const p = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)); const x = p(a); const y = p(b); return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
 const lerpWidth = (a, b, c) => ['interpolate', ['exponential', 1.5], ['zoom'], 5, a, 12, b, 18, c];
 // Ścieżki: domyślnie ledwo widoczne (jazda autem), dla pieszego i rowerzysty główny bohater mapy.
 function pathLayers(road, c, travel) {
@@ -85,10 +88,10 @@ export function buildStyle(mode, cfg, travel = 'auto') {
       {
         id: 'building-3d', type: 'fill-extrusion', source: 'omt', 'source-layer': 'building', minzoom: 15,
         paint: {
-          'fill-extrusion-color': ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 6], 0, c.building, 60, c.buildingTop],
+          'fill-extrusion-color': ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 6], 0, c.building, 30, mix(c.building, c.buildingTop, 0.45), 80, c.buildingTop],
           'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 6],
           'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
-          'fill-extrusion-opacity': 0.92,
+          'fill-extrusion-opacity': 0.96,
         },
       },
       { id: 'boundary', type: 'line', source: 'omt', 'source-layer': 'boundary', filter: ['<=', ['get', 'admin_level'], 4], paint: { 'line-color': c.boundary, 'line-width': 0.8, 'line-dasharray': [4, 3] } },

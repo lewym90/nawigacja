@@ -29,9 +29,8 @@ STEP = 90
 RIVER_Y = 3000  # rzeka biegnie na wschód-zachód, most na trasie
 
 def river_poly(x0, x1):
-    pts = [(x0, RIVER_Y - 70 + 40 * math.sin(x / 700)) for x in range(int(x0), int(x1) + 1, 100)]
-    pts2 = [(x, RIVER_Y + 70 + 40 * math.sin(x / 700)) for x in range(int(x1), int(x0) - 1, -100)]
-    return Polygon(pts + pts2)
+    line = LineString([(x, RIVER_Y + 40 * math.sin(x / 700)) for x in range(int(x0), int(x1) + 1, 100)])
+    return line.buffer(70, cap_style=2)
 
 def tile(z, tx, ty):
     x0, y0, x1, y1 = tile_bounds_m(z, tx, ty)

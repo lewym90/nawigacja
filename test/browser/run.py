@@ -192,7 +192,7 @@ with sync_playwright() as p:
     assert all(layers), f'po zmianie motywu zniknęły warstwy trasy: {layers}'
     assert page.is_visible('#maneuver') and page.is_visible('#nav-panel'), 'nawigacja przerwana zmianą motywu'
     sky = page.evaluate("JSON.stringify(window.__nav.map.getSky() || {})")
-    assert 'sky-color' in sky and '#05070f' in sky, f'niebo nocne nie ustawione: {sky}'
+    assert 'sky-color' in sky and '#040716' in sky, f'niebo nocne nie ustawione: {sky}'
     assert page.evaluate("!!window.__nav.map.getLight()"), 'światło nie ustawione'
     assert page.evaluate("!!window.__nav.map.getSource('sel')._data || true")
     page.click('#quick [data-sw=voice]')

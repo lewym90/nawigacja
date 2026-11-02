@@ -95,7 +95,7 @@ const map = new maplibregl.Map({
   style: buildStyle(night ? 'night' : 'day', CONFIG, S.travel),
   center: CONFIG.center,
   zoom: CONFIG.zoom,
-  maxPitch: 70,
+  maxPitch: 85,
   attributionControl: false,
   dragRotate: true,
   pitchWithRotate: false,
@@ -111,6 +111,15 @@ window.addEventListener('orientationchange', () => setTimeout(fitMap, 250));
 if (window.visualViewport) window.visualViewport.addEventListener('resize', fitMap);
 [300, 1200, 3000].forEach((ms) => setTimeout(fitMap, ms));
 
+// Animacja światła płynącego po trasie: kolejne przesunięcia wzorca kreska-przerwa (ok. 9 klatek/s, tylko w jeździe)
+const FLOW = (() => { const out = []; const per = 8; for (let i = 0; i < per; i++) { const o = (i / per) * 6; out.push(o === 0 ? [1, 5] : [0, o, 1, 6 - o]); } return out; })();
+let flowI = 0;
+setInterval(() => {
+  if (S.mode !== 'nav' || document.hidden || !map.getLayer('sel-flow')) return;
+  flowI = (flowI + 1) % FLOW.length;
+  map.setPaintProperty('sel-flow', 'line-dasharray', FLOW[FLOW.length - 1 - flowI]);
+}, 110);
+
 function installLayers() {
   if (!map.getSource('alt')) {
     map.addSource('alt', { type: 'geojson', data: emptyFC() });
@@ -124,10 +133,12 @@ function installLayers() {
   const add = (def) => { if (!map.getLayer(def.id)) map.addLayer(def, before); };
   add({ id: 'alt-line', type: 'line', source: 'alt', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': night ? '#5a5a66' : '#9a9588', 'line-width': 6, 'line-opacity': 0.9 } });
   const grad = ['interpolate', ['linear'], ['line-progress'], 0, route, 1, route];
-  add({ id: 'sel-glow', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 10, 16, 34], 'line-blur': ['interpolate', ['linear'], ['zoom'], 8, 6, 16, 14], 'line-opacity': night ? 0.5 : 0.28 } });
+  add({ id: 'sel-glow', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 14, 16, 52], 'line-blur': ['interpolate', ['linear'], ['zoom'], 8, 8, 16, 20], 'line-opacity': night ? 0.75 : 0.5 } });
   add({ id: 'sel-case', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, routeCase, 1, routeCase], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 8, 16, 20] } });
   add({ id: 'sel-line', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 4.5, 16, 11] } });
   add({ id: 'sec-line', type: 'line', source: 'secs', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#ffcf3a', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.5, 16, 6], 'line-dasharray': [2, 1.3] } });
+  // płynące szewrony: światło „ucieka” wzdłuż trasy ku celowi (animacja w flowTick)
+  add({ id: 'sel-flow', type: 'line', source: 'sel', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#ffffff', 'line-opacity': night ? 0.55 : 0.7, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.5, 16, 4.5], 'line-dasharray': FLOW[0] } });
   // strzałka skrętu „namalowana” na jezdni (leży na ziemi, więc w widoku 3D jest w perspektywie)
   if (!map.getSource('arrow')) map.addSource('arrow', { type: 'geojson', data: emptyFC() });
   const aw = ['interpolate', ['linear'], ['zoom'], 14, 3, 17, 9, 19, 24];
@@ -662,11 +673,15 @@ function startNav({ sim = false } = {}) {
   voice.say(travel().say.go, { prio: 3, ttl: 4000 });
 }
 
-function camPitch() { return settings.tilt ? travel().pitch : 0; }
+function camPitch() {
+  if (!settings.tilt) return 0;
+  const t = travel();
+  return t.camPitch && S.nav ? t.camPitch(S.nav.kmh || 0) : t.pitch;
+}
 
 function camPadding() {
   const h = window.innerHeight;
-  return { top: Math.round(h * 0.34), bottom: 120, left: 0, right: 0 };
+  return { top: Math.round(h * 0.30), bottom: 60, left: 0, right: 0 };
 }
 
 function placePuck() {
@@ -782,13 +797,17 @@ function navTick(fix) {
   const lookAhead = speedMs > 4 && g.offDist < 25 && travel().id !== 'pedestrian';
   const camHd = lookAhead ? lookAheadBearing(N.route, g.along, hd) : hd;
   const zoom = travel().zoom(kmh) + turnZoomBoost(g.distToNext, nx);
+  N.kmh = kmh;
+  // przechył kamery w zakręt jak w kokpicie: im ostrzejszy zakręt przed nami, tym mocniej (do 9°), płynnie
+  const bankWant = lookAhead && settings.tilt ? Math.max(-9, Math.min(9, -signedAngle(hd, camHd) * 0.3)) : 0;
+  N.roll = (N.roll || 0) + (bankWant - (N.roll || 0)) * 0.25;
   N.cam = { c, hd: camHd, zoom };
   const pv = document.getElementById('puck-svg');
   if (pv) pv.style.transform = `rotate(${Math.round(signedAngle(camHd, hd))}deg)`;
   if (!S.follow && navMarker) { navMarker.setLngLat(c); navMarker.setRotation(hd); }
   if (S.follow) {
     const dur = fix.sim ? Math.max(120, 900 / (S.simSpeedup || 1)) : 950;
-    map.easeTo({ center: c, bearing: camHd, zoom, pitch: camPitch(), duration: dur, easing: (t) => t, padding: camPadding() });
+    map.easeTo({ center: c, bearing: camHd, zoom, pitch: camPitch(), roll: N.roll || 0, duration: dur, easing: (t) => t, padding: camPadding() });
   }
 
   // Zjechanie z trasy

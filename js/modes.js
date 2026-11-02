@@ -12,7 +12,9 @@ export const MODES = {
     alternatives: true,
     simKmh: null,         // null = realistyczna jazda samochodem (sim.js)
     pitch: 55,
-    zoom: (kmh) => (kmh > 100 ? 14.8 : kmh > 70 ? 15.4 : kmh > 40 ? 16 : 16.6),
+    // kamera „z kokpitu”: im szybciej jedziesz, tym niżej i dalej patrzy (widać horyzont i niebo)
+    camPitch: (kmh) => (kmh > 90 ? 79 : kmh > 60 ? 78 : kmh > 25 ? 77 : 76),
+    zoom: (kmh) => (kmh > 100 ? 14.9 : kmh > 70 ? 15.5 : kmh > 40 ? 16.1 : 16.7),
     guide: {}, // domyślne progi z guidance.js
     say: { arrive: 'Dojechałeś do celu', off: 'Zjechałeś z trasy. Przeliczam…', go: 'Ruszaj' },
   },

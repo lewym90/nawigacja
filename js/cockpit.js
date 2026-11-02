@@ -33,15 +33,17 @@ export function atmosphere(night, date, lat, lng) {
   const sun = sunPosition(date, lat, lng);
   if (night) {
     return {
-      light: { anchor: 'map', position: [1.4, 215, 55], color: '#8fa8dc', intensity: 0.28 },
-      sky: { 'sky-color': '#05070f', 'horizon-color': '#10203a', 'fog-color': '#070b14', 'fog-ground-blend': 0.55, 'horizon-fog-blend': 0.7, 'sky-horizon-blend': 0.6, 'atmosphere-blend': 0.2 },
+      light: { anchor: 'map', position: [1.4, 215, 55], color: '#8fa8dc', intensity: 0.3 },
+      sky: { 'sky-color': '#040716', 'horizon-color': '#27407e', 'fog-color': '#070B1A', 'fog-ground-blend': 0.35, 'horizon-fog-blend': 0.85, 'sky-horizon-blend': 0.85, 'atmosphere-blend': 0 },
     };
   }
   const alt = Math.max(5, Math.min(75, sun.altitude));
-  const low = sun.altitude < 18; // poranek / wieczór: cieplej i dłuższe cienie
+  const low = sun.altitude < 18; // poranek / wieczór: ciepły horyzont i dłuższe cienie
   return {
-    light: { anchor: 'map', position: [1.2, sun.azimuth, 90 - alt], color: low ? '#ffd3a0' : '#fff6e8', intensity: low ? 0.5 : 0.38 },
-    sky: { 'sky-color': low ? '#9ec3e8' : '#8fc3f2', 'horizon-color': low ? '#f6d9b8' : '#dcecf8', 'fog-color': '#eef1f2', 'fog-ground-blend': 0.6, 'horizon-fog-blend': 0.75, 'sky-horizon-blend': 0.6, 'atmosphere-blend': 0.6 },
+    light: { anchor: 'map', position: [1.2, sun.azimuth, 90 - alt], color: low ? '#ffd3a0' : '#fff6e8', intensity: low ? 0.5 : 0.4 },
+    sky: low
+      ? { 'sky-color': '#4d78c4', 'horizon-color': '#ffc07d', 'fog-color': '#f4d6bd', 'fog-ground-blend': 0.4, 'horizon-fog-blend': 0.85, 'sky-horizon-blend': 0.8, 'atmosphere-blend': 0.8 }
+      : { 'sky-color': '#2f84e6', 'horizon-color': '#d6ebfa', 'fog-color': '#E3EBF3', 'fog-ground-blend': 0.4, 'horizon-fog-blend': 0.85, 'sky-horizon-blend': 0.8, 'atmosphere-blend': 0.8 },
   };
 }
 
@@ -171,7 +173,7 @@ export function signedAngle(from, to) {
  * Kierunek kamery „patrzącej w zakręt”: kierunek GPS lekko przechylony ku temu, co trasa robi kilkadziesiąt
  * metrów dalej. Odchylenie ograniczone, żeby mapa nie skakała.
  */
-export function lookAheadBearing(route, along, heading, { ahead = 90, maxTurn = 38, gain = 0.5 } = {}) {
+export function lookAheadBearing(route, along, heading, { ahead = 120, maxTurn = 55, gain = 0.8 } = {}) {
   const line = route.line;
   if (!line || line.total < 30) return heading;
   const a = pointAt(line, Math.min(line.total, along + 8)).point;
