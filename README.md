@@ -1,4 +1,6 @@
-# Nawigacja (prototyp v0.1)
+# Nawigacja
+
+> **Pełny, aktualny opis stanu prac, zasad współpracy i planu: [KONTYNUACJA.md](KONTYNUACJA.md).** Poniżej stary opis prototypu.
 
 PWA: mapa, trasy z alternatywami, prowadzenie głosowe po polsku, ostrzeżenia o fotoradarach,
 odcinkowy pomiar prędkości (własne liczenie średniej), zgłoszenia kierowców, symulacja jazdy.
