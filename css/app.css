@@ -212,7 +212,7 @@ body.day .route-card.sel .rc-name { color: var(--route); }
 #report-grid button:active { background: var(--surface-solid); }
 
 /* ---------- Menu ---------- */
-#menu .m-row, #quick .m-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 4px; border-bottom: 1px solid var(--line); font-size: 16px; }
+#menu .m-row, #quick .m-row, #fixsheet .m-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 4px; border-bottom: 1px solid var(--line); font-size: 16px; }
 #menu .m-row:last-of-type, #quick .m-row:last-of-type { border-bottom: 0; }
 .seg { display: flex; background: var(--surface-2); border-radius: 12px; padding: 3px; gap: 2px; }
 .seg button { border: 0; background: transparent; padding: 7px 12px; border-radius: 9px; font-size: 14px; color: var(--muted); }
@@ -339,3 +339,7 @@ body.day { --ring-bg: rgba(0, 0, 0, 0.13); --rc: #1f6fe0; }
 
 #quick .m-row { min-height: 52px; }
 #quick .p-title { margin-bottom: 4px; }
+
+#report-grid .fixbtn svg { color: var(--accent, #4cb8ff); }
+#fixsheet .m-row { border-bottom: 0; }
+#fix-list .fine { margin: 6px 4px 10px; }

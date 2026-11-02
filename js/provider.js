@@ -5,9 +5,9 @@ import { fetchValhallaRoutes } from './valhalla.js';
 export async function getRoutes(cfg, points, opts = {}) {
   if (cfg.routingOwnUrl) {
     try {
-      const osrm = await fetchValhallaRoutes(cfg.routingOwnUrl, points, { costing: opts.costing || 'auto', alternatives: opts.alternatives !== false, heading: opts.heading, pref: opts.pref, avoidMinor: opts.avoidMinor !== false });
+      const osrm = await fetchValhallaRoutes(cfg.routingOwnUrl, points, { costing: opts.costing || 'auto', alternatives: opts.alternatives !== false, heading: opts.heading, pref: opts.pref, avoidMinor: opts.avoidMinor !== false, fixExclude: opts.fixExclude });
       const rs = parseRoutes(osrm);
-      rs.meta = { engine: 'valhalla', costing: opts.costing || 'auto', from: points[0], to: points[points.length - 1], heading: opts.heading ?? null, avoid: osrm.avoid || null };
+      rs.meta = { engine: 'valhalla', costing: opts.costing || 'auto', from: points[0], to: points[points.length - 1], heading: opts.heading ?? null, avoid: osrm.avoid || null, fixes: (opts.fixExclude || []).length };
       return rs;
     } catch (e) {
       if (opts.costing && opts.costing !== 'auto') throw e; // pieszo/rower: publiczny OSRM nie zastąpi

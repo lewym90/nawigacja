@@ -25,6 +25,7 @@ export const CONFIG = {
 
   // Własna warstwa poprawek (wygrywa z OSM).
   localHazardsUrl: './data/hazards.local.json',
+  fixesUrl: 'https://188-68-247-201.sslip.io/fixes', // wspólna baza poprawek tras (server/nav-fixes.py)
   roadPointsUrl: './data/roadpoints.osm.json', // przejazdy kolejowe, progi, szkoły (bot, OSM)
   // Pliki budowane codziennie przez GitHub Actions (tools/build-hazards.mjs): cała Polska, bez zapytań na żywo.
   staticOsmUrl: './data/hazards.osm.json',
@@ -35,7 +36,7 @@ export const CONFIG = {
   zoom: 12,
 };
 
-export const APP_VERSION = '0.8.1';
+export const APP_VERSION = '0.8.2';
 
 export const STORAGE = { settings: 'nav.settings', lastDest: 'nav.lastDest' };
 

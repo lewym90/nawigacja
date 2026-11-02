@@ -3,6 +3,7 @@ import { CONFIG, APP_VERSION, VOICES, loadSettings, saveSettings, STORAGE } from
 import { buildStyle, isNight } from './mapstyle.js';
 import { ROUTE_PREFS, DEFAULT_PREF } from './valhalla.js';
 import { getRoutes } from './provider.js';
+import { FixStore, FIX_LABEL } from './fixes.js';
 import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
 import { Compass } from './compass.js';
 import { buildRoadItems, unpackRoadPoints, RoadWatch, describe as describeRoad } from './roadwise.js';
@@ -30,6 +31,7 @@ voice.setVoice(settings.ttsEngine);
 voice.cloudUrl = CONFIG.ttsUrl || '';
 voice.prefName = settings.voiceName || '';
 const reports = new ReportStore();
+const fixStore = new FixStore({ url: CONFIG.fixesUrl });
 const compass = new Compass();
 const hd = createHazardData(CONFIG, reports);
 const { loadHazards, itemsFor, applyHazards } = hd;
@@ -68,7 +70,7 @@ $('resume-ico').innerHTML = icon.locate(22);
 const REPORT_TYPES = ['police', 'accident', 'obstacle', 'jam', 'roadwork'];
 $('report-grid').innerHTML = REPORT_TYPES.map(
   (t) => `<button data-t="${t}">${icon[t](30)}<span>${TYPES[t].label}</span></button>`
-).join('');
+).join('') + ['avoid', 'okroad'].map((k) => `<button data-fix="${k === 'avoid' ? 'avoid' : 'ok'}" class="fixbtn">${icon[k](30)}<span>${FIX_LABEL[k === 'avoid' ? 'avoid' : 'ok']}</span></button>`).join('');
 
 let toastTimer;
 function toast(msg, ms = 2600) {
@@ -130,6 +132,8 @@ function installLayers() {
   add({ id: 'arrow-line', type: 'line', source: 'arrow', filter: ['==', ['geometry-type'], 'LineString'], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#ffe9a8', 'line-width': aw } });
   add({ id: 'arrow-head-case', type: 'line', source: 'arrow', filter: ['==', ['geometry-type'], 'Polygon'], layout: { 'line-join': 'round' }, paint: { 'line-color': '#1a1405', 'line-width': ['interpolate', ['linear'], ['zoom'], 14, 2, 19, 8], 'line-opacity': 0.85 } });
   add({ id: 'arrow-head', type: 'fill', source: 'arrow', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#ffe9a8' } });
+  if (!map.getSource('fixes')) map.addSource('fixes', { type: 'geojson', data: emptyFC() });
+  if (!map.getLayer('fixes-dot')) map.addLayer({ id: 'fixes-dot', type: 'circle', source: 'fixes', minzoom: 11, paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 5, 17, 11], 'circle-color': ['match', ['get', 'kind'], 'avoid', '#ff5a4d', '#3ddc84'], 'circle-stroke-width': 2.5, 'circle-stroke-color': '#ffffff', 'circle-opacity': 0.95 } });
   drawRoutes();
   drawSections(S.routes[S.sel]);
   applyAtmosphere();
@@ -409,7 +413,7 @@ async function planRoute() {
   const from = S.pos ? [S.pos.lng, S.pos.lat] : map.getCenter().toArray();
   toast('Wyznaczam trasę…', 8000);
   try {
-    S.routes = await getRoutes(CONFIG, [from, [d.lng, d.lat]], { costing: travel().costing, alternatives: travel().alternatives, pref: S.pref });
+    S.routes = await getRoutes(CONFIG, [from, [d.lng, d.lat]], { costing: travel().costing, alternatives: travel().alternatives, pref: S.pref, fixExclude: await fixEx(from, [d.lng, d.lat]) });
   } catch (e) {
     toast('Nie udało się wyznaczyć trasy. Spróbuj ponownie.', 4000);
     return;
@@ -913,8 +917,9 @@ async function reroute(fix) {
   voice.say('Przeliczam trasę', { prio: 3 });
   const dest = [S.dest.lng, S.dest.lat];
   const head = (f) => ((f.speed || 0) > 1.5 ? f.heading : null);
+  const fx = await Promise.race([fixEx([fix.lng, fix.lat], dest), new Promise((r) => setTimeout(() => r([]), 1500))]); // nie opóźniamy przeliczania
   try {
-    const rs = await getRoutes(CONFIG, [[fix.lng, fix.lat], dest], { costing: travel().costing, alternatives: false, pref: S.pref, heading: head(fix), avoidMinor: false });
+    const rs = await getRoutes(CONFIG, [[fix.lng, fix.lat], dest], { costing: travel().costing, alternatives: false, pref: S.pref, heading: head(fix), avoidMinor: false, fixExclude: fx });
     if (S.mode !== 'nav' || S.nav !== N) return;
     applyNewRoute(N, rs[0]);
   } catch {
@@ -927,7 +932,7 @@ async function reroute(fix) {
   const quick = N.route;
   try { // dopracowanie w tle: podmieniamy tylko gdy jest lepsze i nadal jesteśmy na jej przebiegu
     const f2 = S.lastFix || fix;
-    const rs2 = await getRoutes(CONFIG, [[f2.lng, f2.lat], dest], { costing: 'auto', alternatives: false, pref: S.pref, heading: head(f2) });
+    const rs2 = await getRoutes(CONFIG, [[f2.lng, f2.lat], dest], { costing: 'auto', alternatives: false, pref: S.pref, heading: head(f2), fixExclude: fx });
     if (S.mode !== 'nav' || S.nav !== N || N.route !== quick) return;
     if (!String(rs2.meta && rs2.meta.avoid).startsWith('poprawiona')) return;
     const now = S.lastFix || f2;
@@ -1019,7 +1024,7 @@ $('btn-locate').addEventListener('click', () => { if (S.mode === 'nav') resumeFo
 // ---------- Zgłoszenia ----------
 $('btn-report').onclick = () => show('report', true);
 $('btn-report-x').onclick = () => show('report', false);
-$('report-grid').querySelectorAll('button').forEach((b) => (b.onclick = () => {
+$('report-grid').querySelectorAll('button[data-t]').forEach((b) => (b.onclick = () => {
   const t = b.dataset.t;
   if (!S.pos) { toast('Brak pozycji GPS'); return; }
   reports.add(t, S.pos.lng, S.pos.lat);
@@ -1032,6 +1037,58 @@ $('report-grid').querySelectorAll('button').forEach((b) => (b.onclick = () => {
     renderHazardMarkers(S.nav.route);
   }
 }));
+
+
+// ---------- Poprawki tras od kierowców ----------
+const fixMode = () => travel().costing || 'auto';
+async function fixEx(from, to) {
+  try { return await fixStore.exclusionsFor(from, to, fixMode()); } catch { return []; }
+}
+function fixesGeoJson(list) {
+  return { type: 'FeatureCollection', features: list.map((f) => ({ type: 'Feature', properties: { kind: f.kind, own: f.own ? 1 : 0 }, geometry: { type: 'Point', coordinates: [f.lng, f.lat] } })) };
+}
+async function refreshFixMarkers() {
+  const src = map.getSource('fixes');
+  if (!src) return;
+  const b = map.getBounds();
+  const list = await fixStore.markersIn([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], fixMode()).catch(() => []);
+  src.setData(fixesGeoJson(list));
+}
+function applyFix(kind, lat, lng) {
+  fixStore.add(kind, fixMode(), lat, lng);
+  refreshFixMarkers();
+  show('report', false); show('fixsheet', false);
+  voice.say(kind === 'avoid' ? 'Zapamiętane, będę omijać to miejsce' : 'Dziękuję, zapamiętane', { prio: 1 });
+  if (kind === 'avoid' && S.mode === 'preview' && S.dest) { toast('Zapamiętane. Liczę trasę z pominięciem tej drogi…', 3000); planRoute(); return; }
+  toast(kind === 'avoid' ? 'Zapamiętane: tę drogę będę omijać przy następnych trasach' : 'Zapamiętane: tu można jechać', 3200);
+}
+document.querySelectorAll('#report-grid [data-fix]').forEach((b) => (b.onclick = () => {
+  if (!S.pos) { toast('Brak pozycji GPS'); return; }
+  applyFix(b.dataset.fix, S.pos.lat, S.pos.lng);
+}));
+// długie przytrzymanie palca na mapie (planowanie trasy): zaznacz drogę do ominięcia
+let lp = null;
+const lpClear = () => { clearTimeout(lp); lp = null; };
+map.on('touchstart', (e) => { if (S.mode === 'nav' || e.points.length !== 1) return; lpClear(); lp = setTimeout(() => openFixSheet(e.lngLat), 650); });
+['touchend', 'touchmove', 'touchcancel', 'dragstart', 'zoomstart'].forEach((ev) => map.on(ev, lpClear));
+map.on('contextmenu', (e) => { if (S.mode !== 'nav') openFixSheet(e.lngLat); });
+function openFixSheet(ll) {
+  lpClear();
+  S.fixPt = { lat: ll.lat, lng: ll.lng };
+  show('fixsheet', true);
+}
+$('btn-fixsheet-x').innerHTML = icon.close(22);
+$('fix-avoid').onclick = () => applyFix('avoid', S.fixPt.lat, S.fixPt.lng);
+$('fix-ok').onclick = () => applyFix('ok', S.fixPt.lat, S.fixPt.lng);
+$('btn-fixsheet-x').onclick = () => show('fixsheet', false);
+// „Moje poprawki” w menu
+function renderMyFixes() {
+  const list = fixStore.own().slice().reverse();
+  $('fix-list').innerHTML = list.length ? list.map((f) => `<div class="m-row"><span>${FIX_LABEL[f.kind]} <small style="opacity:.6">${f.lat.toFixed(4)}, ${f.lng.toFixed(4)}</small></span><button class="btn-ghost" data-del="${f.lid}" style="padding:8px 12px;font-size:13px">Usuń</button></div>`).join('') : '<p class="fine">Brak. Przytrzymaj palec na mapie albo użyj przycisku „Zgłoś” w trakcie jazdy.</p>';
+  $('fix-list').querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => { fixStore.remove(b.dataset.del); renderMyFixes(); refreshFixMarkers(); }));
+}
+$('btn-myfixes').onclick = () => { const h = $('fix-list').hidden; $('fix-list').hidden = !h; if (h) renderMyFixes(); };
+map.on('moveend', () => { if (map.getZoom() >= 11) refreshFixMarkers(); });
 
 // ---------- Głos i menu ----------
 $('btn-sound').onclick = () => {

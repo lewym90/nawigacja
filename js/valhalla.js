@@ -384,8 +384,11 @@ export async function avoidMinorRoads(base, osrm, requestFn, { signal } = {}) {
   return best;
 }
 
-export async function fetchValhallaRoutes(base, points, { costing = 'auto', alternatives = true, heading = null, pref = DEFAULT_PREF, avoidMinor = true, timeoutMs = 9000 } = {}) {
+export async function fetchValhallaRoutes(base, points, { costing = 'auto', alternatives = true, heading = null, pref = DEFAULT_PREF, avoidMinor = true, timeoutMs = 9000, fixExclude = null } = {}) {
+  const fixes = (fixExclude || []).slice(0, 30);
   const get = async (hd, pts, exact, exclude = null) => {
+    // poprawki kierowców zawsze na początku listy (limit serwera 50 punktów), potem omijanie dróg polnych
+    if (fixes.length) exclude = [...fixes, ...(exclude || [])].slice(0, 50);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {

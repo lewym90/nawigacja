@@ -104,6 +104,14 @@
   <div id="report-grid"></div>
 </section>
 
+<!-- Poprawka trasy w wybranym miejscu mapy (długie przytrzymanie) -->
+<section id="fixsheet" class="panel" hidden>
+  <div class="grab"></div>
+  <div class="p-title"><b>Ta droga w tym miejscu</b><button id="btn-fixsheet-x" class="icon-btn" aria-label="Zamknij"></button></div>
+  <div class="m-row"><button id="fix-avoid" class="btn-ghost" style="flex:1">Unikaj tej drogi</button><button id="fix-ok" class="btn-ghost" style="flex:1;margin-left:8px">Tu można jechać</button></div>
+  <p class="fine">Własne „unikaj” działa od razu. Cudze, gdy potwierdzi je co najmniej dwóch kierowców.</p>
+</section>
+
 <!-- Szybkie ustawienia w trakcie jazdy (bez kończenia trasy) -->
 <section id="quick" class="panel" hidden>
   <div class="grab"></div>
@@ -129,6 +137,8 @@
   <div class="m-row"><span>Zakręty, przejazdy, progi</span><button class="switch" role="switch" aria-label="Ostrzeżenia drogowe" data-sw="roadAlerts"><i></i></button></div>
   <div class="m-row"><span>Motyw</span><div class="seg" id="seg-theme" data-seg="theme"><button data-v="auto">Auto</button><button data-v="day">Dzień</button><button data-v="night">Noc</button></div></div>
   <div class="m-row"><span>Lektor</span><div class="seg" id="seg-engine" data-seg="engine"></div></div>
+  <div class="m-row"><span>Moje poprawki tras</span><button id="btn-myfixes" class="btn-ghost" style="padding:10px 14px;font-size:14px">Pokaż</button></div>
+  <div id="fix-list" hidden></div>
   <div class="m-row"><span>Diagnostyka głosu</span><button id="btn-voice-log" class="btn-ghost" style="padding:10px 14px;font-size:14px">Pokaż</button></div>
   <pre id="voice-log" hidden style="white-space:pre-wrap;font-size:11px;line-height:1.35;margin:0 0 10px;padding:10px;border-radius:10px;background:var(--surface-2);color:var(--text);max-height:30vh;overflow:auto;user-select:text;-webkit-user-select:text"></pre>
   <div class="m-row"><span>Dźwięk</span><button id="btn-voice-test" class="btn-ghost" style="padding:10px 14px;font-size:14px">Sprawdź głos</button></div>
