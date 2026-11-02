@@ -99,6 +99,10 @@ with sync_playwright() as p:
 
     page.goto(f'http://127.0.0.1:{PORT}/index.html')
     page.wait_for_function('window.__nav && window.__nav.map && window.__nav.map.loaded()', timeout=20000)
+    # punkty drogowe z pliku (przejazd po 1500 m, próg po 1700 m, szkoła po 1900 m trasy)
+    _a, _b, _c = north(1500), north(1700), north(1900)
+    _pts = json.dumps({'rail': [[_a[1], _a[0], 0]], 'bump': [[_b[1], _b[0]]], 'school': [[_c[1], _c[0] + 0.0002]]})
+    page.evaluate("(u) => { window.__nav.CONFIG.roadPointsUrl = 'data:application/json,' + encodeURIComponent(u); }", _pts)
     page.wait_for_timeout(1500)
     page.screenshot(path=f'{OUT}/1-idle.png')
 
@@ -152,6 +156,10 @@ with sync_playwright() as p:
     page.evaluate('window.__nav.S.sim.along = 2250')
     page.wait_for_timeout(2500)
     page.screenshot(path=f'{OUT}/4-nav-camera.png')
+    page.wait_for_function("window.__nav.S.nav && window.__nav.S.nav.road && window.__nav.S.nav.road.items.some(i => i.kind === 'rail')", timeout=8000)
+    kinds = page.evaluate("window.__nav.S.nav.road.items.map(i => i.kind)")
+    print('DROGA:', kinds)
+    assert 'rail' in kinds and 'bump' in kinds and 'school' in kinds, f'brak punktów drogowych na trasie: {kinds}'
     print('BANER:', page.inner_text('#banner') if page.is_visible('#banner') else 'brak')
     print('MANEWR:', page.inner_text('#maneuver').replace('\n', ' | '))
     # Wjazd w odcinkowy pomiar z prędkością 90 km/h (powyżej limitu 70)

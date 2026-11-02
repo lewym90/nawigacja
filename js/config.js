@@ -25,6 +25,7 @@ export const CONFIG = {
 
   // Własna warstwa poprawek (wygrywa z OSM).
   localHazardsUrl: './data/hazards.local.json',
+  roadPointsUrl: './data/roadpoints.osm.json', // przejazdy kolejowe, progi, szkoły (bot, OSM)
   // Pliki budowane codziennie przez GitHub Actions (tools/build-hazards.mjs): cała Polska, bez zapytań na żywo.
   staticOsmUrl: './data/hazards.osm.json',
   staticGitdUrl: './data/hazards.gitd.json',
@@ -34,7 +35,7 @@ export const CONFIG = {
   zoom: 12,
 };
 
-export const APP_VERSION = '0.8.0';
+export const APP_VERSION = '0.8.1';
 
 export const STORAGE = { settings: 'nav.settings', lastDest: 'nav.lastDest' };
 
@@ -45,7 +46,8 @@ export const DEFAULT_SETTINGS = {
   travel: 'auto', // auto | pedestrian | bicycle (modes.js)
   routePref: 'balanced', // samochód: fast | balanced | short (valhalla.js ROUTE_PREFS)
   hazardsVoice: true,
-  routeColor: true, // trasa kolorowana limitem prędkości
+  routeColor: true,
+  roadAlerts: true, // zakręty z zalecaną prędkością, przejazdy kolejowe, progi, szkoły // trasa kolorowana limitem prędkości
   ttsEngine: 'system', // system = Zosia (głos telefonu) | ewa = nagrania z własnego serwera (Pocket) | agata = Gemini (nieaktywna)
 };
 

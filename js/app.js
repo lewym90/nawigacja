@@ -5,6 +5,7 @@ import { ROUTE_PREFS, DEFAULT_PREF } from './valhalla.js';
 import { getRoutes } from './provider.js';
 import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
 import { Compass } from './compass.js';
+import { buildRoadItems, unpackRoadPoints, RoadWatch, describe as describeRoad } from './roadwise.js';
 import {
   atmosphere, routeGradient, gradientExpr, ROUTE_PLAIN, maneuverArrow, wantsArrow, lookAheadBearing, signedAngle, turnZoomBoost, speedRing,
 } from './cockpit.js';
@@ -620,6 +621,7 @@ function startNav({ sim = false } = {}) {
     sectionHold: null,
     arrivedTimer: null,
   };
+  setupRoad(S.nav);
   S.follow = true;
   S.heading = route.line.coords.length > 1 ? bearing(route.line.coords[0], route.line.coords[1]) : 0;
   setMode('nav');
@@ -722,6 +724,11 @@ function navTick(fix) {
   // Ostrzeżenia
   const w = N.watch.update(g.along, speedMs, lim);
   showBanner(w, kmh, lim);
+  if (settings.roadAlerts !== false && N.road) {
+    const rw = N.road.update(g.along, speedMs, lim);
+    if (settings.hazardsVoice) for (const t of rw.say) voice.say(t, { prio: 2 });
+    if ($('banner').hidden && $('section').hidden && rw.ahead) showRoadBanner(rw.ahead, kmh);
+  }
   if (settings.hazardsVoice) {
     for (const t of w.say) voice.say(t, { prio: w.level === 'final' ? 4 : 2 });
   }
@@ -795,6 +802,16 @@ function trackBearing(route, along) {
   return bearing(route.line.coords[i], route.line.coords[i + 1]);
 }
 
+function showRoadBanner(it, kmh) {
+  const d = describeRoad(it, it.dist);
+  const b = $('banner');
+  b.hidden = false;
+  b.className = `glass ${it.tooFast ? 'alert' : 'info'}`;
+  $('b-ico').innerHTML = (icon[it.kind === 'curve' ? 'curve' : it.kind] || icon.warn)(26);
+  $('b-title').textContent = `${d.title} za ${fmtDist(it.dist)}`;
+  $('b-sub').textContent = it.kind === 'curve' ? `${d.sub} · jedziesz ${kmh}` : d.sub;
+}
+
 function showBanner(w, kmh, lim) {
   const b = $('banner');
   const h = w.ahead[0];
@@ -857,6 +874,19 @@ function updateSections(N, g, fix) {
   }
 }
 
+// Punkty drogowe (przejazdy kolejowe, progi, szkoły) z pliku budowanego przez bota; zakręty liczymy z geometrii trasy.
+let roadPoints = null; let roadPointsP = null;
+function loadRoadPoints() {
+  if (!roadPointsP) {
+    roadPointsP = fetch(CONFIG.roadPointsUrl).then((r) => (r.ok ? r.json() : null)).then((j) => { roadPoints = j ? unpackRoadPoints(j) : []; hd.status = { ...hd.status, roadPoints: roadPoints.length }; return roadPoints; }).catch(() => { roadPoints = []; return roadPoints; });
+  }
+  return roadPointsP;
+}
+function setupRoad(N) {
+  N.road = new RoadWatch(buildRoadItems(N.route, roadPoints || []), N.road ? N.road.done : null);
+  if (!roadPoints) loadRoadPoints().then(() => { if (S.nav === N) N.road = new RoadWatch(buildRoadItems(N.route, roadPoints), N.road.done); });
+}
+
 function applyNewRoute(N, route) {
   applyHazards([route]);
   const items = itemsFor(route);
@@ -868,6 +898,7 @@ function applyNewRoute(N, route) {
   N.trackers = route.hz.secs.map((s) => ({ s, t: new SectionTracker(s, s.limit) }));
   S.routes = [route];
   S.sel = 0;
+  setupRoad(N);
   drawRoutes();
   renderHazardMarkers(route);
 }
@@ -1017,6 +1048,7 @@ const SWITCHES = {
   voice: (v) => { settings.voice = v; voice.enabled = v; syncSoundIcon(); },
   hazardsVoice: (v) => { settings.hazardsVoice = v; },
   tilt: (v) => { settings.tilt = v; if (S.mode === 'nav' && S.follow && S.nav) map.easeTo({ pitch: camPitch(), duration: 600 }); },
+  roadAlerts: (v) => { settings.roadAlerts = v; if (!v) $('banner').hidden = true; },
   routeColor: (v) => { settings.routeColor = v; paintRoute(S.nav ? S.nav.paintedAlong || 0 : 0); },
 };
 function syncSoundIcon() { $('btn-sound').innerHTML = voice.enabled ? icon.sound(24) : icon.mute(24); }
@@ -1057,7 +1089,7 @@ $('btn-voice-log').onclick = () => {
   const el = $('voice-log');
   el.hidden = !el.hidden;
   const hz = hd.status || {};
-  el.textContent = `Wersja ${APP_VERSION}, silnik: ${voice.engine}, głos: ${voice.voice ? voice.voice.name : 'brak'}, mowa włączona: ${voice.enabled}\nDane: plik OSM ${hz.osmFile ?? '?'} pkt, GITD ${hz.gitd ?? '?'} pkt, Overpass ${hz.live || '…'}, limity prędkości ${hz.limits || '…'}\n` + (S.routes.meta ? `Trasa: ${S.routes.meta.engine}/${S.routes.meta.costing} ${S.routes.meta.from[1].toFixed(5)}, ${S.routes.meta.from[0].toFixed(5)} → ${S.routes.meta.to[1].toFixed(5)}, ${S.routes.meta.to[0].toFixed(5)}\n` + (S.routes.meta.avoid ? `Drogi gruntowe/serwisowe w trasie: ${S.routes.meta.avoid}\n` : '') : '') + (S.pos ? `Pozycja: ${S.pos.lat.toFixed(5)}, ${S.pos.lng.toFixed(5)}\n` : '') + (voice.events.length ? voice.events.join('\n') : 'Brak zdarzeń. Uruchom symulację i wróć tutaj.');
+  el.textContent = `Wersja ${APP_VERSION}, silnik: ${voice.engine}, głos: ${voice.voice ? voice.voice.name : 'brak'}, mowa włączona: ${voice.enabled}\nDane: plik OSM ${hz.osmFile ?? '?'} pkt, GITD ${hz.gitd ?? '?'} pkt, Overpass ${hz.live || '…'}, limity prędkości ${hz.limits || '…'}, punkty drogowe ${hz.roadPoints ?? '?'}, zakręty na trasie ${S.nav ? S.nav.road.items.filter((i) => i.kind === 'curve').length : '–'}\n` + (S.routes.meta ? `Trasa: ${S.routes.meta.engine}/${S.routes.meta.costing} ${S.routes.meta.from[1].toFixed(5)}, ${S.routes.meta.from[0].toFixed(5)} → ${S.routes.meta.to[1].toFixed(5)}, ${S.routes.meta.to[0].toFixed(5)}\n` + (S.routes.meta.avoid ? `Drogi gruntowe/serwisowe w trasie: ${S.routes.meta.avoid}\n` : '') : '') + (S.pos ? `Pozycja: ${S.pos.lat.toFixed(5)}, ${S.pos.lng.toFixed(5)}\n` : '') + (voice.events.length ? voice.events.join('\n') : 'Brak zdarzeń. Uruchom symulację i wróć tutaj.');
 };
 
 // ---------- Start ----------
@@ -1098,7 +1130,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 }
 
 // Haki do testów i diagnostyki (nie zmieniają działania aplikacji).
-window.__nav = { S, map, voice, settings, onFix, chooseDest, startNav, endNav, parsePhoton, reports };
+window.__nav = { S, CONFIG, map, voice, settings, onFix, chooseDest, startNav, endNav, parsePhoton, reports };
 
 // Zapis aktualnego celu jako dom / praca / inne
 document.querySelectorAll('#save-row button').forEach((b) => (b.onclick = () => {
