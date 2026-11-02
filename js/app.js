@@ -4,6 +4,8 @@ import { buildStyle, isNight } from './mapstyle.js';
 import { ROUTE_PREFS, DEFAULT_PREF } from './valhalla.js';
 import { getRoutes } from './provider.js';
 import { FixStore, FIX_LABEL } from './fixes.js';
+import { unpackFuel, candidatesAhead, fuelDetours, bestStation, fmtExtra } from './fuel.js';
+import { explainRoute } from './explain.js';
 import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
 import { Compass } from './compass.js';
 import { buildRoadItems, unpackRoadPoints, RoadWatch, describe as describeRoad } from './roadwise.js';
@@ -481,12 +483,22 @@ function renderRouteCards() {
       <div class="rc-top"><span class="rc-time">${fmtDuration(r.duration)}</span><span class="rc-dist">${fmtDist(r.distance)}</span></div>
       <div class="rc-name">${esc(routeName(r, i))}</div><div class="rc-tags">${tags}</div></button>`;
   }).join('');
+  renderWhy();
   box.querySelectorAll('.route-card').forEach((b) => (b.onclick = () => {
     S.sel = +b.dataset.i;
     renderRouteCards();
     drawRoutes();
     if (S.hazardsReady) renderHazardMarkers(S.routes[S.sel]);
   }));
+}
+
+function renderWhy() {
+  const r = S.routes[S.sel];
+  const meta = S.routes.meta || {};
+  const cams = S.hazardsReady && r && r.hz ? (r.hz.cams || []).filter((h) => h.type === 'camera' || h.type === 'redlight').length + (r.hz.secs || []).length : null;
+  const lines = explainRoute(S.routes, S.sel, { prefLabel: travel().id === 'auto' ? (ROUTE_PREFS[S.pref] || {}).label : null, avoid: S.sel === 0 ? meta.avoid : null, fixes: meta.fixes || 0, cams });
+  $('why-list').innerHTML = lines.map((t) => `<li>${esc(t)}</li>`).join('');
+  $('why').hidden = !lines.length;
 }
 
 function plural(n, one, few, many) {
@@ -578,6 +590,8 @@ function setMode(m) {
   show('btn-report', m === 'nav');
   show('btn-sound', m === 'nav');
   show('btn-quick', m === 'nav');
+  show('btn-fuel', m === 'nav' && travel().id === 'auto');
+  if (m !== 'nav') show('fuel', false);
   if (m !== 'nav') show('quick', false);
   show('btn-locate', m !== 'nav');
   show('puck', m === 'nav');
@@ -726,6 +740,7 @@ function navTick(fix) {
   $('n-sub').textContent = `${fmtDist(g.remaining)} · przyjazd ${String(arr.getHours()).padStart(2, '0')}:${String(arr.getMinutes()).padStart(2, '0')}`;
 
   // Ostrzeżenia
+  N.along = g.along;
   const w = N.watch.update(g.along, speedMs, lim);
   showBanner(w, kmh, lim);
   if (settings.roadAlerts !== false && N.road) {
@@ -1038,6 +1053,49 @@ $('report-grid').querySelectorAll('button[data-t]').forEach((b) => (b.onclick = 
   }
 }));
 
+
+// ---------- Stacje paliw z kosztem objazdu ----------
+let fuelStations = null;
+function loadFuel() {
+  if (!fuelStations) fuelStations = fetch(CONFIG.fuelUrl).then((r) => (r.ok ? r.json() : null)).then((j) => unpackFuel(j)).catch(() => []);
+  return fuelStations;
+}
+$('btn-fuel').innerHTML = icon.fuel(24);
+$('btn-fuel-x').innerHTML = icon.close(22);
+$('btn-fuel-x').onclick = () => show('fuel', false);
+$('btn-fuel').onclick = async () => {
+  if (!$('fuel').hidden) { show('fuel', false); return; }
+  show('quick', false); show('fuel', true);
+  const N = S.nav; const box = $('fuel-list');
+  if (!N || !S.lastFix) { box.innerHTML = '<p class="fine">Czekam na pozycję GPS…</p>'; return; }
+  box.innerHTML = '<p class="fine">Szukam stacji i liczę objazdy…</p>';
+  try {
+    const all = await loadFuel();
+    if (!all.length) { box.innerHTML = '<p class="fine">Dane o stacjach nie są jeszcze pobrane. Aktualizują się automatycznie raz dziennie.</p>'; return; }
+    const pos = [S.lastFix.lng, S.lastFix.lat];
+    const cands = candidatesAhead(all, N.route.line, N.along || 0);
+    if (!cands.length) { box.innerHTML = '<p class="fine">Brak stacji w pobliżu trasy na najbliższych 120 km.</p>'; return; }
+    const res = (await fuelDetours(CONFIG.routingOwnUrl, pos, [S.dest.lng, S.dest.lat], cands, { pref: S.pref })).filter((x) => x.extraMin <= 12);
+    if (S.nav !== N) return;
+    if (!res.length) { box.innerHTML = '<p class="fine">Nie udało się policzyć dojazdu do stacji.</p>'; return; }
+    const best = bestStation(res);
+    box.innerHTML = res.map((x, i) => `<div class="st"><div><b>${esc(x.brand || 'Stacja paliw')}${x.lpg ? ' · LPG' : ''}</b><small>za ${fmtDist(x.along - (N.along || 0))} · ${fmtExtra(x)}</small>${x === best ? '<br><span class="best">NAJMNIEJSZY OBJAZD</span>' : ''}</div><button class="btn-ghost" data-i="${i}">Jedź tam</button></div>`).join('');
+    box.querySelectorAll('button[data-i]').forEach((b) => (b.onclick = () => goViaStation(res[+b.dataset.i])));
+  } catch { box.innerHTML = '<p class="fine">Nie udało się policzyć objazdów (brak połączenia z serwerem tras).</p>'; }
+};
+async function goViaStation(st) {
+  const N = S.nav; const fix = S.lastFix;
+  if (!N || !fix) return;
+  show('fuel', false);
+  toast('Wyznaczam trasę przez stację…', 5000);
+  try {
+    const rs = await getRoutes(CONFIG, [[fix.lng, fix.lat], [st.lng, st.lat], [S.dest.lng, S.dest.lat]], { costing: 'auto', alternatives: false, pref: S.pref, avoidMinor: false, heading: (fix.speed || 0) > 1.5 ? fix.heading : null });
+    if (S.nav !== N) return;
+    applyNewRoute(N, rs[0]);
+    toast(`Jedziemy przez: ${st.brand || 'stację paliw'}`, 3000);
+    voice.say('Trasa przez stację paliw', { prio: 2 });
+  } catch { toast('Nie udało się wyznaczyć trasy przez stację', 3500); }
+}
 
 // ---------- Poprawki tras od kierowców ----------
 const fixMode = () => travel().costing || 'auto';

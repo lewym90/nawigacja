@@ -124,6 +124,9 @@ with sync_playwright() as p:
     assert err[0] == 0 or err[1] <= 6, 'pinezki leżą w złym miejscu'
     cards = page.eval_on_selector_all('.route-card', 'els => els.map(e => e.innerText.replace(/\\n+/g, " | "))')
     print('KARTY:', cards)
+    why = page.eval_on_selector_all('#why-list li', 'els => els.map(e => e.textContent)')
+    print('DLACZEGO:', why)
+    assert why and any('Najszybsza' in w or 'Najkrótsza' in w for w in why), 'brak wyjaśnienia trasy'
     # tryb pieszy: przełącznik, trasa z Valhalli, brak fotoradarów
     assert page.eval_on_selector_all('#seg-travel button', 'els => els.length') == 3, 'brak przełącznika trybu'
     assert page.eval_on_selector_all('#seg-pref button', 'els => els.length') == 3 and page.is_visible('#seg-pref'), 'brak wyboru rodzaju trasy (auto)'

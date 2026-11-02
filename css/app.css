@@ -211,6 +211,16 @@ body.day .route-card.sel .rc-name { color: var(--route); }
 #report-grid button svg { color: var(--gold); }
 #report-grid button:active { background: var(--surface-solid); }
 
+/* ---------- Dlaczego ta trasa / stacje ---------- */
+#why { margin: 8px 2px 4px; font-size: 14px; color: var(--muted); }
+#why summary { cursor: pointer; font-weight: 650; color: var(--text); padding: 6px 0; }
+#why ul { margin: 4px 0 6px; padding-left: 18px; line-height: 1.45; }
+#fuel-list .st { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 4px; border-bottom: 1px solid var(--line); }
+#fuel-list .st b { display: block; font-size: 16px; }
+#fuel-list .st small { color: var(--muted); font-size: 13px; }
+#fuel-list .st .best { color: var(--gold); font-weight: 700; font-size: 12px; }
+#fuel-list .st button { padding: 10px 14px; font-size: 14px; }
+
 /* ---------- Menu ---------- */
 #menu .m-row, #quick .m-row, #fixsheet .m-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 4px; border-bottom: 1px solid var(--line); font-size: 16px; }
 #menu .m-row:last-of-type, #quick .m-row:last-of-type { border-bottom: 0; }

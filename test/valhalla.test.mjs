@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decodePolyline, valhallaToOsrm, valhallaRequest } from '../js/valhalla.js';
+import { decodePolyline, valhallaToOsrm, valhallaRequest, tripToOsrmRoute, encodePolyline } from '../js/valhalla.js';
 import { parseRoutes } from '../js/routing.js';
 
 // kodowanie polyline precyzji 6 na potrzeby testu
@@ -314,4 +314,18 @@ test('valhallaRequest: exclude_locations z punktów do ominięcia', async () => 
   const b = valhallaRequest([[22.5, 51.2], [22.6, 51.3]], { costing: 'auto', exclude: [[22.55, 51.25]] });
   assert.deepEqual(b.exclude_locations, [{ lat: 51.25, lon: 22.55 }]);
   assert.equal('exclude_locations' in valhallaRequest([[22.5, 51.2], [22.6, 51.3]], { costing: 'auto' }), false);
+});
+
+test('trasa z punktem pośrednim: jeden „cel”, długości się sumują, zawracanie w punkcie zostaje', () => {
+  const leg = (first, last, shape) => ({ shape: encodePolyline(shape), maneuvers: [
+    { type: first, length: 0.2, time: 20, begin_shape_index: 0, instruction: 'x' },
+    { type: 10, length: 0.3, time: 30, begin_shape_index: 1, instruction: 'y' },
+    { type: last, length: 0, time: 0, begin_shape_index: 2, instruction: 'z' },
+  ] });
+  const trip = { summary: { length: 1, time: 100 }, legs: [leg(1, 4, [[22, 51], [22.01, 51], [22.02, 51]]), leg(1, 4, [[22.02, 51], [22.03, 51], [22.04, 51]])] };
+  const r = tripToOsrmRoute(trip);
+  const steps = r.legs[0].steps;
+  assert.equal(steps.filter((s) => s.maneuver.type === 'arrive').length, 1);
+  assert.equal(steps.filter((s) => s.maneuver.type === 'depart').length, 1);
+  assert.ok(Math.abs(steps.reduce((a, s) => a + s.distance, 0) - 1000) < 1);
 });

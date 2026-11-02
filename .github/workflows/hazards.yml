@@ -5,7 +5,7 @@ on:
     - cron: '17 3 * * *'   # codziennie w nocy
   workflow_dispatch: {}     # także ręcznie: zakładka Actions -> Uruchom
   push:                     # po zmianie skryptu uruchamia się sam
-    paths: ['tools/build-hazards.mjs', 'tools/build-roadpoints.mjs', 'js/roadwise.js', '.github/workflows/hazards.yml']
+    paths: ['tools/build-hazards.mjs', 'tools/build-roadpoints.mjs', 'tools/build-fuel.mjs', 'js/fuel.js', 'js/roadwise.js', '.github/workflows/hazards.yml']
 
 permissions:
   contents: write
@@ -25,10 +25,13 @@ jobs:
       - name: Zbuduj punkty drogowe (przejazdy kolejowe, progi, szkoły)
         continue-on-error: true
         run: node tools/build-roadpoints.mjs
+      - name: Zbuduj stacje paliw
+        continue-on-error: true
+        run: node tools/build-fuel.mjs
       - name: Zapisz zmiany
         run: |
           git config user.name "hazards-bot"
           git config user.email "hazards-bot@users.noreply.github.com"
           git add data/hazards.osm.json data/hazards.gitd.json data/hazards.gitd.report.json 2>/dev/null || git add data/hazards.osm.json data/hazards.gitd.json
-          git add data/roadpoints.osm.json 2>/dev/null || true
+          git add data/roadpoints.osm.json data/fuel.osm.json 2>/dev/null || true
           git diff --cached --quiet || (git commit -m "Dane o fotoradarach: aktualizacja" && git push)

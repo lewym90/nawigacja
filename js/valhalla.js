@@ -109,10 +109,15 @@ export function tripToOsrmRoute(trip) {
   const coords = [];
   const steps = [];
   let legOffset = 0;
+  const legCount = (trip.legs || []).length; let legIdx = 0;
   for (const leg of trip.legs || []) {
     const shape = decodePolyline(leg.shape);
     for (let i = 0; i < shape.length; i++) { if (coords.length && i === 0) continue; coords.push(shape[i]); }
-    const mans = simplifyWalk(leg.maneuvers || []);
+    let mans = simplifyWalk(leg.maneuvers || []);
+    // punkt pośredni (np. stacja paliw) to nie cel: zostawiamy zawracanie w nim, ale bez „dotarłeś do celu” i drugiego „start”
+    if (legIdx > 0 && mans.length && mans[0].type >= 1 && mans[0].type <= 3) mans = [{ ...mans[0], type: 8 }, ...mans.slice(1)]; // start drugiego odcinka niesie jego pierwszy kawałek drogi: zostaje jako „kontynuuj”
+    if (legIdx < legCount - 1 && mans.length && mans[mans.length - 1].type >= 4 && mans[mans.length - 1].type <= 6) mans = mans.slice(0, -1);
+    legIdx++;
     let roundaboutIdx = -1;
     for (let k = 0; k < mans.length; k++) {
       const m = mans[k];

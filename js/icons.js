@@ -19,6 +19,7 @@ export const icon = {
   bump: (s) => S('<path d="M3 18h18"/><path d="M5 18c2-8 12-8 14 0"/>', s),
   avoid: (s) => S('<circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/>', s),
   okroad: (s) => S('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/>', s),
+  fuel: (s) => S('<path d="M5 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16"/><path d="M4 21h12"/><path d="M15 9h2a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V9l-3-3"/><path d="M8 8h4"/>', s),
   school: (s) => S('<path d="M3 10l9-5 9 5-9 5z"/><path d="M7 12.5V17c3 2 7 2 10 0v-4.5"/>', s),
   tune: (s) => S('<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>', s),
   plus: (s) => S('<path d="M12 5v14M5 12h14"/>', s),

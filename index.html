@@ -63,6 +63,7 @@
   <button id="btn-locate" class="fab" aria-label="Moja pozycja"></button>
   <button id="btn-report" class="fab gold" aria-label="Zgłoś zdarzenie" hidden></button>
   <button id="btn-sound" class="fab" aria-label="Głos" hidden></button>
+  <button id="btn-fuel" class="fab" aria-label="Stacje paliw" hidden></button>
   <button id="btn-quick" class="fab" aria-label="Szybkie ustawienia" hidden></button>
 </div>
 
@@ -79,6 +80,7 @@
   <div class="seg" id="seg-travel" role="tablist" aria-label="Sposób poruszania się"></div>
   <div class="seg" id="seg-pref" role="tablist" aria-label="Rodzaj trasy"></div>
   <div id="routes"></div>
+  <details id="why"><summary>Dlaczego ta trasa</summary><ul id="why-list"></ul></details>
   <div id="save-row"><span>Zapisz miejsce:</span><button data-k="home">Dom</button><button data-k="work">Praca</button><button data-k="other">Inne</button></div>
   <div class="row">
     <button id="btn-sim" class="btn-ghost">Symulacja</button>
@@ -102,6 +104,14 @@
   <div class="grab"></div>
   <div class="p-title"><b>Co się dzieje na drodze?</b><button id="btn-report-x" class="icon-btn" aria-label="Zamknij"></button></div>
   <div id="report-grid"></div>
+</section>
+
+<!-- Stacje paliw przed nami z kosztem objazdu -->
+<section id="fuel" class="panel" hidden>
+  <div class="grab"></div>
+  <div class="p-title"><b>Stacje paliw przed Tobą</b><button id="btn-fuel-x" class="icon-btn" aria-label="Zamknij"></button></div>
+  <div id="fuel-list"></div>
+  <p class="fine">Koszt objazdu to realna różnica czasu dojazdu do celu przez stację, liczona po drogach.</p>
 </section>
 
 <!-- Poprawka trasy w wybranym miejscu mapy (długie przytrzymanie) -->
