@@ -6,6 +6,7 @@ import { getRoutes } from './provider.js';
 import { FixStore, FIX_LABEL } from './fixes.js';
 import { unpackFuel, candidatesAhead, fuelDetours, bestStation, fmtExtra } from './fuel.js';
 import { explainRoute } from './explain.js';
+import { TripRecorder, TRIP, speedStops, revealStops, replayFrames, drawPoster, fmtTripTime } from './trip.js';
 import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
 import { Compass } from './compass.js';
 import { buildRoadItems, unpackRoadPoints, RoadWatch, describe as describeRoad } from './roadwise.js';
@@ -134,10 +135,15 @@ function installLayers() {
   add({ id: 'arrow-line', type: 'line', source: 'arrow', filter: ['==', ['geometry-type'], 'LineString'], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#ffe9a8', 'line-width': aw } });
   add({ id: 'arrow-head-case', type: 'line', source: 'arrow', filter: ['==', ['geometry-type'], 'Polygon'], layout: { 'line-join': 'round' }, paint: { 'line-color': '#1a1405', 'line-width': ['interpolate', ['linear'], ['zoom'], 14, 2, 19, 8], 'line-opacity': 0.85 } });
   add({ id: 'arrow-head', type: 'fill', source: 'arrow', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#ffe9a8' } });
+  if (!map.getSource('trip')) map.addSource('trip', { type: 'geojson', data: emptyFC(), lineMetrics: true });
+  const tripGrad = ['interpolate', ['linear'], ['line-progress'], 0, '#4cb8ff', 1, '#4cb8ff'];
+  add({ id: 'trip-glow', type: 'line', source: 'trip', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': tripGrad, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 10, 16, 36], 'line-blur': 10, 'line-opacity': 0.55 } });
+  add({ id: 'trip-line', type: 'line', source: 'trip', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': tripGrad, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3.5, 16, 10] } });
   if (!map.getSource('fixes')) map.addSource('fixes', { type: 'geojson', data: emptyFC() });
   if (!map.getLayer('fixes-dot')) map.addLayer({ id: 'fixes-dot', type: 'circle', source: 'fixes', minzoom: 11, paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 5, 17, 11], 'circle-color': ['match', ['get', 'kind'], 'avoid', '#ff5a4d', '#3ddc84'], 'circle-stroke-width': 2.5, 'circle-stroke-color': '#ffffff', 'circle-opacity': 0.95 } });
   drawRoutes();
   drawSections(S.routes[S.sel]);
+  drawTrip();
   applyAtmosphere();
   if (S.nav) { S.nav.arrowIdx = null; S.nav.paintedAlong = null; }
 }
@@ -638,6 +644,7 @@ function startNav({ sim = false } = {}) {
     lastAdvice: 0,
     sectionHold: null,
     arrivedTimer: null,
+    trip: new TripRecorder(),
   };
   setupRoad(S.nav);
   S.follow = true;
@@ -741,6 +748,7 @@ function navTick(fix) {
 
   // Ostrzeżenia
   N.along = g.along;
+  if (N.trip) N.trip.add(fix);
   const w = N.watch.update(g.along, speedMs, lim);
   showBanner(w, kmh, lim);
   if (settings.roadAlerts !== false && N.road) {
@@ -957,6 +965,7 @@ async function reroute(fix) {
 }
 
 function endNav() {
+  const memento = S.nav && S.nav.trip && S.nav.trip.summary().meters >= TRIP.minDistM ? { ...S.nav.trip.toJSON(), title: S.dest ? S.dest.main : 'Podróż', date: Date.now() } : null;
   clearSession();
   compass.stop();
   voice.hold(false);
@@ -974,6 +983,7 @@ function endNav() {
   setMode('idle');
   map.easeTo({ pitch: 0, bearing: 0, padding: { top: 0, bottom: 0, left: 0, right: 0 }, zoom: 14, duration: 700 });
   if (S.pos) { meMarker = new maplibregl.Marker({ element: meEl() }).setLngLat([S.pos.lng, S.pos.lat]).addTo(map); }
+  if (memento) { saveLastTrip(memento); setTimeout(() => showTrip(memento), 900); }
 }
 
 $('btn-start').onclick = () => { if (travel().compass) compass.start(); startNav(); };
@@ -1053,6 +1063,133 @@ $('report-grid').querySelectorAll('button[data-t]').forEach((b) => (b.onclick = 
   }
 }));
 
+
+// ---------- Pamiątka z podróży ----------
+const TRIP_KEY = 'nav.lastTrip';
+function saveLastTrip(m) { try { localStorage.setItem(TRIP_KEY, JSON.stringify(m)); } catch { /* brak miejsca */ } }
+function loadLastTrip() { try { return JSON.parse(localStorage.getItem(TRIP_KEY) || 'null'); } catch { return null; } }
+let tripView = null; // { pts, stats, stops, title, date, frames }
+function tripGeo() {
+  return tripView ? { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: tripView.pts.map((p) => [p.lng, p.lat]) } }] } : emptyFC();
+}
+function setTripGradient(stops) {
+  const expr = ['interpolate', ['linear'], ['line-progress'], ...stops.flat()];
+  for (const id of ['trip-glow', 'trip-line']) if (map.getLayer(id)) map.setPaintProperty(id, 'line-gradient', expr);
+}
+function drawTrip() {
+  const src = map.getSource('trip');
+  if (!src) return;
+  src.setData(tripGeo());
+  if (tripView) setTripGradient(tripView.stops);
+}
+function showTrip(m) {
+  if (!m || !m.pts || m.pts.length < 2) { toast('Brak zapisanej podróży'); return; }
+  const rec = TripRecorder.fromJSON(m);
+  const stats = rec.summary();
+  tripView = { pts: rec.pts, stats, stops: speedStops(rec.pts), title: m.title || 'Podróż', date: m.date || Date.now(), maxV: rec.maxV, frames: null };
+  show('menu', false); show('quick', false);
+  $('trip-title').textContent = tripView.title;
+  const km = (stats.meters / 1000).toFixed(stats.meters < 10000 ? 1 : 0).replace('.', ',');
+  $('trip-stats').innerHTML = [
+    [km, 'km przejechane'], [fmtTripTime(stats.totalMs), 'czas podróży'],
+    [`${Math.round(stats.avgKmh)} km/h`, 'średnia w ruchu'], [`${stats.maxKmh} km/h`, 'maksymalna'],
+    [stats.stops ? String(stats.stops) : '0', 'postoje (powyżej minuty)'], [fmtTripTime(stats.movingMs), 'czas w ruchu'],
+  ].map(([b, s]) => `<div class="t"><b>${esc(b)}</b><span>${esc(s)}</span></div>`).join('');
+  $('trip-note').textContent = 'Kolor śladu pokazuje prędkość: chłodny = wolno, ciepły = szybko.';
+  $('trip-video').hidden = !(typeof MediaRecorder !== 'undefined' && map.getCanvas().captureStream);
+  show('trip', true);
+  drawTrip();
+  const b = rec.pts.reduce((a, p) => [Math.min(a[0], p.lng), Math.min(a[1], p.lat), Math.max(a[2], p.lng), Math.max(a[3], p.lat)], [180, 90, -180, -90]);
+  map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: { top: 90, bottom: Math.round(window.innerHeight * 0.5), left: 40, right: 40 }, pitch: 0, bearing: 0, duration: 1200, maxZoom: 15 });
+}
+function closeTrip() {
+  stopReplay();
+  show('trip', false);
+  tripView = null;
+  drawTrip();
+}
+const lerpAngle = (a, b, t) => (a + (((b - a + 540) % 360) - 180) * t + 360) % 360;
+let replay = null;
+function stopReplay(finishCb) {
+  if (!replay) return;
+  cancelAnimationFrame(replay.raf);
+  const r = replay; replay = null;
+  show('trip-stop', false);
+  if (tripView) setTripGradient(tripView.stops);
+  map.easeTo({ pitch: 0, bearing: 0, duration: 600 });
+  if (!tripView) return;
+  show('trip', true);
+  if (finishCb) finishCb(r);
+}
+/** Filmowy przelot po śladzie; onDone(true) po dojściu do końca, onDone(false) po przerwaniu. */
+function startReplay(onFrame, onDone) {
+  if (!tripView || replay) return;
+  if (!tripView.frames) tripView.frames = replayFrames(tripView.pts, 320);
+  const frames = tripView.frames;
+  if (frames.length < 2) { toast('Ślad jest za krótki na przelot'); return; }
+  show('trip', false); show('trip-stop', true);
+  const km = tripView.stats.meters / 1000;
+  const dur = Math.max(9000, Math.min(24000, 6000 + km * 250)); // 9-24 s
+  const t0 = performance.now();
+  map.jumpTo({ center: frames[0].center, bearing: frames[0].bearing, pitch: 64, zoom: 15.6 });
+  replay = { raf: 0, done: onDone };
+  const tick = (now) => {
+    if (!replay) return;
+    const k = Math.min(1, (now - t0) / dur);
+    const f = k * (frames.length - 1); const i = Math.min(frames.length - 2, Math.floor(f)); const u = f - i;
+    const a = frames[i]; const b = frames[i + 1];
+    const zoomWave = 15.6 + Math.sin(k * Math.PI) * -0.5; // lekkie oddalenie w środku
+    map.jumpTo({ center: [a.center[0] + (b.center[0] - a.center[0]) * u, a.center[1] + (b.center[1] - a.center[1]) * u], bearing: lerpAngle(a.bearing, b.bearing, u), pitch: 64, zoom: zoomWave });
+    setTripGradient(revealStops(tripView.stops, a.progress + (b.progress - a.progress) * u));
+    if (onFrame) onFrame(k);
+    if (k >= 1) { const d = replay.done; stopReplay(); if (d) d(true); return; }
+    replay.raf = requestAnimationFrame(tick);
+  };
+  replay.raf = requestAnimationFrame(tick);
+}
+$('btn-trip-x').innerHTML = icon.close(22);
+$('btn-trip-x').onclick = closeTrip;
+$('trip-stop').onclick = () => { const d = replay && replay.done; stopReplay(); if (d) d(false); };
+$('trip-replay').onclick = () => startReplay();
+function shareBlob(blob, name, text) {
+  const file = new File([blob], name, { type: blob.type });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    return navigator.share({ files: [file], title: 'Moja podróż', text }).catch(() => {});
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast('Zapisano plik', 2500);
+  return Promise.resolve();
+}
+$('trip-share').onclick = async () => {
+  if (!tripView) return;
+  const c = document.createElement('canvas'); c.width = 1080; c.height = 1350;
+  drawPoster(c.getContext('2d'), c.width, c.height, { pts: tripView.pts, title: tripView.title, stats: tripView.stats, dateText: new Date(tripView.date).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' }) });
+  const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+  if (blob) await shareBlob(blob, 'podroz.png', `${tripView.title}: ${(tripView.stats.meters / 1000).toFixed(0)} km`);
+};
+$('trip-video').onclick = () => {
+  if (!tripView) return;
+  const canvas = map.getCanvas();
+  const types = ['video/mp4;codecs=avc1', 'video/webm;codecs=vp9', 'video/webm'];
+  const mime = types.find((t) => MediaRecorder.isTypeSupported(t));
+  if (!mime) { toast('Ta przeglądarka nie nagrywa filmów'); return; }
+  let rec;
+  try { rec = new MediaRecorder(canvas.captureStream(30), { mimeType: mime, videoBitsPerSecond: 6e6 }); } catch { toast('Nie udało się rozpocząć nagrywania'); return; }
+  const chunks = [];
+  rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop = () => {
+    const blob = new Blob(chunks, { type: mime.split(';')[0] });
+    if (blob.size < 2000) { toast('Film jest pusty, spróbuj jeszcze raz'); return; }
+    shareBlob(blob, mime.startsWith('video/mp4') ? 'podroz.mp4' : 'podroz.webm', tripView ? tripView.title : '');
+  };
+  rec.start(250);
+  toast('Nagrywam przelot…', 2500);
+  startReplay(null, () => setTimeout(() => { if (rec.state !== 'inactive') rec.stop(); }, 300));
+};
+$('btn-lasttrip').onclick = () => { const m = loadLastTrip(); if (m) showTrip(m); else toast('Nie ma jeszcze zapisanej podróży'); };
+window.__trip = { show: showTrip, view: () => tripView };
 
 // ---------- Stacje paliw z kosztem objazdu ----------
 let fuelStations = null;

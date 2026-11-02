@@ -224,6 +224,34 @@ with sync_playwright() as p:
     page.click('#btn-end')
     page.wait_for_timeout(1200)
     page.screenshot(path=f'{OUT}/8-after.png')
+    # pamiątka z podróży: panel, statystyki, przelot 3D, plakat, film
+    page.wait_for_selector('#trip:not([hidden])', timeout=5000)
+    tstats = page.eval_on_selector_all('#trip-stats .t', 'els => els.map(e => e.innerText.replace(/\\n+/g, " "))')
+    print('PAMIĄTKA:', tstats)
+    assert len(tstats) == 6 and 'km' in tstats[0], 'brak statystyk pamiątki'
+    page.screenshot(path=f'{OUT}/8a-trip.png')
+    page.click('#trip-replay')
+    page.wait_for_selector('#trip-stop:not([hidden])', timeout=3000)
+    page.wait_for_timeout(2500)
+    mid = page.evaluate("(() => { const m = window.__nav.map; return {pitch: Math.round(m.getPitch()), panel: !document.getElementById('trip').hidden}; })()")
+    print('PRZELOT w trakcie:', mid)
+    assert mid['pitch'] >= 55 and not mid['panel'], 'przelot ma być w 3D i bez panelu'
+    page.screenshot(path=f'{OUT}/8b-replay.png')
+    page.click('#trip-stop')
+    page.wait_for_selector('#trip:not([hidden])', timeout=3000)
+    with page.expect_download(timeout=10000) as dl:
+        page.click('#trip-share')
+    print('PLAKAT:', dl.value.suggested_filename)
+    assert dl.value.suggested_filename.endswith('.png')
+    if page.is_visible('#trip-video'):
+        with page.expect_download(timeout=60000) as dv:
+            page.click('#trip-video')
+        import os as _os
+        path = dv.value.path()
+        print('FILM:', dv.value.suggested_filename, _os.path.getsize(path), 'B')
+        assert _os.path.getsize(path) > 2000, 'pusty film'
+    page.click('#btn-trip-x')
+    assert not page.is_visible('#trip')
     # powrót do trwającej nawigacji po ponownym uruchomieniu strony
     ctx.grant_permissions(['geolocation'])
     ctx.set_geolocation({'latitude': 51.2, 'longitude': 22.5684})

@@ -37,7 +37,7 @@ export const CONFIG = {
   zoom: 12,
 };
 
-export const APP_VERSION = '0.8.3';
+export const APP_VERSION = '0.8.4';
 
 export const STORAGE = { settings: 'nav.settings', lastDest: 'nav.lastDest' };
 

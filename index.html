@@ -106,6 +106,20 @@
   <div id="report-grid"></div>
 </section>
 
+<!-- Pamiątka z podróży -->
+<section id="trip" class="panel" hidden>
+  <div class="grab"></div>
+  <div class="p-title"><b id="trip-title">Pamiątka z podróży</b><button id="btn-trip-x" class="icon-btn" aria-label="Zamknij"></button></div>
+  <div id="trip-stats"></div>
+  <div class="row">
+    <button id="trip-replay" class="btn-ghost">Przelot 3D</button>
+    <button id="trip-share" class="btn-go">Udostępnij</button>
+  </div>
+  <button id="trip-video" class="btn-ghost" style="width:100%;margin-top:10px" hidden>Nagraj film z przelotu</button>
+  <p class="fine" id="trip-note"></p>
+</section>
+<button id="trip-stop" class="resume" hidden>Zatrzymaj przelot</button>
+
 <!-- Stacje paliw przed nami z kosztem objazdu -->
 <section id="fuel" class="panel" hidden>
   <div class="grab"></div>
@@ -147,6 +161,7 @@
   <div class="m-row"><span>Zakręty, przejazdy, progi</span><button class="switch" role="switch" aria-label="Ostrzeżenia drogowe" data-sw="roadAlerts"><i></i></button></div>
   <div class="m-row"><span>Motyw</span><div class="seg" id="seg-theme" data-seg="theme"><button data-v="auto">Auto</button><button data-v="day">Dzień</button><button data-v="night">Noc</button></div></div>
   <div class="m-row"><span>Lektor</span><div class="seg" id="seg-engine" data-seg="engine"></div></div>
+  <div class="m-row"><span>Ostatnia podróż</span><button id="btn-lasttrip" class="btn-ghost" style="padding:10px 14px;font-size:14px">Pokaż</button></div>
   <div class="m-row"><span>Moje poprawki tras</span><button id="btn-myfixes" class="btn-ghost" style="padding:10px 14px;font-size:14px">Pokaż</button></div>
   <div id="fix-list" hidden></div>
   <div class="m-row"><span>Diagnostyka głosu</span><button id="btn-voice-log" class="btn-ghost" style="padding:10px 14px;font-size:14px">Pokaż</button></div>

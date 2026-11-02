@@ -221,6 +221,15 @@ body.day .route-card.sel .rc-name { color: var(--route); }
 #fuel-list .st .best { color: var(--gold); font-weight: 700; font-size: 12px; }
 #fuel-list .st button { padding: 10px 14px; font-size: 14px; }
 
+/* ---------- Pamiątka z podróży ---------- */
+#trip-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 6px 0 14px; }
+#trip-stats .t { padding: 12px 14px; border-radius: 16px; background: var(--surface-2); border: 1px solid var(--line); }
+#trip-stats .t b { display: block; font-size: 26px; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
+#trip-stats .t span { font-size: 13px; color: var(--muted); }
+#trip .row { display: flex; gap: 10px; }
+#trip .row > button { flex: 1; }
+#trip-stop { bottom: calc(22px + env(safe-area-inset-bottom)); z-index: 30; }
+
 /* ---------- Menu ---------- */
 #menu .m-row, #quick .m-row, #fixsheet .m-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 4px; border-bottom: 1px solid var(--line); font-size: 16px; }
 #menu .m-row:last-of-type, #quick .m-row:last-of-type { border-bottom: 0; }
