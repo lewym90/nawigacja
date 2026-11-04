@@ -168,6 +168,7 @@ function installLayers() {
     map.addLayer(new City3D(map, { base: CONFIG.cityBase, night, onCover: (on) => { for (const id of ['building', 'building-3d', 'building-roof']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'none' : 'visible'); } }), map.getLayer('boundary') ? 'boundary' : undefined);
   }
   drawRoutes();
+  drawJams(S.nav ? S.nav.route : S.routes[S.sel], S.nav ? S.nav.jams : null);
   drawSections(S.routes[S.sel]);
   drawTrip();
   applyAtmosphere();
@@ -227,8 +228,8 @@ function applyTheme() {
   if (n === night) return;
   night = n;
   document.body.classList.toggle('day', !night);
-  document.querySelector('meta[name=theme-color]').content = night ? '#0b0b0d' : '#f4f1ea';
-  map.setStyle(buildStyle(night ? 'night' : 'day', CONFIG, S.travel));
+  
+  map.setStyle(buildStyle(night ? 'night' : 'day', CONFIG, S.travel), { diff: false }); // pełna przebudowa: częściowe łatanie zostawiało silnik miasta i tekstury z poprzedniego motywu
 }
 setInterval(applyTheme, 60000);
 
@@ -238,7 +239,7 @@ function restyleForTravel() {
   const key = S.travel === 'auto' ? 'auto' : S.travel;
   if (key === styleTravel) return;
   styleTravel = key;
-  map.setStyle(buildStyle(night ? 'night' : 'day', CONFIG, S.travel));
+  map.setStyle(buildStyle(night ? 'night' : 'day', CONFIG, S.travel), { diff: false }); // pełna przebudowa: częściowe łatanie zostawiało silnik miasta i tekstury z poprzedniego motywu
 }
 
 // ---------- Pozycja ----------

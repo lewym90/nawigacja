@@ -83,6 +83,14 @@ with sync_playwright() as p:
     page.wait_for_timeout(int(os.environ.get('SETTLE', '0')) * 1000)
     page.wait_for_timeout(7000)
     page.screenshot(path=f'{OUT}/{THEME}-a.png')
+    if os.environ.get('TOGGLE'):
+        ST = "(() => { const m = window.__nav.map; const c = m.getLayer('city3d'); const i = c && (c.implementation || c); return { motyw: document.body.classList.contains('day') ? 'dzien' : 'noc', silnik_noc: i && i.night, pokrycie: i && i.cover, kafli: i && i.tiles && i.tiles.size, stare: m.getLayer('building-3d') ? m.getLayoutProperty('building-3d', 'visibility') : null, styl: m.getStyle().name, warstw_miasta: m.getStyle().layers.filter(l => l.id === 'city3d').length }; })()"
+        print('PRZED', page.evaluate(ST), flush=True)
+        for t in os.environ['TOGGLE'].split(','):
+            page.evaluate("document.querySelector('#quick [data-seg=theme] button[data-v=%s]').click()" % t)
+            page.wait_for_timeout(9000)
+            print('PO', t, page.evaluate(ST), flush=True)
+            page.screenshot(path=f'{OUT}/toggle-{t}.png')
     page.evaluate(SAMPLE)
     page.wait_for_timeout(SECS * 1000)
     print('orto', len(orto), orto[:6], flush=True)

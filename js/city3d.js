@@ -130,6 +130,15 @@ export class City3D {
     tex('./icons/city-trees.webp', 'treeTex');
   }
 
+  /** Mapa zdejmuje warstwę przy zmianie motywu: zwalniamy pamięć grafiki. */
+  onRemove() {
+    this.removed = true;
+    const gl = this.gl;
+    for (const k of [...this.tiles.keys()]) this.drop(k);
+    for (const t of [this.tex, this.roofTex, this.treeTex]) if (t) gl.deleteTexture(t);
+    for (const p of [this.wall, this.roof, this.tree]) if (p) gl.deleteProgram(p);
+  }
+
   /** Kafle leżą spakowane gzipem: rozpakowuje przeglądarka. */
   async get(url) {
     const r = await fetch(url);
@@ -187,7 +196,7 @@ export class City3D {
       if (this.loading >= 6) break;
       if (this.pending.has(k)) continue;
       this.pending.add(k); this.loading++;
-      Promise.all([this.bld.has(k) ? this.get(`${this.base}${k}.bin`).catch(() => null) : null, this.treeIndex.has(k) ? this.get(`${this.base}${k}.t.bin`).catch(() => null) : null]).then(([b, t]) => { if (b || t) this.upload(k, b, t); this.map.triggerRepaint(); }).finally(() => { this.loading--; this.pending.delete(k); });
+      Promise.all([this.bld.has(k) ? this.get(`${this.base}${k}.bin`).catch(() => null) : null, this.treeIndex.has(k) ? this.get(`${this.base}${k}.t.bin`).catch(() => null) : null]).then(([b, t]) => { if ((b || t) && !this.removed) this.upload(k, b, t); this.map.triggerRepaint(); }).finally(() => { this.loading--; this.pending.delete(k); });
     }
     for (const [k, t] of this.tiles) if (Math.hypot((t.k[0] + 0.5) * g - x, (t.k[1] + 0.5) * g - y) > 2500) this.drop(k);
   }

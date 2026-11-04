@@ -202,6 +202,8 @@ with sync_playwright() as p:
     page.wait_for_function("(() => { const m = window.__nav.map; return m.getStyle().name === 'nav-night' && m.getLayer('sel-line') && m.getLayer('sel-chevron') && m.hasImage('fa-house-0'); })()", timeout=15000)
     page.wait_for_timeout(600)
     assert page.evaluate("document.body.classList.contains('day')") is False, 'motyw nie przełączył się na noc'
+    cityN = page.evaluate("(() => { const c = window.__nav.map.getLayer('city3d'); const i = c && (c.implementation || c); return i ? i.night : null; })()")
+    assert cityN is True, f'silnik miasta nie przeszedł na noc: {cityN}'
     layers = page.evaluate("['sel-line','sel-glow','sel-case','arrow-line','arrow-head'].map(i => !!window.__nav.map.getLayer(i))")
     assert all(layers), f'po zmianie motywu zniknęły warstwy trasy: {layers}'
     assert page.is_visible('#maneuver') and page.is_visible('#nav-panel'), 'nawigacja przerwana zmianą motywu'
