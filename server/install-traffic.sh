@@ -10,8 +10,7 @@ if [ ! -f /etc/nav-traffic.env ] || [ -n "$NEWKEY" ]; then
   printf 'Wklej klucz TomTom i naciśnij Enter (nie będzie widoczny): ' > /dev/tty
   IFS= read -rs KEY < /dev/tty; echo > /dev/tty
   [ -n "$KEY" ] || { echo "Brak klucza, przerywam."; exit 1; }
-  umask 077
-  printf 'NAV_TRAFFIC_PORT=18789\nTOMTOM_KEY=%s\n' "$KEY" > /etc/nav-traffic.env
+  ( umask 077; printf 'NAV_TRAFFIC_PORT=18789\nTOMTOM_KEY=%s\n' "$KEY" > /etc/nav-traffic.env )
 fi
 chmod 600 /etc/nav-traffic.env
 cat > /etc/systemd/system/nav-traffic.service <<'UNIT'
@@ -34,9 +33,8 @@ sleep 1
 curl -fsS "http://127.0.0.1:18789/health"; echo
 curl -fsSL "$RAW/nav-traffic.caddy" -o /tmp/nav-traffic.caddy
 cp /etc/caddy/conf.d/nav-traffic.caddy /tmp/nav-traffic.caddy.bak 2>/dev/null || true
-cp /tmp/nav-traffic.caddy /etc/caddy/conf.d/nav-traffic.caddy
-if caddy validate --config /etc/caddy/Caddyfile >/tmp/caddy-validate.log 2>&1; then
-  systemctl reload caddy
+install -m 644 /tmp/nav-traffic.caddy /etc/caddy/conf.d/nav-traffic.caddy
+if caddy validate --config /etc/caddy/Caddyfile >/tmp/caddy-validate.log 2>&1 && systemctl reload caddy; then
   echo "Caddy: przeładowany"
 else
   echo "Caddy: BŁĄD konfiguracji, wycofuję zmianę (inne aplikacje nietknięte):"; tail -5 /tmp/caddy-validate.log
