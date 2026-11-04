@@ -15,8 +15,8 @@ export const MODES = {
     simKmh: null,         // null = realistyczna jazda samochodem (sim.js)
     pitch: 55,
     // kamera pościgowa nisko za autem: stałe pochylenie, zoom ciągły (bez progów, które dawały skoki)
-    camPitch: () => 69,
-    zoom: (kmh) => zoomBySpeed(kmh, 17.9, 16.5, 130),
+    camPitch: () => 73,
+    zoom: (kmh) => zoomBySpeed(kmh, 19, 17.9, 130),
     guide: {}, // domyślne progi z guidance.js
     say: { arrive: 'Dojechałeś do celu', off: 'Zjechałeś z trasy. Przeliczam…', go: 'Ruszaj' },
   },
@@ -29,8 +29,8 @@ export const MODES = {
     alternatives: false, // pieszo warianty wychodzą prawie identyczne: jedna, najlepsza trasa
     simKmh: 5,
     pitch: 55,
-    camPitch: () => 64,
-    zoom: () => 18.4,
+    camPitch: () => 72,
+    zoom: () => 19.6,
     compass: true,        // kierunek z kompasu telefonu, gdy stoisz lub idziesz wolno
     guide: { arriveM: 8, maxOffM: 22, offFixes: 4, minSpeed: 1.2, nowMin: 12, nowMax: 28, nowSec: 5, remindMin: 70, remindMax: 220, remindSec: 60, preMargin: 25, passedPrev: 18, chainFar: 45, chainNear: 28 },
     say: { arrive: 'Jesteś na miejscu', off: 'Zszedłeś z trasy. Przeliczam…', go: 'Idź' },
@@ -44,8 +44,8 @@ export const MODES = {
     alternatives: false,
     simKmh: 18,
     pitch: 55,
-    camPitch: () => 65,
-    zoom: (kmh) => zoomBySpeed(kmh, 18, 17.2, 35),
+    camPitch: () => 72,
+    zoom: (kmh) => zoomBySpeed(kmh, 19.2, 18.6, 35),
     guide: { arriveM: 12, maxOffM: 28, offFixes: 3, minSpeed: 4, nowMin: 25, nowMax: 70, nowSec: 5, remindMin: 150, remindMax: 500, remindSec: 40, preMargin: 40, passedPrev: 35, chainFar: 90, chainNear: 55 },
     say: { arrive: 'Dojechałeś do celu', off: 'Zjechałeś z trasy. Przeliczam…', go: 'Ruszaj' },
   },

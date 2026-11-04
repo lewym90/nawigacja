@@ -38,4 +38,7 @@ for p in sorted(glob.glob('assets/facades/*.png')):
     night[lit] = (0.55 + 0.45 * win[lit]) * np.array([255, 200, 125])
     Image.fromarray(np.clip(night, 0, 255).astype('uint8')).save(f'icons/fa/{kind}-{n}-night.webp', quality=82, method=6)
 open('js/facade-list.js', 'w').write('// Plik tworzy tools/build-facades.py: ile wariantów elewacji ma każdy rodzaj budynku.\nexport const FACADE_KINDS = ' + json.dumps(kinds) + ';\n')
+sw = open('sw.js').read()
+sw = re.sub(r"\.\.\.\[.*?\.webp`\)\),", "...Object.entries(" + json.dumps(kinds) + ").flatMap(([k, n]) => [...Array(n).keys()].flatMap((i) => ['day', 'night'].map((t) => `./icons/fa/${k}-${i}-${t}.webp`))),", sw, count=1)
+open('sw.js', 'w').write(sw)
 print(kinds)

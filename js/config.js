@@ -38,7 +38,7 @@ export const CONFIG = {
   zoom: 12,
 };
 
-export const APP_VERSION = '0.11.0';
+export const APP_VERSION = '0.12.0';
 
 export const STORAGE = { settings: 'nav.settings', lastDest: 'nav.lastDest' };
 
@@ -49,7 +49,7 @@ export const DEFAULT_SETTINGS = {
   travel: 'auto', // auto | pedestrian | bicycle (modes.js)
   routePref: 'balanced', // samochód: fast | balanced | short (valhalla.js ROUTE_PREFS)
   hazardsVoice: true,
-  ortho: true, // zdjęcia lotnicze pod mapą
+  ortho: false, // zdjęcia lotnicze pod mapą
   routeColor: false, // jednolita wstęga z projektu; kolor limitu można włączyć w ustawieniach
   roadAlerts: true, // zakręty z zalecaną prędkością, przejazdy kolejowe, progi, szkoły // trasa kolorowana limitem prędkości
   ttsEngine: 'system', // system = Zosia (głos telefonu) | ewa = nagrania z własnego serwera (Pocket) | agata = Gemini (nieaktywna)
@@ -67,6 +67,7 @@ export function loadSettings() {
     const st = { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(STORAGE.settings) || '{}') };
     // 0.3.4: „Naturalny” wymaga płatnego klucza; do czasu jego włączenia wracamy do głosu telefonu
     if (!st.ttsMigrated034) { st.ttsMigrated034 = true; if (st.ttsEngine === 'cloud') st.ttsEngine = 'system'; }
+    if (!st.look110) { st.look110 = true; st.ortho = false; } // zdjęcia z góry rozmazują się przy niskim widoku
     if (!st.look100) { st.look100 = true; st.routeColor = false; } // nowa szata: wstęga w jednym kolorze także u dotychczasowych użytkowników
     if (!VOICES.some((v) => v.id === st.ttsEngine && v.enabled)) st.ttsEngine = 'system'; // stare ustawienia („Naturalny”, „Wbudowany”) i głosy niedostępne
     return st;

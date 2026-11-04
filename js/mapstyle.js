@@ -48,7 +48,7 @@ function pathLayers(road, c, travel) {
   return [road('path', P, c.path, lerpWidth(0.3, 0.6, 2), { 'line-opacity': ['interpolate', ['linear'], ['zoom'], 13, 0, 15, 1] })];
 }
 
-const H = ['coalesce', ['get', 'render_height'], 6];
+const H = ['*', ['max', ['coalesce', ['get', 'render_height'], 7], 7], 1.25]; // dane OSM są zaniżone: bez tego miasto wygląda jak makieta
 // odmiana budynku: stała dla danej bryły, różna między sąsiadami
 const VAR = ['%', ['coalesce', ['id'], 7], 3];
 // rodzaj elewacji wg wysokości, wariant wg numeru budynku
