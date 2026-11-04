@@ -683,6 +683,7 @@ function startNav({ sim = false } = {}) {
 const NAV_FOV = 50; const MAP_FOV = 36.87;
 const setFov = (d) => { try { if (map.setVerticalFieldOfView) map.setVerticalFieldOfView(d); } catch { /* starsza mapa: zwykła perspektywa */ } };
 const cam = new ChaseCam();
+const SKY_RATIO = 2048 / 683; // proporcje obrazów nieba
 let camLast = 0; let skyX = null;
 function camLoop(now) {
   requestAnimationFrame(camLoop);
@@ -696,7 +697,7 @@ function camLoop(now) {
   const pv = document.getElementById('puck-svg');
   if (pv) pv.style.transform = `rotate(${p.carOffset.toFixed(1)}deg)`;
   S.nav.cam = { c: [...p.center], hd: p.bearing, zoom: p.zoom };
-  const x = (-p.bearing / 360) * 2048;
+  const x = (-p.bearing / 360) * ($('sky').clientHeight * SKY_RATIO); // panorama przesuwa się razem z kierunkiem jazdy
   if (skyX == null || Math.abs(x - skyX) > 0.3) { skyX = x; $('sky').style.backgroundPositionX = `${x.toFixed(1)}px`; }
 }
 requestAnimationFrame(camLoop);
