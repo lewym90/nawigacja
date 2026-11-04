@@ -139,7 +139,8 @@ function installLayers() {
   const route = '#00D9FF';
   const routeCase = '#74CFFF';
   const add = (def) => { if (!map.getLayer(def.id)) map.addLayer(def, before); };
-  add({ id: 'alt-line', type: 'line', source: 'alt', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': night ? '#5a5a66' : '#9a9588', 'line-width': 6, 'line-opacity': 0.9 } });
+  add({ id: 'alt-line', type: 'line', source: 'alt', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': night ? '#8FA8C4' : '#5F7690', 'line-width': 7, 'line-opacity': 0.95 } });
+  add({ id: 'alt-hit', type: 'line', source: 'alt', paint: { 'line-color': '#000', 'line-opacity': 0.01, 'line-width': 30 } });
   const grad = ['interpolate', ['linear'], ['line-progress'], 0, route, 1, route];
   add({ id: 'sel-glow', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 9, 14, 19.8, 20, 170], 'line-blur': ['interpolate', ['exponential', 2], ['zoom'], 8, 6, 14, 12, 20, 110], 'line-opacity': night ? 0.7 : 0.45 } });
   add({ id: 'sel-case', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, routeCase, 1, routeCase], 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 6.5, 14, 14.3, 20, 89] } });
@@ -215,10 +216,10 @@ function drawRoutes() {
   const sel = S.routes[S.sel];
   map.getSource('sel').setData(sel ? { type: 'Feature', geometry: { type: 'LineString', coordinates: sel.coords } } : emptyFC());
   paintRoute();
-  const alts = S.routes.filter((_, i) => i !== S.sel);
+  const alts = S.routes.map((r, i) => ({ r, i })).filter((x) => x.i !== S.sel);
   map.getSource('alt').setData(
     S.mode === 'preview' && alts.length
-      ? { type: 'FeatureCollection', features: alts.map((r) => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: r.coords } })) }
+      ? { type: 'FeatureCollection', features: alts.map(({ r, i }) => ({ type: 'Feature', properties: { i }, geometry: { type: 'LineString', coordinates: r.coords } })) }
       : emptyFC()
   );
 }
@@ -516,7 +517,7 @@ function syncDepart() {
 }
 $('seg-depart').onclick = (e) => {
   const b = e.target.closest('button'); if (!b) return;
-  S.departMin = +b.dataset.m; syncDepart();
+  S.departMin = +b.dataset.m; syncDepart(); syncOpts();
   loadTraffic(S.routes);
 };
 function drawJams(route, jams = null) {
@@ -526,10 +527,13 @@ function drawJams(route, jams = null) {
 }
 
 function fitRoutes() {
-  const all = S.routes.flatMap((r) => r.coords);
-  const b = all.reduce((a, [x, y]) => [Math.min(a[0], x), Math.min(a[1], y), Math.max(a[2], x), Math.max(a[3], y)], [180, 90, -180, -90]);
-  const h = window.innerHeight;
-  map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: { top: 150, bottom: Math.round(h * 0.5), left: 40, right: 40 }, pitch: 0, bearing: 0, duration: 800, maxZoom: 15 });
+  const r = S.routes[S.sel]; if (!r) return;
+  const b = r.coords.reduce((a, [x, y]) => [Math.min(a[0], x), Math.min(a[1], y), Math.max(a[2], x), Math.max(a[3], y)], [180, 90, -180, -90]);
+  const panel = $('preview').offsetHeight || window.innerHeight * 0.4;
+  const top = ($('search').getBoundingClientRect().bottom || 80) + 34;
+  const bottom = panel + 30;
+  if (window.innerHeight - top - bottom < 120) return; // otwarte opcje: za mało mapy, zostawiamy widok
+  map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: { top, bottom, left: 44, right: 44 }, pitch: 0, bearing: 0, duration: 700, maxZoom: 15 });
 }
 
 function routeName(r, i) {
@@ -565,14 +569,30 @@ function renderRouteCards() {
       <div class="rc-name">${esc(routeName(r, i))}</div><div class="rc-tags">${tags}</div></button>`;
   }).join('');
   renderWhy();
-  box.querySelectorAll('.route-card').forEach((b) => (b.onclick = () => {
-    S.sel = +b.dataset.i;
-    renderRouteCards();
-    drawRoutes();
-    drawJams(S.routes[S.sel]);
-    if (S.hazardsReady) renderHazardMarkers(S.routes[S.sel]);
-  }));
+  box.querySelectorAll('.route-card').forEach((b) => (b.onclick = () => selectRoute(+b.dataset.i)));
+  const on = box.querySelector('.route-card.sel');
+  if (on) box.scrollTo({ left: on.offsetLeft - (box.clientWidth - on.offsetWidth) / 2, behavior: 'smooth' });
+  syncOpts();
 }
+
+// Wybór trasy kartą albo dotknięciem linii na mapie: mapa pokazuje wtedy całą wybraną trasę nad panelem.
+function selectRoute(i) {
+  if (i === S.sel || !S.routes[i]) { fitRoutes(); return; }
+  S.sel = i;
+  renderRouteCards();
+  drawRoutes();
+  drawJams(S.routes[i]);
+  if (S.hazardsReady) renderHazardMarkers(S.routes[i]);
+  fitRoutes();
+}
+map.on('click', 'alt-hit', (e) => { if (S.mode === 'preview' && e.features[0]) selectRoute(e.features[0].properties.i); });
+
+function syncOpts() {
+  const depart = { 0: 'Teraz', 30: 'Za 30 min', 60: 'Za 1 h', 120: 'Za 2 h' }[S.departMin || 0];
+  const pref = travel().costing === 'auto' ? { fast: 'Najszybsza', balanced: 'Zrównoważona', short: 'Najkrótsza' }[S.pref] : '';
+  $('opts-now').textContent = [travel().label, pref, travel().costing === 'auto' ? depart : ''].filter(Boolean).join(' · ');
+}
+$('opts').addEventListener('toggle', () => { if (S.mode === 'preview') setTimeout(fitRoutes, 60); });
 
 function renderWhy() {
   const r = S.routes[S.sel];

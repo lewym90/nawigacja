@@ -81,16 +81,19 @@
 <section id="preview" class="panel" hidden>
   <div class="grab"></div>
   <div class="p-title"><span>Dokąd: <b id="p-dest"></b></span><button id="btn-cancel" class="icon-btn" aria-label="Anuluj"></button></div>
-  <div class="seg" id="seg-travel" role="tablist" aria-label="Sposób poruszania się"></div>
-  <div class="seg" id="seg-pref" role="tablist" aria-label="Rodzaj trasy"></div>
-  <div class="seg" id="seg-depart" aria-label="Godzina wyjazdu" hidden><button data-m="0" class="on">Teraz</button><button data-m="30">Za 30 min</button><button data-m="60">Za 1 h</button><button data-m="120">Za 2 h</button></div>
   <div id="routes"></div>
-  <details id="why"><summary>Dlaczego ta trasa</summary><ul id="why-list"></ul></details>
-  <div id="save-row"><span>Zapisz miejsce:</span><button data-k="home">Dom</button><button data-k="work">Praca</button><button data-k="other">Inne</button></div>
   <div class="row">
     <button id="btn-sim" class="btn-ghost">Symulacja</button>
     <button id="btn-start" class="btn-go"><span id="go-ico"></span>Start</button>
   </div>
+  <details id="opts">
+    <summary><span>Opcje trasy</span><small id="opts-now"></small></summary>
+    <div class="seg" id="seg-travel" role="tablist" aria-label="Sposób poruszania się"></div>
+    <div class="seg" id="seg-pref" role="tablist" aria-label="Rodzaj trasy"></div>
+    <div class="seg" id="seg-depart" aria-label="Godzina wyjazdu" hidden><button data-m="0" class="on">Teraz</button><button data-m="30">Za 30 min</button><button data-m="60">Za 1 h</button><button data-m="120">Za 2 h</button></div>
+    <details id="why"><summary>Dlaczego ta trasa</summary><ul id="why-list"></ul></details>
+    <div id="save-row"><span>Zapisz miejsce:</span><button data-k="home">Dom</button><button data-k="work">Praca</button><button data-k="other">Inne</button></div>
+  </details>
 </section>
 
 <!-- Pasek nawigacji -->

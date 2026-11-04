@@ -73,6 +73,14 @@ with sync_playwright() as p:
     page.wait_for_timeout(5000)
     print('KARTY', page.inner_text('#routes').replace('\n', ' | '), '| wyjazd', page.is_visible('#seg-depart'), flush=True)
     page.screenshot(path=f'{OUT}/{THEME}-preview.png')
+    cards = page.locator('.route-card').count()
+    print('PANEL', page.evaluate("Math.round(document.getElementById('preview').offsetHeight / innerHeight * 100)"), '% ekranu, kart', cards, flush=True)
+    if cards > 1:
+        for i in range(1, cards):
+            page.locator('.route-card').nth(i).click(); page.wait_for_timeout(2500)
+            page.screenshot(path=f'{OUT}/{THEME}-route{i}.png')
+            print('WYBRANA', page.evaluate('window.__nav.S.sel'), flush=True)
+        page.locator('.route-card').nth(0).click(); page.wait_for_timeout(800)
     print('trasa ok', flush=True)
     page.click('#btn-sim')
     page.wait_for_timeout(4000)

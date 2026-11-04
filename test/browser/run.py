@@ -120,6 +120,7 @@ with sync_playwright() as p:
     page.click('#results button:has-text("Rynek Testowy")')
     page.wait_for_selector('.route-card', timeout=8000)
     page.wait_for_selector('.tag.jam', timeout=8000)
+    page.evaluate("document.getElementById('opts').open = true")
     assert 'korki +5 min' in page.inner_text('#routes'), page.inner_text('#routes')
     assert page.is_visible('#seg-depart')
     page.click('#seg-depart button[data-m="60"]'); page.wait_for_selector('.tag:has-text("przyjazd")', timeout=5000)
@@ -237,6 +238,7 @@ with sync_playwright() as p:
       const t0 = Date.now(); for (let i = 0; i < 4; i++) n.onFix({lng: 22.5521, lat: 51.2 + 0.0535, speed: 10, accuracy: 5, heading: 0, t: t0 + i*1000}); }''')
     page.wait_for_timeout(1500)
     print('PO ZJAZDZIE:', page.inner_text('#toast') if page.is_visible('#toast') else 'brak toastu', '| tras:', page.evaluate('window.__nav.S.routes.length'))
+    page.wait_for_timeout(2500)  # zapytania w locie muszą się skończyć, zanim zaczniemy liczyć odpowiedzi
     tr['mode'] = 'jam'; tr['n'] = 0
     page.evaluate("(() => { const N = window.__nav.S.nav; N.trafficT = 0; N.fasterShown = false; N.rerouting = false; })()")
     print('stan ruchu', page.evaluate("(() => { const S = window.__nav.S; const N = S.nav; return { sim: !!S.sim, along: S.sim && S.sim.along, total: N.route.distance, busy: N.trafficBusy, rer: N.rerouting, k: N.trafficK }; })()"), tr, flush=True)

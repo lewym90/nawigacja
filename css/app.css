@@ -485,3 +485,26 @@ body.has-lanes #banner, body.has-lanes #section { top: calc(var(--safe-t) + 152p
 #faster b { display: block; font-size: 17px; }
 #faster small { color: var(--glass-muted); font-size: 13px; }
 #faster button { flex: none; padding: 11px 14px; font-size: 15px; }
+
+/* wybór trasy: panel niski, mapa widoczna; karty przesuwane palcem */
+#preview { padding-top: 8px; }
+#preview .grab { margin-bottom: 8px; }
+#preview .p-title { margin-bottom: 6px; padding-top: 4px; padding-bottom: 4px; top: -8px; }
+#routes { flex-direction: row; gap: 10px; max-height: none; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity; margin: 0 -16px; padding: 2px 16px 6px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+#routes::-webkit-scrollbar { display: none; }
+#routes .route-card { flex: 0 0 76%; max-width: 300px; scroll-snap-align: center; padding: 10px 14px; gap: 2px; }
+#routes:has(.route-card:only-child) .route-card { flex-basis: 100%; max-width: none; }
+.route-card .rc-time { font-size: 22px; }
+.route-card .rc-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.route-card .rc-tags { margin-top: 4px; flex-wrap: nowrap; overflow: hidden; }
+.tag { white-space: nowrap; }
+#preview .row { margin-top: 6px; }
+#preview .btn-go, #preview .btn-ghost { padding: 13px 16px; }
+#opts { margin-top: 6px; }
+#opts > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 2px; font-size: 14px; font-weight: 650; color: var(--text); }
+#opts > summary::-webkit-details-marker { display: none; }
+#opts > summary::after { content: '⌃'; transform: rotate(180deg); color: var(--muted); }
+#opts[open] > summary::after { transform: none; }
+#opts-now { flex: 1; text-align: right; color: var(--muted); font-weight: 500; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#opts .seg { margin-bottom: 6px; }
+#opts .seg button { flex: 1; }
