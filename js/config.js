@@ -27,6 +27,7 @@ export const CONFIG = {
 
   // Własna warstwa poprawek (wygrywa z OSM).
   localHazardsUrl: './data/hazards.local.json',
+  trafficUrl: 'https://188-68-247-201.sslip.io/traffic', // ruch drogowy (server/nav-traffic.py)
   fixesUrl: 'https://188-68-247-201.sslip.io/fixes', // wspólna baza poprawek tras (server/nav-fixes.py)
   fuelUrl: './data/fuel.osm.json', // stacje paliw z OSM (bot)
   roadPointsUrl: './data/roadpoints.osm.json', // przejazdy kolejowe, progi, szkoły (bot, OSM)
@@ -39,7 +40,7 @@ export const CONFIG = {
   zoom: 12,
 };
 
-export const APP_VERSION = '0.13.1';
+export const APP_VERSION = '0.14.0';
 
 export const STORAGE = { settings: 'nav.settings', lastDest: 'nav.lastDest' };
 

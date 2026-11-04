@@ -1,0 +1,14 @@
+# Ruch drogowy pod /traffic (dołączany z /etc/caddy/conf.d/ do bloku 188-68-247-201.sslip.io)
+@navtraffic path /traffic /traffic/*
+handle @navtraffic {
+	uri strip_prefix /traffic
+	header >Access-Control-Allow-Origin "https://lewym90.github.io"
+	header Access-Control-Allow-Methods "GET, POST, OPTIONS"
+	header Access-Control-Allow-Headers "Content-Type"
+	header Vary "Origin"
+	@pre method OPTIONS
+	respond @pre 204
+	reverse_proxy 127.0.0.1:18789 {
+		header_down -Access-Control-Allow-Origin
+	}
+}

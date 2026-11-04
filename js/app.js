@@ -22,6 +22,7 @@ import {
 } from './hazards.js';
 import { ChaseCam } from './camera.js';
 import { lanesHtml, laneAdvice } from './lanes.js';
+import { routePoints, fetchTraffic, jamsOnLine, jamFeatures, worthSwitch, nextJam, departAt } from './traffic.js';
 import { City3D } from './city3d.js';
 import { addFacades, loadFacades } from './facades.js';
 import { prefetchOrto } from './orto.js';
@@ -144,6 +145,8 @@ function installLayers() {
   add({ id: 'sel-case', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, routeCase, 1, routeCase], 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 6.5, 14, 14.3, 20, 89] } });
   add({ id: 'sel-line', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 4.5, 14, 9.9, 20, 77], 'line-opacity': 0.92 } });
   add({ id: 'sec-line', type: 'line', source: 'secs', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#ffcf3a', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.5, 16, 6], 'line-dasharray': [2, 1.3] } });
+  if (!map.getSource('jam')) map.addSource('jam', { type: 'geojson', data: emptyFC() });
+  add({ id: 'jam-line', type: 'line', source: 'jam', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': ['match', ['get', 'sev'], 1, '#FFB547', 2, '#FF5364', '#A3122A'], 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 4.5, 14, 9.9, 20, 77] } });
   // szewrony na wstędze: stałe, leżą na jezdni i pokazują kierunek przed autem (bez animacji w czasie jazdy)
   if (!map.getSource('ahead')) map.addSource('ahead', { type: 'geojson', data: emptyFC() });
   if (!map.hasImage('chevron')) map.addImage('chevron', chevronImage());
@@ -464,6 +467,8 @@ async function planRoute() {
   renderRouteCards();
   drawRoutes();
   fitRoutes();
+  S.departMin = 0; syncDepart();
+  loadTraffic(S.routes);
   if (destMarker) destMarker.remove();
   const pin = document.createElement('div');
   pin.className = 'dest-pin';
@@ -485,6 +490,38 @@ async function planRoute() {
       if (S.mode === 'preview') { renderRouteCards(); renderHazardMarkers(routesNow[S.sel]); }
     });
   });
+}
+
+// Ruch w podglądzie: czasy z korkami dla każdej trasy i wybór najszybszej na wybraną godzinę.
+async function loadTraffic(routes) {
+  if (travel().costing !== 'auto') return;
+  const depart = departAt(S.departMin || 0);
+  const got = await Promise.all(routes.map((r) => fetchTraffic(routePoints(r.line), { depart, client: clientId() })));
+  if (S.routes !== routes || S.mode !== 'preview') return;
+  if (!got.some(Boolean)) { $('seg-depart').hidden = true; return; }
+  $('seg-depart').hidden = false;
+  routes.forEach((r, i) => { r.traffic = got[i]; });
+  const best = routes.reduce((b, r, i) => ((r.traffic && r.traffic.time < (routes[b].traffic?.time ?? Infinity)) ? i : b), S.sel);
+  const cur = routes[S.sel].traffic;
+  if (best !== S.sel && cur && cur.time - routes[best].traffic.time >= 120) { S.sel = best; drawRoutes(); }
+  renderRouteCards();
+  drawJams(routes[S.sel]);
+}
+function clientId() {
+  try { let c = localStorage.getItem('nav.client'); if (!c) { c = Math.random().toString(36).slice(2, 12); localStorage.setItem('nav.client', c); } return c; } catch { return 'app'; }
+}
+function syncDepart() {
+  $('seg-depart').querySelectorAll('button').forEach((b) => b.classList.toggle('on', +b.dataset.m === (S.departMin || 0)));
+}
+$('seg-depart').onclick = (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  S.departMin = +b.dataset.m; syncDepart();
+  loadTraffic(S.routes);
+};
+function drawJams(route, jams = null) {
+  const src = map.getSource('jam'); if (!src) return;
+  const list = jams || (route && route.traffic ? jamsOnLine(route.traffic, route.line) : []);
+  src.setData({ type: 'FeatureCollection', features: route ? jamFeatures(list, route.line) : [] });
 }
 
 function fitRoutes() {
@@ -514,8 +551,14 @@ function renderRouteCards() {
       if (secs) tags += `<span class="tag sec">${secs} ${plural(secs, 'odcinkowy', 'odcinkowe', 'odcinkowych')}</span>`;
       if (other) tags += `<span class="tag sec">${other} ${plural(other, 'zgłoszenie', 'zgłoszenia', 'zgłoszeń')}</span>`;
     }
+    const tr = r.traffic;
+    if (tr) {
+      const d = Math.round(Math.max(0, tr.time - tr.free) / 60);
+      tags = (d >= 2 ? `<span class="tag jam">korki +${d} min</span>` : '<span class="tag free">bez korków</span>') + tags;
+      if (S.departMin) { const a = new Date(Date.now() + (S.departMin * 60 + tr.time) * 1000); tags = `<span class="tag ok">przyjazd ${String(a.getHours()).padStart(2, '0')}:${String(a.getMinutes()).padStart(2, '0')}</span>` + tags; }
+    }
     return `<button class="route-card ${i === S.sel ? 'sel' : ''}" data-i="${i}">
-      <div class="rc-top"><span class="rc-time">${fmtDuration(r.duration)}</span><span class="rc-dist">${fmtDist(r.distance)}</span></div>
+      <div class="rc-top"><span class="rc-time">${fmtDuration(tr ? tr.time : r.duration)}</span><span class="rc-dist">${fmtDist(r.distance)}</span></div>
       <div class="rc-name">${esc(routeName(r, i))}</div><div class="rc-tags">${tags}</div></button>`;
   }).join('');
   renderWhy();
@@ -523,6 +566,7 @@ function renderRouteCards() {
     S.sel = +b.dataset.i;
     renderRouteCards();
     drawRoutes();
+    drawJams(S.routes[S.sel]);
     if (S.hazardsReady) renderHazardMarkers(S.routes[S.sel]);
   }));
 }
@@ -815,6 +859,8 @@ function navTick(fix) {
   $('n-prog').style.width = `${Math.round(Math.max(0, Math.min(1, g.along / (N.route.distance || 1))) * 1000) / 10}%`;
 
   // Czas i dystans
+  if (N.trafficK) g.remTime *= N.trafficK; // czas z bieżącym ruchem
+  trafficTick(N, g, fix);
   const arr = new Date((fix.t || Date.now()) + g.remTime * 1000);
   $('n-time').textContent = fmtDuration(g.remTime);
   $('n-dist').textContent = fmtDist(g.remaining);
@@ -1003,8 +1049,54 @@ function applyNewRoute(N, route) {
   S.routes = [route];
   S.sel = 0;
   setupRoad(N);
+  N.trafficK = null; N.trafficT = 0; N.jams = []; drawJams(null);
   drawRoutes();
   renderHazardMarkers(route);
+}
+
+// Ruch w jeździe: co 3 minuty czas do celu z korkami, a gdy opóźnienie jest spore, sprawdzenie szybszej trasy.
+const TRAFFIC_EVERY = 180000;
+async function trafficTick(N, g, fix) {
+  if (travel().costing !== 'auto' || N.trafficBusy || N.rerouting || g.remaining < 800) return;
+  const now = Date.now();
+  if (N.trafficT && now - N.trafficT < TRAFFIC_EVERY / (S.sim ? S.simSpeedup || 1 : 1)) return;
+  N.trafficT = now; N.trafficBusy = true;
+  const route = N.route; const along = g.along; const base = g.remTime / (N.trafficK || 1);
+  try {
+    const t = await fetchTraffic(routePoints(route.line, along), { client: clientId() });
+    if (!t || S.nav !== N || N.route !== route) return;
+    N.trafficK = base > 0 ? t.time / base : null;
+    N.jams = jamsOnLine(t, route.line, along);
+    drawJams(route, N.jams);
+    const j = nextJam(N.jams, along);
+    if (j && j.mag >= 2 && N.jamSaid !== Math.round(j.from / 200)) {
+      N.jamSaid = Math.round(j.from / 200);
+      const m = Math.max(1, Math.round((j.delay || 0) / 60));
+      toast(`Korek za ${fmtDist(j.from - along)}: +${m} min`, 5000);
+      if (settings.hazardsVoice) voice.say(`Korek za ${fmtDist(j.from - along)}, około ${m} minut opóźnienia`, { prio: 2 });
+    }
+    if (t.time - t.free >= 240 && !N.fasterShown) await checkFaster(N, t, fix);
+  } finally { N.trafficBusy = false; }
+}
+
+async function checkFaster(N, cur, fix) {
+  const dest = [S.dest.lng, S.dest.lat];
+  let rs;
+  try { rs = await getRoutes(CONFIG, [[fix.lng, fix.lat], dest], { costing: 'auto', alternatives: true, pref: S.pref, heading: (fix.speed || 0) > 1.5 ? fix.heading : null, avoidMinor: false }); } catch { return; }
+  const ts = await Promise.all(rs.map((r) => fetchTraffic(routePoints(r.line), { client: clientId() })));
+  let best = -1; let save = 0;
+  ts.forEach((t, i) => { const w = t ? worthSwitch(cur.time, t.time) : 0; if (w > save) { save = w; best = i; } });
+  if (best < 0 || S.nav !== N) return;
+  N.fasterShown = true;
+  const min = Math.round(save / 60);
+  $('f-title').textContent = `Szybciej o ${min} min`;
+  $('f-sub').textContent = `Dojazd za ${fmtDuration(ts[best].time)}`;
+  show('faster', true);
+  if (settings.hazardsVoice) voice.say(`Jest szybsza trasa, zysk ${min} minut`, { prio: 2 });
+  const close = () => { show('faster', false); clearTimeout(timer); setTimeout(() => { if (S.nav === N) N.fasterShown = false; }, 600000); };
+  const timer = setTimeout(close, 25000);
+  $('f-no').onclick = close;
+  $('f-yes').onclick = () => { close(); if (S.nav === N) { N.trafficK = null; N.trafficT = 0; applyNewRoute(N, rs[best]); } };
 }
 
 // Zjechanie z trasy: najpierw jak najszybciej zwykła trasa od miejsca, w którym jesteśmy (jeden strzał do serwera,
@@ -1054,6 +1146,7 @@ function endNav() {
   unlockScreen();
   clearMarkers();
   S.routes = []; S.dest = null;
+  drawJams(null); show('faster', false);
   drawRoutes();
   if (destMarker) { destMarker.remove(); destMarker = null; }
   input.value = '';

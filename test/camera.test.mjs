@@ -82,3 +82,14 @@ test('pasy ruchu: kierunki, aktywny pas, porada i drogowskaz', async () => {
   assert.equal(towardOf('Skręć w prawo, kierunek: Przemyśl/Bychawa.'), 'Przemyśl, Bychawa');
   assert.equal(towardOf('Skręć w lewo.'), '');
 });
+
+test('ruch: korki na naszej linii, próg zmiany trasy, godzina wyjazdu', async () => {
+  const { jamsOnLine, worthSwitch, nextJam, departAt } = await import('../js/traffic.js');
+  const j = jamsOnLine({ length: 1000, jams: [{ from: 100, to: 200, mag: 3, kind: 'JAM' }, { from: 300, to: 400, mag: 0, kind: 'OTHER' }] }, { total: 2000 }, 1000);
+  assert.equal(j.length, 1); assert.equal(j[0].from, 1100); assert.equal(j[0].to, 1200);
+  assert.equal(worthSwitch(1800, 1700), 0);
+  assert.equal(worthSwitch(1800, 1500), 300);
+  assert.equal(nextJam(j, 1150), j[0]); assert.equal(nextJam(j, 1300), null);
+  assert.equal(departAt(0), null);
+  assert.match(departAt(30, new Date('2026-11-05T06:00:00Z')), /^2026-11-05T\d\d:30:00[+-]\d\d:\d\d$/);
+});

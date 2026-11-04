@@ -98,6 +98,13 @@ with sync_playwright() as p:
     page.route('https://photon.komoot.io/**', lambda r: fulfill_json(r, {'features': [
         {'geometry': {'coordinates': end}, 'properties': {'name': 'Rynek Testowy', 'street': 'ul. Główna', 'housenumber': '1', 'postcode': '22-400', 'city': 'Zamość', 'state': 'Lubelskie'}}]}))
 
+    tr = {'mode': 'stale', 'n': 0}
+    def traffic(r):
+        if r.request.url.endswith('/health'): return fulfill_json(r, {'ok': True, 'key': True, 'used': 1, 'max': 18000})
+        tr['n'] += 1
+        t = 900 if tr['mode'] == 'stale' else (1800 if tr['n'] % 4 == 1 else 900)  # przy zmianie: pierwsza prośba to bieżąca trasa, kolejne to alternatywy
+        fulfill_json(r, {'time': t, 'free': 600, 'typical': 700, 'delay': t - 600, 'length': 10000, 'jams': [{'from': 1000, 'to': 1400, 'kind': 'JAM', 'mag': 3, 'kmh': 12, 'delay': 240}]})
+    page.route('https://188-68-247-201.sslip.io/traffic/**', traffic)
     page.goto(f'http://127.0.0.1:{PORT}/index.html')
     page.wait_for_function('window.__nav && window.__nav.map && window.__nav.map.loaded()', timeout=20000)
     # punkty drogowe z pliku (przejazd po 1500 m, próg po 1700 m, szkoła po 1900 m trasy)
@@ -112,6 +119,11 @@ with sync_playwright() as p:
     page.screenshot(path=f'{OUT}/2-search.png')
     page.click('#results button:has-text("Rynek Testowy")')
     page.wait_for_selector('.route-card', timeout=8000)
+    page.wait_for_selector('.tag.jam', timeout=8000)
+    assert 'korki +5 min' in page.inner_text('#routes'), page.inner_text('#routes')
+    assert page.is_visible('#seg-depart')
+    page.click('#seg-depart button[data-m="60"]'); page.wait_for_selector('.tag:has-text("przyjazd")', timeout=5000)
+    print('RUCH podgląd:', page.inner_text('.route-card.sel').replace('\n', ' | '))
     page.wait_for_selector('.route-card .tag.cam', timeout=8000)
     page.wait_for_timeout(1200)
     page.screenshot(path=f'{OUT}/3-preview.png')
@@ -223,6 +235,20 @@ with sync_playwright() as p:
       const t0 = Date.now(); for (let i = 0; i < 4; i++) n.onFix({lng: 22.5521, lat: 51.2 + 0.0535, speed: 10, accuracy: 5, heading: 0, t: t0 + i*1000}); }''')
     page.wait_for_timeout(1500)
     print('PO ZJAZDZIE:', page.inner_text('#toast') if page.is_visible('#toast') else 'brak toastu', '| tras:', page.evaluate('window.__nav.S.routes.length'))
+    tr['mode'] = 'jam'; tr['n'] = 0
+    page.evaluate("(() => { const N = window.__nav.S.nav; N.trafficT = 0; N.fasterShown = false; N.rerouting = false; })()")
+    print('stan ruchu', page.evaluate("(() => { const S = window.__nav.S; const N = S.nav; return { sim: !!S.sim, along: S.sim && S.sim.along, total: N.route.distance, busy: N.trafficBusy, rer: N.rerouting, k: N.trafficK }; })()"), tr, flush=True)
+    for _ in range(4):
+        page.evaluate("(() => { const n = window.__nav; const c = n.S.nav.route.line.coords[2] || n.S.nav.route.line.coords[0]; n.onFix({ lng: c[0], lat: c[1], speed: 10, accuracy: 5, heading: 0, t: Date.now() }); })()")
+        page.wait_for_timeout(1500)
+        if page.is_visible('#faster'): break
+    try:
+        page.wait_for_selector('#faster:not([hidden])', timeout=20000)
+    except Exception:
+        print('po czasie', page.evaluate("(() => { const S = window.__nav.S; const N = S.nav; return { sim: !!S.sim, along: S.sim && S.sim.along, t: N.trafficT, busy: N.trafficBusy, rer: N.rerouting, k: N.trafficK, shown: N.fasterShown, mode: S.mode }; })()"), tr, flush=True)
+        raise
+    print('RUCH jazda:', page.inner_text('#faster').replace('\n', ' | '), '| korki na mapie:', page.evaluate("window.__nav.map.querySourceFeatures('jam').length >= 0"))
+    page.click('#f-no')
     page.click('#btn-end')
     page.wait_for_timeout(1200)
     page.screenshot(path=f'{OUT}/8-after.png')

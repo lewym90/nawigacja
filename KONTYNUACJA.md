@@ -1,4 +1,4 @@
-# KONTYNUACJA: nawigacja (lewym90/nawigacja), stan na 2026-11-04, wersja 0.13.1
+# KONTYNUACJA: nawigacja (lewym90/nawigacja), stan na 2026-11-04, wersja 0.14.0
 
 Ten plik jest kompletnym przekazaniem pracy. Ma wystarczyć, żeby nowa sesja Claude (inne konto, bez dostępu do poprzedniej rozmowy i do Projektu „APLIKACJE”) mogła kontynuować bez zadawania pytań, które już padły. Czytaj całość, zanim cokolwiek zmienisz.
 
@@ -98,6 +98,7 @@ test/            – testy Node (`node --test`), test/browser/run.py (pełny tes
 
 - **0.13.0 (obecna):** własna mapa 3D Lublina wdrożona: tekstury `assets/textures` -> `tools/build-textures.py`, drzewa `tools/build-trees.py` (lasy, parki, ulice z kafli OpenFreeMap, omija budynki i jezdnie), kafle gzip w `city/lublin` (rozpakowuje DecompressionStream), sw.js trzyma je w `nav-city-1`.
 - **0.13.1:** asystent pasów `js/lanes.js` (Valhalla `turn_lanes`), drogowskaz z `kierunek:` w opisie manewru, nocą jaśniejszy asfalt i krawędzie jezdni (`road-edge-*`), panele z przyklejonym tytułem, „canceled” głosu to nie błąd.
+- **0.14.0:** ruch drogowy: `server/nav-traffic.py` (pośrednik do TomTom Routing, klucz tylko w /etc/nav-traffic.env, cache 120 s, limit 18 000/mies., port 18789, `/traffic`), `js/traffic.js`. Podgląd: czas z korkami, godzina wyjazdu. Jazda: co 3 min ETA i korki na trasie, przy opóźnieniu ≥4 min propozycja szybszej trasy (zysk ≥3 min i 8%). Warunki TomTom do przeczytania przez właściciela (strona ładowana skryptem, nie dało się jej odczytać).
 - **Własna mapa, szczegóły:** własny silnik miasta `js/city3d.js` (warstwa WebGL2 w MapLibre) + `tools/build-city.py` z modeli GUGiK LoD2 (Lublin: TERYT 0663, `https://integracja.gugik.gov.pl/Budynki3D/pobierz.php?plik=powiaty/0663_gml.zip`, 35 602 budynki, 76 MB kafli), atlas `tools/build-atlas.py`. Kamera zoom 18,6–17,6, pochylenie 73°, zdjęcia lotnicze domyślnie wyłączone (rozmazane i wolne). Do zrobienia: test płynności na iPhonie, kolejne powiaty (LoD2 tam gdzie jest, LoD1 reszta), drogi i ziemia na własnych kaflach.
 
 ### Kluczowe szczegóły działania (żeby nie odkrywać na nowo)
@@ -112,7 +113,7 @@ test/            – testy Node (`node --test`), test/browser/run.py (pełny tes
 
 ## 5. Serwer właściciela i wdrażanie usług
 
-Serwer: `188-68-247-201.sslip.io` (Caddy z Let's Encrypt). **Na tym serwerze stoją też inne aplikacje właściciela. Nie ruszaj cudzych plików Caddy** (m.in. `operat.caddy` ustawia CORS `*`). Porty zajęte: 8787, 8792, 18787 (nav-tts), 8002 (Valhalla w dockerze), 18788 (nav-fixes). Własne snippety Caddy dodawaj tylko jako osobny plik z walidacją i wycofaniem przy błędzie (tak robią `install-fixes.sh` i `install-valhalla.sh`).
+Serwer: `188-68-247-201.sslip.io` (Caddy z Let's Encrypt). **Na tym serwerze stoją też inne aplikacje właściciela. Nie ruszaj cudzych plików Caddy** (m.in. `operat.caddy` ustawia CORS `*`). Porty zajęte: 8787, 8792, 18787 (nav-tts), 8002 (Valhalla w dockerze), 18788 (nav-fixes), 18789 (nav-traffic). Własne snippety Caddy dodawaj tylko jako osobny plik z walidacją i wycofaniem przy błędzie (tak robią `install-fixes.sh` i `install-valhalla.sh`).
 
 Usługi nawigacji:
 | Ścieżka | Co | Instalacja |
