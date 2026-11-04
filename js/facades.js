@@ -1,34 +1,49 @@
-// Elewacje budynków rysowane w kodzie: tynk, okna, a nocą światła w części okien.
-// To nie są zdjęcia prawdziwych budynków, tylko spójna tekstura nakładana na bryły z OpenStreetMap.
+// Elewacje budynków: tekstury ze zdjęć (assets/facades -> icons/fa), dzienne i nocne.
+// Budynek dostaje rodzaj wg wysokości i wariant wg swojego numeru, więc sąsiednie domy się różnią,
+// a ten sam dom wygląda tak samo przy każdym przejeździe.
 
-const SETS = {
-  day: { plaster: ['#F6EEDF', '#ECE9E2', '#F7E6CC'], glass: '#6F8AA6', frame: '#FFFFFF', lit: null },
-  night: { plaster: ['#1E2E4A', '#233452', '#1B2A44'], glass: '#101D31', frame: '#2A3C5C', lit: '#FFC873' },
-};
+import { FACADE_KINDS } from './facade-list.js';
 
-function facade(plaster, set, cols, rows, seed) {
-  const n = 128; const c = document.createElement('canvas'); c.width = c.height = n;
-  const g = c.getContext('2d');
-  g.fillStyle = plaster; g.fillRect(0, 0, n, n);
-  let r = seed * 7919 + 13;
-  const rnd = () => { r = (r * 16807) % 2147483647; return r / 2147483647; };
-  const cw = n / cols; const rh = n / rows;
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
-      const px = x * cw + cw * 0.3; const py = y * rh + rh * 0.24; const w = cw * 0.4; const h = rh * 0.5;
-      g.fillStyle = set.frame; g.fillRect(px - 1, py - 1, w + 2, h + 2);
-      g.fillStyle = set.lit && rnd() < 0.34 ? set.lit : set.glass; g.fillRect(px, py, w, h);
+// ile fizycznych pikseli tekstury przypada na jeden punkt obrazu: dobrane tak, by piętro miało ok. 3 m przy kamerze jazdy
+const RATIO = { house: 6, tenement: 4, block: 4, office: 3 };
+export const facadeId = (kind, i) => `fa-${kind}-${i}`;
+
+const cache = {};
+function load(url) {
+  return new Promise((ok) => {
+    const im = new Image();
+    im.onload = () => ok(im);
+    im.onerror = () => ok(null);
+    im.src = url;
+  });
+}
+
+/** Pobiera tekstury obu motywów. Brak pliku nie blokuje mapy: budynek dostanie zapasowy tynk. */
+export async function loadFacades() {
+  const jobs = [];
+  for (const [kind, n] of Object.entries(FACADE_KINDS)) {
+    for (let i = 0; i < n; i++) {
+      for (const t of ['day', 'night']) jobs.push(load(`./icons/fa/${kind}-${i}-${t}.webp`).then((im) => { cache[`${kind}-${i}-${t}`] = im; }));
     }
   }
-  return g.getImageData(0, 0, n, n);
+  await Promise.race([Promise.all(jobs), new Promise((r) => setTimeout(r, 4000))]);
+}
+
+function plain(night) {
+  const c = document.createElement('canvas'); c.width = c.height = 16;
+  const g = c.getContext('2d'); g.fillStyle = night ? '#1B2A44' : '#EFE6D6'; g.fillRect(0, 0, 16, 16);
+  return g.getImageData(0, 0, 16, 16);
 }
 
 /** Dodaje tekstury do bieżącego stylu mapy (po każdej zmianie motywu trzeba je dodać ponownie). */
 export function addFacades(map, night) {
-  const set = night ? SETS.night : SETS.day;
-  set.plaster.forEach((p, i) => {
-    const low = `fa-low-${i}`; const high = `fa-high-${i}`;
-    if (!map.hasImage(low)) map.addImage(low, facade(p, set, 6, 4, i + 1));
-    if (!map.hasImage(high)) map.addImage(high, facade(p, set, 12, 16, i + 11));
-  });
+  const t = night ? 'night' : 'day';
+  for (const [kind, n] of Object.entries(FACADE_KINDS)) {
+    for (let i = 0; i < n; i++) {
+      const id = facadeId(kind, i);
+      if (map.hasImage(id)) map.removeImage(id);
+      const im = cache[`${kind}-${i}-${t}`];
+      map.addImage(id, im || plain(night), { pixelRatio: im ? RATIO[kind] : 1 });
+    }
+  }
 }

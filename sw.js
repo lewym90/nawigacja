@@ -1,12 +1,14 @@
 // Service worker: powłoka aplikacji działa bez sieci. Kafelki i dane tras idą przez sieć.
-const VERSION = 'nav-v0.10.1';
+const VERSION = 'nav-v0.11.0';
+const ORTO = 'nav-orto'; // zdjęcia lotnicze: wspólne dla wersji aplikacji, najstarsze wypadają
+const ORTO_MAX = 900;
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
   './vendor/maplibre-gl.js', './vendor/maplibre-gl.css',
   './js/app.js', './js/config.js', './js/geo.js', './js/routing.js', './js/guidance.js',
-  './js/hazards.js', './js/speech-pl.js', './js/speed.js', './js/places.js', './js/limits.js', './js/compass.js', './js/modes.js', './js/hazard-data.js', './js/valhalla.js', './js/provider.js', './js/cockpit.js', './js/camera.js', './js/facades.js', './js/roadwise.js',
+  './js/hazards.js', './js/speech-pl.js', './js/speed.js', './js/places.js', './js/limits.js', './js/compass.js', './js/modes.js', './js/hazard-data.js', './js/valhalla.js', './js/provider.js', './js/cockpit.js', './js/camera.js', './js/facades.js', './js/facade-list.js', './js/orto.js', './js/roadwise.js',
   './js/fixes.js', './js/fuel.js', './js/trip.js', './js/explain.js', './js/voice.js', './js/sim.js', './js/mapstyle.js', './js/icons.js',
-  './icons/favicon-64.png', './icons/sky-day.webp', './icons/sky-night.webp', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
+  './icons/favicon-64.png', ...['house', 'tenement', 'block', 'office'].flatMap((k) => ['day', 'night'].map((t) => `./icons/fa/${k}-0-${t}.webp`)), './icons/sky-day.webp', './icons/sky-night.webp', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
 ];
 
 self.addEventListener('install', (e) => {
@@ -15,7 +17,7 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k))))
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== VERSION && k !== ORTO).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -24,6 +26,13 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
+  if (url.hostname === 'mapy.geoportal.gov.pl') {
+    e.respondWith(caches.open(ORTO).then((c) => c.match(req).then((hit) => hit || fetch(req).then((r) => {
+      if (r.ok) { c.put(req, r.clone()); c.keys().then((k) => { for (const old of k.slice(0, Math.max(0, k.length - ORTO_MAX))) c.delete(old); }); }
+      return r;
+    }))));
+    return;
+  }
   if (url.origin !== location.origin) return; // usługi zewnętrzne: zawsze sieć
   // Własna warstwa poprawek: najpierw sieć (świeże dane), w razie braku sieci kopia.
   if (/\/data\/hazards\.[a-z]+\.json$/.test(url.pathname)) {

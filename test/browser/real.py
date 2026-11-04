@@ -25,7 +25,7 @@ def forward(route):
     try:
         hdr = {k: v for k, v in rq.headers.items() if k.lower() in ('content-type', 'accept')}
         hdr['User-Agent'] = 'nawigacja-test'
-        r = opener.open(urllib.request.Request(rq.url, data=rq.post_data_buffer, method=rq.method, headers=hdr), timeout=12)
+        r = opener.open(urllib.request.Request(rq.url, data=rq.post_data_buffer, method=rq.method, headers=hdr), timeout=20)
         b = r.read(); s = r.status
         h = {'access-control-allow-origin': '*', 'content-type': r.headers.get('content-type', 'application/octet-stream')}
         if r.headers.get('content-encoding'): h['content-encoding'] = r.headers['content-encoding']
@@ -42,16 +42,19 @@ SAMPLE = """() => { const m = window.__nav.map; const s = window.__cam = []; let
 NOISE = """() => { const s = window.__nav.S.sim; const o = s.onFix; let r = 1; const n = () => { r = (r * 16807) % 2147483647; return (r / 2147483647 - 0.5) * 2; };
   s.onFix = (f) => o({ ...f, lat: f.lat + n() * 3.6e-5, lng: f.lng + n() * 5.7e-5, heading: f.heading == null ? f.heading : (f.heading + n() * 7 + 360) % 360, speed: Math.max(0, (f.speed || 0) + n()) }); }"""
 with sync_playwright() as p:
-    br = p.chromium.launch(args=['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader'])
-    ctx = br.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=1, geolocation={'latitude': START[0], 'longitude': START[1]}, permissions=['geolocation'], locale='pl-PL', service_workers='block')
+    br = p.chromium.launch(proxy={'server': os.environ['HTTPS_PROXY'], 'bypass': '127.0.0.1'}, args=['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader'])
+    ctx = br.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=1, geolocation={'latitude': START[0], 'longitude': START[1]}, permissions=['geolocation'], locale='pl-PL', service_workers='block', ignore_https_errors=True, extra_http_headers={})
     page = ctx.new_page()
     page.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
     page.on('pageerror', lambda e: errors.append(f'pageerror: {e}'))
     page.route('https://photon.komoot.io/**', lambda r: r.fulfill(status=200, headers={'access-control-allow-origin': '*', 'content-type': 'application/json'}, body=json.dumps({'features': [{'geometry': {'coordinates': DEST}, 'properties': {'name': 'Stare Miasto', 'street': 'Rynek', 'housenumber': '1', 'city': 'Lublin'}}]})))
-    page.route(re.compile(r'^https?://(?!127\.0\.0\.1|photon)'), forward)
+    page.route('https://overpass-api.de/**', lambda r: r.fulfill(status=503, headers={'access-control-allow-origin': '*'}, body=b''))
+    page.route(re.compile(r'^https?://(?!127\.0\.0\.1|photon|mapy\.geoportal|overpass)'), forward)
+    orto = []
+    page.on('response', lambda r: orto.append(r.status) if 'ORTO' in r.url else None)
     page.add_init_script("localStorage.setItem('nav.settings', JSON.stringify({theme: '%s'}))" % THEME)
     page.goto(f'http://127.0.0.1:{PORT}/index.html')
-    page.wait_for_function('window.__nav && window.__nav.map && window.__nav.map.isStyleLoaded()', timeout=30000)
+    page.wait_for_function("window.__nav && window.__nav.map && window.__nav.map.getLayer('sel-line')", timeout=30000)
     page.wait_for_timeout(1500)
     page.fill('#q', 'Stare Miasto')
     page.wait_for_selector('#results button:has-text("Stare Miasto")', timeout=8000)
@@ -66,10 +69,14 @@ with sync_playwright() as p:
     page.evaluate("(k) => { const S = window.__nav.S; S.simSpeedup = k; S.sim.speedup = k; S.sim.start(); }", SPEEDUP)
     page.evaluate(NOISE)
     page.evaluate("window.__nav.S.sim.along = 1500")
+    page.wait_for_timeout(int(os.environ.get('SETTLE', '0')) * 1000)
     page.wait_for_timeout(7000)
     page.screenshot(path=f'{OUT}/{THEME}-a.png')
     page.evaluate(SAMPLE)
     page.wait_for_timeout(SECS * 1000)
+    print('orto', len(orto), orto[:6], flush=True)
+    print('url', page.evaluate("performance.getEntriesByType('resource').map(x => x.name).filter(n => n.includes('ORTO')).slice(0,2).map(u => u.match(/BBOX=([^&]+)/)[1])"), flush=True)
+    print('adres zgodny:', page.evaluate("(async () => { const o = await import('./js/orto.js'); const e = performance.getEntriesByType('resource').map(x => x.name).filter(n => n.includes('ORTO')); const m = e[0].match(/BBOX=([^&]+)/)[1]; let hit = false; for (const z of [14,15,16,17]) { const c = window.__nav.map.getCenter(); const [x,y] = o.tileAt([c.lng,c.lat], z); for (let dx=-6;dx<=6;dx++) for (let dy=-6;dy<=6;dy++) if (o.tileBBox(x+dx,y+dy,z) === decodeURIComponent(m)) hit = true; } return hit; })()"), flush=True)
     page.evaluate('window.__camStop()')
     d = page.evaluate('window.__cam')
     ang = lambda a, b: ((b - a + 540) % 360) - 180

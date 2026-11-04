@@ -1,6 +1,8 @@
 // Własny styl mapy (nasz wygląd) na danych OpenStreetMap w schemacie OpenMapTiles.
 // Dwa warianty: noc i dzień. Styl nie kopiuje żadnej mapy komercyjnej.
 
+import { FACADE_KINDS } from './facade-list.js';
+
 const PALETTE = {
   // Noc: granat, ciemny asfalt i światła w oknach
   night: {
@@ -49,6 +51,9 @@ function pathLayers(road, c, travel) {
 const H = ['coalesce', ['get', 'render_height'], 6];
 // odmiana budynku: stała dla danej bryły, różna między sąsiadami
 const VAR = ['%', ['coalesce', ['id'], 7], 3];
+// rodzaj elewacji wg wysokości, wariant wg numeru budynku
+const pick = (kind) => ['concat', `fa-${kind}-`, ['to-string', ['%', ['coalesce', ['id'], 7], FACADE_KINDS[kind] || 1]]];
+const facadeExpr = () => ['case', ['<', H, 9], pick('house'), ['<', H, 16], pick('tenement'), ['<', H, 32], pick('block'), pick('office')];
 const NAME = ['coalesce', ['get', 'name:pl'], ['get', 'name']];
 
 /** travel: auto | pedestrian | bicycle. Pieszo wyraźnie rysujemy ścieżki i schody, rowerem drogi rowerowe. */
@@ -94,7 +99,7 @@ export function buildStyle(mode, cfg, travel = 'auto') {
       {
         id: 'building-3d', type: 'fill-extrusion', source: 'omt', 'source-layer': 'building', minzoom: 14.5,
         paint: {
-          'fill-extrusion-pattern': ['concat', ['step', H, 'fa-low-', 13, 'fa-high-'], ['to-string', VAR]],
+          'fill-extrusion-pattern': facadeExpr(),
           'fill-extrusion-height': H,
           'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
           'fill-extrusion-opacity': 1,

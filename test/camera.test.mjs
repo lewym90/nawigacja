@@ -62,3 +62,11 @@ test('zoom i pochylenie auta bez skoków', () => {
   for (let k = 0; k < 160; k++) assert.ok(Math.abs(m.zoom(k + 1) - m.zoom(k)) < 0.02, `skok przy ${k}`);
   assert.equal(m.camPitch(10), m.camPitch(120));
 });
+
+test('zdjęcia lotnicze: adres kafla jak w mapie, kolejka wzdłuż trasy bez powtórek', async () => {
+  const { tileBBox, tilesAlong, tileAt } = await import('../js/orto.js');
+  assert.equal(tileBBox(0, 0, 1), '-20037508.342789244,0,0,20037508.342789244');
+  const t = tilesAlong(line, 0, 2000);
+  assert.equal(new Set(t.map(String)).size, t.length);
+  assert.deepEqual(t[0], [...tileAt(north(0), 16), 16]);
+});

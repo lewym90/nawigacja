@@ -1,4 +1,4 @@
-# KONTYNUACJA: nawigacja (lewym90/nawigacja), stan na 2026-11-04, wersja 0.10.1
+# KONTYNUACJA: nawigacja (lewym90/nawigacja), stan na 2026-11-04, wersja 0.11.0
 
 Ten plik jest kompletnym przekazaniem pracy. Ma wystarczyć, żeby nowa sesja Claude (inne konto, bez dostępu do poprzedniej rozmowy i do Projektu „APLIKACJE”) mogła kontynuować bez zadawania pytań, które już padły. Czytaj całość, zanim cokolwiek zmienisz.
 
@@ -93,6 +93,8 @@ test/            – testy Node (`node --test`), test/browser/run.py (pełny tes
 - **0.9.0 (obecna):** przebudowa wyglądu kokpitu po krytyce właściciela: kamera 76–79° (widać horyzont i niebo), nowa paleta mapy (dzień chłodny błękit, noc granat ze świecącymi drogami, budynki jaśnieją z wysokością), szklane panele (`--glass`, `--accent`), pływający dolny pasek, wstęga trasy z poświatą i płynącym światłem (warstwa `sel-flow`, animacja `FLOW`), przechył kamery (`roll` do ±9°) w zakrętach, mocniejszy `lookAheadBearing` (ahead 120 m, gain 0,8, max 55°), `maxPitch` 85, tło mapy w kolorze mgły.
 
 - **0.10.0 (obecna):** usunięty „helikopterowy” kokpit 0.9. Nowa kamera `js/camera.js` (`ChaseCam`, pętla `camLoop` w app.js, ok. 30 kl./s): jedzie sama wzdłuż trasy między odczytami GPS, kierunek bierze z geometrii trasy, zoom ciągły, stałe pochylenie 69°, pole widzenia 50° w jeździe, bez `roll`. Usunięta animacja `sel-flow`. Szata z dokumentu wizji (paleta Road Intelligence, zawsze ciemne szkło), panel Przyjazd/Dystans/Czas, drogi w skali metrów z linią środkową, elewacje `js/facades.js` + dachy `building-roof`, panorama nieba `#sky` za przezroczystą mapą (obrazy od właściciela, `tools/build-sky.py <dzień> <noc>`), ikona z projektu (`tools/build-icons.py`), szewrony na odcinku przed autem. Symulacja domyślnie 1× (wcześniej 4×, co wyolbrzymiało ruch). Kolor trasy wg limitu domyślnie wyłączony (przełącznik został).
+
+- **0.11.0:** zdjęcia lotnicze Geoportalu pod mapą (warstwy `orto-base` + `orto`, WMS HighResolution, `js/orto.js` pobiera je zawczasu wzdłuż trasy, sw.js trzyma do 900 kafli w `nav-orto`, przełącznik `ortho`). Usługa daje 1–10 s na kafel: docelowo cache na własnym serwerze. Elewacje ze zdjęć: `assets/facades/<house|tenement|block|office>-<n>.png` + `python3 tools/build-facades.py` (robi też noc i `js/facade-list.js`); po dodaniu nowych dopisz je do SHELL w sw.js.
 
 ### Kluczowe szczegóły działania (żeby nie odkrywać na nowo)
 - **Kolor trasy:** `routeGradient` → `line-gradient` (źródło `sel` z `lineMetrics:true`), przejechana część przezroczysta (`paintRoute(consumed)`). Warstwy wstawiane PRZED `building-3d`. Po zmianie motywu `style.load` → `installLayers()` odtwarza warstwy (źródła `sel`, `alt`, `secs`, `arrow`, `fixes`, `trip`).

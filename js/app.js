@@ -21,7 +21,8 @@ import {
   HazardWatch, SectionTracker, ReportStore, TYPES,
 } from './hazards.js';
 import { ChaseCam } from './camera.js';
-import { addFacades } from './facades.js';
+import { addFacades, loadFacades } from './facades.js';
+import { prefetchOrto } from './orto.js';
 import { corridorBoxesRange, haversine, bearing, sliceLine, project } from './geo.js';
 import { createHazardData, WINDOW_M } from './hazard-data.js';
 import { Voice } from './voice.js';
@@ -92,6 +93,7 @@ function show(id, on) { $(id).hidden = !on; }
 let night = isNight(settings.theme);
 document.body.classList.toggle('day', !night);
 
+await loadFacades(); // tekstury muszą być gotowe, zanim mapa zbuduje kafelki
 const map = new maplibregl.Map({
   container: 'map',
   style: buildStyle(night ? 'night' : 'day', CONFIG, S.travel),
@@ -117,6 +119,14 @@ function installLayers() {
   if (!map.getSource('alt')) {
     map.addSource('alt', { type: 'geojson', data: emptyFC() });
     map.addSource('sel', { type: 'geojson', data: emptyFC(), lineMetrics: true }); // lineMetrics: gradient wzdłuż trasy
+  }
+  if (!map.getSource('orto') && CONFIG.ortoUrl) {
+    map.addSource('orto', { type: 'raster', tiles: [CONFIG.ortoUrl], tileSize: 512, minzoom: 12, maxzoom: 17, attribution: 'Ortofotomapa: GUGiK' });
+    const under = map.getLayer('minor-case') ? 'minor-case' : undefined;
+    const vis = settings.ortho === false ? 'none' : 'visible';
+    // podkład w kolorze zdjęcia: póki kafel się wczytuje, nie ma jasnej plamy
+    map.addLayer({ id: 'orto-base', type: 'background', layout: { visibility: vis }, paint: { 'background-color': night ? '#0D1A2C' : '#7F8872', 'background-opacity': ['interpolate', ['linear'], ['zoom'], 12.5, 0, 14, 1] } }, under);
+    map.addLayer({ id: 'orto', type: 'raster', source: 'orto', minzoom: 12.5, layout: { visibility: vis }, paint: { 'raster-opacity': ['interpolate', ['linear'], ['zoom'], 12.5, 0, 14, 1], 'raster-brightness-max': night ? 0.3 : 1, 'raster-saturation': night ? -0.5 : 0.08, 'raster-fade-duration': 250 } }, under);
   }
   if (!map.getSource('secs')) map.addSource('secs', { type: 'geojson', data: emptyFC() });
   // Trasa leży POD budynkami 3D, żeby bloki ją zasłaniały jak w rzeczywistości.
@@ -820,6 +830,7 @@ function navTick(fix) {
   updateRoadArrow(N, g);
   if (N.paintedAlong == null || g.along - N.paintedAlong > 120) { N.paintedAlong = g.along; paintRoute(g.along); }
   if (N.aheadAlong == null || g.along - N.aheadAlong > 35 || g.along < N.aheadAlong) { N.aheadAlong = g.along; drawAhead(N, g.along); }
+  if (settings.ortho !== false && CONFIG.ortoUrl && (N.ortoAlong == null || Math.abs(g.along - N.ortoAlong) > 300)) { N.ortoAlong = g.along; prefetchOrto(N.route.line, g.along); }
 
   // Kamera i znacznik pojazdu: tu tylko nowy odczyt, płynny ruch liczy camLoop w każdej klatce
   const onRoute = g.offDist < 25 && !!g.point;
@@ -1350,6 +1361,7 @@ const SWITCHES = {
   hazardsVoice: (v) => { settings.hazardsVoice = v; },
   tilt: (v) => { settings.tilt = v; },
   roadAlerts: (v) => { settings.roadAlerts = v; if (!v) $('banner').hidden = true; },
+  ortho: (v) => { settings.ortho = v; for (const id of ['orto', 'orto-base']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v ? 'visible' : 'none'); },
   routeColor: (v) => { settings.routeColor = v; paintRoute(S.nav ? S.nav.paintedAlong || 0 : 0); },
 };
 function syncSoundIcon() { $('btn-sound').innerHTML = voice.enabled ? icon.sound(24) : icon.mute(24); }

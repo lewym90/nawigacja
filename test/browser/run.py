@@ -83,6 +83,7 @@ with sync_playwright() as p:
     page = ctx.new_page()
     page.on('console', lambda m: errors.append(f'{m.type}: {m.text}') if m.type == 'error' else None)
     page.on('pageerror', lambda e: errors.append(f'pageerror: {e}'))
+    page.route('https://mapy.geoportal.gov.pl/**', lambda r: r.fulfill(status=200, headers={'access-control-allow-origin': '*', 'content-type': 'image/png'}, body=__import__('base64').b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')))
 
     def fulfill_json(route, data): route.fulfill(status=200, content_type='application/json', headers={'access-control-allow-origin': '*'}, body=json.dumps(data))
     page.route('https://tiles.openfreemap.org/planet', lambda r: fulfill_json(r, {'tilejson': '2.2.0', 'tiles': ['https://tiles.mock/{z}/{x}/{y}.pbf'], 'minzoom': 0, 'maxzoom': 14, 'attribution': '© OpenStreetMap'}))
@@ -186,7 +187,7 @@ with sync_playwright() as p:
     assert page.is_visible('#quick'), 'brak panelu szybkich ustawień'
     assert page.eval_on_selector_all('#quick [data-seg=engine] button', 'els => els.length') == 3
     page.click('#quick [data-seg=theme] button[data-v=night]')
-    page.wait_for_function("(() => { const m = window.__nav.map; return m.getStyle().name === 'nav-night' && m.getLayer('sel-line') && m.getLayer('sel-chevron') && m.hasImage('fa-low-0'); })()", timeout=15000)
+    page.wait_for_function("(() => { const m = window.__nav.map; return m.getStyle().name === 'nav-night' && m.getLayer('sel-line') && m.getLayer('sel-chevron') && m.hasImage('fa-house-0'); })()", timeout=15000)
     page.wait_for_timeout(600)
     assert page.evaluate("document.body.classList.contains('day')") is False, 'motyw nie przełączył się na noc'
     layers = page.evaluate("['sel-line','sel-glow','sel-case','arrow-line','arrow-head'].map(i => !!window.__nav.map.getLayer(i))")
