@@ -75,7 +75,7 @@ void main(){
   if(t.a<0.5) discard;
   vec3 col=t.rgb*mix(vec3(.82,.88,.8),vec3(1.05,1.02,.92),v_tint);
   col*=mix(0.72,1.0,smoothstep(0.0,6.0,v_pos.z));
-  if(u_night>0.5) col*=0.12;
+  if(u_night>0.5) col*=0.2;
   float fog=smoothstep(600.0,1700.0,distance(v_pos,u_eye));
   o=vec4(mix(col,u_fog,fog),1.0);
 }`;

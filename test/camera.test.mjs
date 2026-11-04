@@ -70,3 +70,15 @@ test('zdjęcia lotnicze: adres kafla jak w mapie, kolejka wzdłuż trasy bez pow
   assert.equal(new Set(t.map(String)).size, t.length);
   assert.deepEqual(t[0], [...tileAt(north(0), 16), 16]);
 });
+
+test('pasy ruchu: kierunki, aktywny pas, porada i drogowskaz', async () => {
+  const { parseLanes, laneAdvice, towardOf } = await import('../js/lanes.js');
+  const l = parseLanes([{ directions: 8 }, { directions: 2 }, { directions: 64, active: 64 }]);
+  assert.deepEqual(l.map((x) => x.angles[0]), [-90, 0, 90]);
+  assert.equal(laneAdvice(l), 'Zajmij prawy pas');
+  assert.equal(laneAdvice(parseLanes([{ directions: 8, active: 8 }, { directions: 2 }, { directions: 2 }])), 'Zajmij lewy pas');
+  assert.equal(laneAdvice(parseLanes([{ directions: 2, active: 2 }, { directions: 2, active: 2 }])), null);
+  assert.equal(parseLanes([{ directions: 2 }, { directions: 8 }]), null);
+  assert.equal(towardOf('Skręć w prawo, kierunek: Przemyśl/Bychawa.'), 'Przemyśl, Bychawa');
+  assert.equal(towardOf('Skręć w lewo.'), '');
+});

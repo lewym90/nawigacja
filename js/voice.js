@@ -187,7 +187,8 @@ export class Voice {
     u.onerror = (e) => {
       this.lastError = (e && e.error) || 'error';
       this.log(`błąd: ${this.lastError}`);
-      if (this.onError) this.onError(this.lastError);
+      // „canceled” i „interrupted” to nasze własne przerwanie starszego komunikatu, nie błąd
+      if (this.onError && !['canceled', 'interrupted'].includes(this.lastError)) this.onError(this.lastError);
       done();
     };
     // Zabezpieczenie: gdy przeglądarka nie zgłosi końca, kolejka nie może zostać zablokowana.

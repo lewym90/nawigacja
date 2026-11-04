@@ -1,3 +1,4 @@
+import { parseLanes } from './lanes.js';
 // Trasy: klient silnika zgodnego z API OSRM + polskie instrukcje skrętów.
 // Adres silnika jest w config.js: docelowo własny serwer (Valhalla/OSRM).
 
@@ -188,6 +189,8 @@ export function parseRoute(r, index = 0) {
         type: st.maneuver && st.maneuver.type,
         modifier: st.maneuver && st.maneuver.modifier,
         feature: st.maneuver && st.maneuver.feature,
+        lanes: st.maneuver && parseLanes(st.maneuver.lanes),
+        toward: st.maneuver && st.maneuver.toward,
         location: st.maneuver && st.maneuver.location,
         // Odległość od początku trasy, w której wykonuje się ten manewr.
         at: acc,

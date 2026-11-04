@@ -36,19 +36,20 @@ function plain(night) {
   return g.getImageData(0, 0, 16, 16);
 }
 
-function ground(im, night) {
+function ground(im, night, tint) {
   const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
   if (im) g.drawImage(im, 0, 0, 256, 256); else { g.fillStyle = '#6f7a60'; g.fillRect(0, 0, 256, 256); }
-  if (night) { g.globalCompositeOperation = 'multiply'; g.fillStyle = '#1c2a40'; g.fillRect(0, 0, 256, 256); }
+  if (night) { g.globalCompositeOperation = 'multiply'; g.fillStyle = tint; g.fillRect(0, 0, 256, 256); }
   return g.getImageData(0, 0, 256, 256);
 }
 
 /** Dodaje tekstury do bieżącego stylu mapy (po każdej zmianie motywu trzeba je dodać ponownie). */
 export function addFacades(map, night) {
-  for (const [n, r] of [['grass', 2], ['pave', 2], ['asphalt', 1]]) {
+  // nocą jezdnia i chodnik są dużo jaśniejsze od trawy: układ dróg i skrzyżowań musi być czytelny bez trasy
+  for (const [n, r, tint] of [['grass', 2, '#141f2e'], ['pave', 2, '#4a5a74'], ['asphalt', 1, '#a6b6d4']]) {
     const id = `tx-${n}`;
     if (map.hasImage(id)) map.removeImage(id);
-    map.addImage(id, ground(cache[id], night), { pixelRatio: r });
+    map.addImage(id, ground(cache[id], night, tint), { pixelRatio: r });
   }
   const t = night ? 'night' : 'day';
   for (const [kind, n] of Object.entries(FACADE_KINDS)) {

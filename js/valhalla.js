@@ -136,6 +136,8 @@ export function tripToOsrmRoute(trip) {
       const feature = m.travel_mode === 'pedestrian' ? featureOf(m) : null;
       if (feature) maneuver.feature = feature;
       if (m.type === 26) maneuver.exit = m.roundabout_exit_count || undefined;
+      if (m.lanes) maneuver.lanes = m.lanes;
+      { const t = towardOf(m.instruction); if (t) maneuver.toward = t; }
       steps.push({ name, ref, distance: meters, duration: seconds, maneuver });
       if (m.type === 26) roundaboutIdx = steps.length - 1;
     }
@@ -189,6 +191,8 @@ export const COSTING_OPTIONS = {
  * Zapytanie o trasę. heading (stopnie) podajemy przy ponownym liczeniu w ruchu: trasa zaczyna się
  * wtedy zgodnie z kierunkiem jazdy (bez „zawróć” i objeżdżania bloku, gdy stoisz na wyjeździe).
  */
+import { towardOf } from './lanes.js';
+
 export function valhallaRequest(points, { costing = 'auto', alternatives = true, heading = null, pref = DEFAULT_PREF, exclude = null } = {}) {
   // radius: Valhalla bierze pod uwagę WSZYSTKIE drogi w tym promieniu, a nie tylko najbliższą. Bez tego
   // punkt przy chodniku ledwo połączonym z siecią (zamiast sąsiedniej uliczki) daje objazd wokół bloku.
@@ -202,6 +206,7 @@ export function valhallaRequest(points, { costing = 'auto', alternatives = true,
     costing,
     ...(opts && Object.keys(opts).length ? { costing_options: opts } : {}),
     directions_options: { language: 'pl-PL', units: 'kilometers' },
+    turn_lanes: true,
     ...(alternatives ? { alternates: 2 } : {}),
     ...(exclude && exclude.length ? { exclude_locations: exclude.map(([lon, lat]) => ({ lat, lon })) } : {}),
   };

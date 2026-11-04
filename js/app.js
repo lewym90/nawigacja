@@ -21,6 +21,7 @@ import {
   HazardWatch, SectionTracker, ReportStore, TYPES,
 } from './hazards.js';
 import { ChaseCam } from './camera.js';
+import { lanesHtml, laneAdvice } from './lanes.js';
 import { City3D } from './city3d.js';
 import { addFacades, loadFacades } from './facades.js';
 import { prefetchOrto } from './orto.js';
@@ -791,7 +792,20 @@ function navTick(fix) {
   const nx = g.next;
   $('m-arrow').innerHTML = arrow(nx.icon, 50);
   $('m-dist').textContent = nx.type === 'arrive' && g.distToNext < 30 ? 'Cel' : fmtDist(g.distToNext);
-  $('m-text').textContent = nx.text;
+  $('m-text').textContent = nx.text.replace(/,? ?kierunek: [^.]+\.?$/, '');
+  { // drogowskaz i pasy ruchu przed manewrem
+    const sign = $('m-sign'); const near = g.distToNext < 1500;
+    sign.hidden = !(nx.toward && near);
+    if (!sign.hidden && sign.textContent !== nx.toward) sign.textContent = nx.toward;
+    const lanes = $('m-lanes'); const showL = !!nx.lanes && g.distToNext < 600 && g.distToNext > 8;
+    lanes.hidden = !showL;
+    document.body.classList.toggle('has-lanes', showL);
+    if (showL && N.lanesIdx !== g.nextIdx) {
+      N.lanesIdx = g.nextIdx; lanes.innerHTML = lanesHtml(nx.lanes);
+      const say = laneAdvice(nx.lanes);
+      if (say && g.distToNext > 120) voice.say(say, { prio: 2 });
+    }
+  }
   { // postęp do manewru i wyróżnienie tuż przed skrętem
     const prevAt = g.nextIdx > 0 ? N.route.steps[g.nextIdx - 1].at : 0;
     const span = Math.max(150, Math.min(900, nx.at - prevAt));
