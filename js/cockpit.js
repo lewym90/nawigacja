@@ -25,6 +25,9 @@ export function sunPosition(date, lat, lng) {
   return { azimuth: ((az / RAD + 180) % 360 + 360) % 360, altitude: alt / RAD };
 }
 
+// Niebo rysuje panorama za mapą (#sky): mapa zostawia nad horyzontem przezroczystość, a dal rozpływa się w mgle.
+export const SKY_CLEAR = 'rgba(0,0,0,0)';
+
 /**
  * Światło i niebo mapy. Dzień: ciepłe światło ze strony słońca (cienie budynków), noc: zimne światło księżycowe.
  * `night` wynika z wybranego motywu, a nie ze słońca: motyw „Noc” w południe nadal jest nocny.
@@ -33,17 +36,17 @@ export function atmosphere(night, date, lat, lng) {
   const sun = sunPosition(date, lat, lng);
   if (night) {
     return {
-      light: { anchor: 'map', position: [1.4, 215, 55], color: '#8fa8dc', intensity: 0.3 },
-      sky: { 'sky-color': '#040716', 'horizon-color': '#27407e', 'fog-color': '#070B1A', 'fog-ground-blend': 0.35, 'horizon-fog-blend': 0.85, 'sky-horizon-blend': 0.85, 'atmosphere-blend': 0 },
+      light: { anchor: 'map', position: [1.4, 215, 55], color: '#8fa8dc', intensity: 0.2 },
+      sky: { 'sky-color': SKY_CLEAR, 'horizon-color': SKY_CLEAR, 'fog-color': '#10223E', 'fog-ground-blend': 0.5, 'horizon-fog-blend': 0.2, 'sky-horizon-blend': 0, 'atmosphere-blend': 0 },
     };
   }
   const alt = Math.max(5, Math.min(75, sun.altitude));
   const low = sun.altitude < 18; // poranek / wieczór: ciepły horyzont i dłuższe cienie
   return {
-    light: { anchor: 'map', position: [1.2, sun.azimuth, 90 - alt], color: low ? '#ffd3a0' : '#fff6e8', intensity: low ? 0.5 : 0.4 },
+    light: { anchor: 'map', position: [1.2, sun.azimuth, 90 - alt], color: low ? '#ffd3a0' : '#fff6e8', intensity: low ? 0.5 : 0.3 },
     sky: low
-      ? { 'sky-color': '#4d78c4', 'horizon-color': '#ffc07d', 'fog-color': '#f4d6bd', 'fog-ground-blend': 0.4, 'horizon-fog-blend': 0.85, 'sky-horizon-blend': 0.8, 'atmosphere-blend': 0.8 }
-      : { 'sky-color': '#2f84e6', 'horizon-color': '#d6ebfa', 'fog-color': '#E3EBF3', 'fog-ground-blend': 0.4, 'horizon-fog-blend': 0.85, 'sky-horizon-blend': 0.8, 'atmosphere-blend': 0.8 },
+      ? { 'sky-color': SKY_CLEAR, 'horizon-color': SKY_CLEAR, 'fog-color': '#F0D2B8', 'fog-ground-blend': 0.5, 'horizon-fog-blend': 0.2, 'sky-horizon-blend': 0, 'atmosphere-blend': 0 }
+      : { 'sky-color': SKY_CLEAR, 'horizon-color': SKY_CLEAR, 'fog-color': '#D7E6F1', 'fog-ground-blend': 0.5, 'horizon-fog-blend': 0.2, 'sky-horizon-blend': 0, 'atmosphere-blend': 0 },
   };
 }
 
@@ -52,7 +55,7 @@ export function atmosphere(night, date, lat, lng) {
 const LIMIT_STOPS = [
   [20, '#5ef2d0'], [30, '#4fe0e6'], [50, '#4cb8ff'], [70, '#6c8cff'], [90, '#a56bff'], [110, '#e45cff'], [140, '#ff4f9a'],
 ];
-export const ROUTE_PLAIN = { night: '#4cb8ff', day: '#1f6fe0' };
+export const ROUTE_PLAIN = { night: '#00D9FF', day: '#00D9FF' };
 
 function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
 function rgbToHex(c) { return '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join(''); }

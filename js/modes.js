@@ -2,6 +2,8 @@
 // pokazujemy (fotoradary, limity), prędkość symulacji i progi komunikatów głosowych.
 // Dodanie trybu = nowy wpis tutaj (+ ewentualnie nowy dostawca w provider.js).
 
+const zoomBySpeed = (kmh, slow, fast, top) => slow + (fast - slow) * Math.min(1, Math.max(0, kmh) / top);
+
 export const MODES = {
   auto: {
     id: 'auto',
@@ -12,9 +14,9 @@ export const MODES = {
     alternatives: true,
     simKmh: null,         // null = realistyczna jazda samochodem (sim.js)
     pitch: 55,
-    // kamera „z kokpitu”: im szybciej jedziesz, tym niżej i dalej patrzy (widać horyzont i niebo)
-    camPitch: (kmh) => (kmh > 90 ? 79 : kmh > 60 ? 78 : kmh > 25 ? 77 : 76),
-    zoom: (kmh) => (kmh > 100 ? 14.9 : kmh > 70 ? 15.5 : kmh > 40 ? 16.1 : 16.7),
+    // kamera pościgowa nisko za autem: stałe pochylenie, zoom ciągły (bez progów, które dawały skoki)
+    camPitch: () => 69,
+    zoom: (kmh) => zoomBySpeed(kmh, 17.9, 16.5, 130),
     guide: {}, // domyślne progi z guidance.js
     say: { arrive: 'Dojechałeś do celu', off: 'Zjechałeś z trasy. Przeliczam…', go: 'Ruszaj' },
   },
@@ -27,7 +29,8 @@ export const MODES = {
     alternatives: false, // pieszo warianty wychodzą prawie identyczne: jedna, najlepsza trasa
     simKmh: 5,
     pitch: 55,
-    zoom: () => 18,
+    camPitch: () => 64,
+    zoom: () => 18.4,
     compass: true,        // kierunek z kompasu telefonu, gdy stoisz lub idziesz wolno
     guide: { arriveM: 8, maxOffM: 22, offFixes: 4, minSpeed: 1.2, nowMin: 12, nowMax: 28, nowSec: 5, remindMin: 70, remindMax: 220, remindSec: 60, preMargin: 25, passedPrev: 18, chainFar: 45, chainNear: 28 },
     say: { arrive: 'Jesteś na miejscu', off: 'Zszedłeś z trasy. Przeliczam…', go: 'Idź' },
@@ -41,7 +44,8 @@ export const MODES = {
     alternatives: false,
     simKmh: 18,
     pitch: 55,
-    zoom: (kmh) => (kmh > 25 ? 16.8 : 17.4),
+    camPitch: () => 65,
+    zoom: (kmh) => zoomBySpeed(kmh, 18, 17.2, 35),
     guide: { arriveM: 12, maxOffM: 28, offFixes: 3, minSpeed: 4, nowMin: 25, nowMax: 70, nowSec: 5, remindMin: 150, remindMax: 500, remindSec: 40, preMargin: 40, passedPrev: 35, chainFar: 90, chainNear: 55 },
     say: { arrive: 'Dojechałeś do celu', off: 'Zjechałeś z trasy. Przeliczam…', go: 'Ruszaj' },
   },

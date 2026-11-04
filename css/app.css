@@ -400,3 +400,56 @@ body.day { --accent: #0a74ff; --accent-2: #7a4dff; --glass: rgba(255, 255, 255, 
 #banner { color: var(--glass-text); top: calc(var(--safe-t) + 96px); }
 #map { background: #E3EBF3; }
 body:not(.day) #map { background: #070B1A; }
+
+/* ======================= Szata 1.0: Road Intelligence (paleta z dokumentu wizji) ======================= */
+:root, body.day {
+  --navy: #071426; --midnight: #0B1F38; --graphite: #111B28; --cyan: #00D9FF; --ice: #74CFFF; --white: #F5FAFF;
+  --bg: #071426; --surface: rgba(11, 31, 56, 0.86); --surface-solid: #0B1F38; --surface-2: #111B28;
+  --line: rgba(116, 207, 255, 0.2); --text: #F5FAFF; --muted: #9DB6CF;
+  --gold: #00D9FF; --gold-ink: #04202C; --route: #00D9FF; --route-case: #74CFFF;
+  --warn: #FFB547; --warn-ink: #2A1A02; --danger: #FF5364; --ok: #32D69A; --yellow: #FFB547;
+  --accent: #00D9FF; --accent-2: #74CFFF;
+  --glass: rgba(7, 20, 38, 0.8); --glass-line: rgba(116, 207, 255, 0.3); --glass-text: #F5FAFF; --glass-muted: #A9C2DA;
+  --shadow: 0 10px 30px rgba(2, 8, 20, 0.5);
+  color-scheme: dark;
+}
+html, body { background: #071426; }
+/* niebo stoi za mapą; canvas mapy jest przezroczysty nad horyzontem */
+#sky { position: fixed; left: 0; right: 0; top: 0; height: 31vh; z-index: 0; background: #2f84e6 url(../icons/sky-day.webp) 0 100% / 2048px 100% repeat-x; opacity: 0; transition: opacity 0.6s ease; }
+body:not(.day) #sky { background: #040716 url(../icons/sky-night.webp) 0 100% / 2048px 100% repeat-x; }
+body.driving #sky { opacity: 1; }
+#map, body:not(.day) #map { background: transparent; z-index: 1; }
+
+#maneuver, #nav-panel, #banner { box-shadow: 0 12px 34px rgba(2, 8, 20, 0.45), inset 0 1px 0 rgba(116, 207, 255, 0.18); }
+#maneuver { border-radius: 22px; padding: 12px 18px 12px 26px; overflow: hidden; }
+#maneuver::before { content: ''; position: absolute; left: 10px; top: 14px; bottom: 14px; width: 5px; border-radius: 3px; background: var(--cyan); box-shadow: 0 0 12px var(--cyan); }
+#maneuver .m-arrow { color: var(--white); filter: none; }
+#maneuver .m-dist { font-size: 36px; }
+#maneuver .m-text { color: var(--white); font-weight: 600; }
+#maneuver .m-prog { left: 26px; bottom: 5px; height: 3px; }
+#banner.alert { background: var(--warn); color: var(--warn-ink); }
+#banner.final { background: var(--danger); }
+
+/* prędkość: duża tarcza, znak limitu nakłada się na jej róg jak w projekcie */
+#speedbox { display: block; left: 12px; bottom: calc(var(--safe-b) + 106px); width: 120px; height: 112px; }
+#speed.gauge { position: absolute; left: 0; bottom: 0; }
+#limit { position: absolute; right: 0; bottom: -2px; width: 54px; height: 54px; border-width: 6px; font-size: 20px; border-color: var(--danger); z-index: 1; }
+#speed { --rc: var(--cyan); }
+
+/* dolny panel: trzy stałe wartości */
+#nav-panel { padding: 13px 12px 12px 18px; border-radius: 24px; gap: 10px; }
+#nav-panel .stats { flex: 1; min-width: 0; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+#nav-panel .stats small { display: block; font-size: 12px; color: var(--glass-muted); margin-bottom: 2px; }
+#nav-panel .stats b { display: block; font-size: 22px; font-weight: 750; letter-spacing: -0.02em; line-height: 1.1; white-space: nowrap; }
+#nav-panel .stats div + div { border-left: 1px solid var(--line); padding-left: 10px; }
+#nav-panel #n-chip { position: absolute; left: 12px; bottom: calc(100% + 8px); background: var(--glass); border: 1px solid var(--glass-line); }
+.btn-end { padding: 11px 12px; font-size: 14px; border-radius: 14px; flex: none; }
+
+.panel { border-radius: 24px 24px 0 0; }
+.btn-go { box-shadow: 0 0 24px rgba(0, 217, 255, 0.45); }
+.route-card.sel { box-shadow: 0 0 0 1px var(--cyan), 0 0 18px rgba(0, 217, 255, 0.25); }
+.route-card.sel .rc-name, body.day .route-card.sel .rc-name { color: var(--ice); }
+.fab.gold { color: var(--warn); }
+#search { background: var(--glass); }
+#puck svg { transition: none; }
+#puck::before { background: radial-gradient(circle, rgba(0, 217, 255, 0.4), transparent 70%); }

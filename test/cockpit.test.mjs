@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildLine, destination, haversine, bearing } from '../js/geo.js';
 import {
-  sunPosition, atmosphere, limitColor, routeGradient, gradientExpr, maneuverArrow, wantsArrow,
+  sunPosition, atmosphere, SKY_CLEAR, limitColor, routeGradient, gradientExpr, maneuverArrow, wantsArrow,
   lookAheadBearing, signedAngle, turnZoomBoost, speedRing,
 } from '../js/cockpit.js';
 
@@ -21,7 +21,7 @@ test('słońce: południe słoneczne w Lublinie latem i zimą', () => {
 
 test('atmosfera: noc zimna i ciemna, dzień ciepły ze słońcem po właściwej stronie', () => {
   const n = atmosphere(true, new Date('2026-11-02T20:00:00Z'), ...LUBLIN);
-  assert.ok(n.light.intensity < 0.4 && n.sky['sky-color'] === '#040716');
+  assert.ok(n.light.intensity < 0.4 && n.sky['sky-color'] === SKY_CLEAR);
   const d = atmosphere(false, new Date('2026-06-21T10:29:00Z'), ...LUBLIN);
   assert.ok(Math.abs(d.light.position[1] - 180) < 6);
   assert.ok(d.light.position[2] > 20 && d.light.position[2] < 45); // polar = 90 - wysokość

@@ -155,6 +155,7 @@ with sync_playwright() as p:
     page.click('#results button:has-text("Rynek Testowy")')
     page.wait_for_selector('.route-card', timeout=8000)
     page.click('#btn-sim')
+    page.evaluate("(() => { const S = window.__nav.S; if (S.sim) { S.simSpeedup = 4; S.sim.speedup = 4; S.sim.start(); } })()")  # test szybciej niż jazda
     page.wait_for_timeout(1500)
     page.evaluate('window.__nav.S.sim.along = 2250')
     page.wait_for_timeout(2500)
@@ -185,14 +186,14 @@ with sync_playwright() as p:
     assert page.is_visible('#quick'), 'brak panelu szybkich ustawień'
     assert page.eval_on_selector_all('#quick [data-seg=engine] button', 'els => els.length') == 3
     page.click('#quick [data-seg=theme] button[data-v=night]')
-    page.wait_for_function("window.__nav.map.getLayer('sel-line') && window.__nav.map.isStyleLoaded()", timeout=8000)
+    page.wait_for_function("(() => { const m = window.__nav.map; return m.getStyle().name === 'nav-night' && m.getLayer('sel-line') && m.getLayer('sel-chevron') && m.hasImage('fa-low-0'); })()", timeout=15000)
     page.wait_for_timeout(600)
     assert page.evaluate("document.body.classList.contains('day')") is False, 'motyw nie przełączył się na noc'
     layers = page.evaluate("['sel-line','sel-glow','sel-case','arrow-line','arrow-head'].map(i => !!window.__nav.map.getLayer(i))")
     assert all(layers), f'po zmianie motywu zniknęły warstwy trasy: {layers}'
     assert page.is_visible('#maneuver') and page.is_visible('#nav-panel'), 'nawigacja przerwana zmianą motywu'
     sky = page.evaluate("JSON.stringify(window.__nav.map.getSky() || {})")
-    assert 'sky-color' in sky and '#040716' in sky, f'niebo nocne nie ustawione: {sky}'
+    assert 'fog-color' in sky and '#10223E' in sky, f'mgła nocna nie ustawiona: {sky}'
     assert page.evaluate("!!window.__nav.map.getLight()"), 'światło nie ustawione'
     assert page.evaluate("!!window.__nav.map.getSource('sel')._data || true")
     page.click('#quick [data-sw=voice]')

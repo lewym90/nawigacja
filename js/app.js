@@ -11,7 +11,7 @@ import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
 import { Compass } from './compass.js';
 import { buildRoadItems, unpackRoadPoints, RoadWatch, describe as describeRoad } from './roadwise.js';
 import {
-  atmosphere, routeGradient, gradientExpr, ROUTE_PLAIN, maneuverArrow, wantsArrow, lookAheadBearing, signedAngle, turnZoomBoost, speedRing,
+  atmosphere, routeGradient, gradientExpr, ROUTE_PLAIN, maneuverArrow, wantsArrow, speedRing,
 } from './cockpit.js';
 import { fmtDist, fmtDuration, limitAt } from './routing.js';
 import { Guidance } from './guidance.js';
@@ -20,6 +20,8 @@ import { loadRouteLimits } from './limits.js';
 import {
   HazardWatch, SectionTracker, ReportStore, TYPES,
 } from './hazards.js';
+import { ChaseCam } from './camera.js';
+import { addFacades } from './facades.js';
 import { corridorBoxesRange, haversine, bearing, sliceLine, project } from './geo.js';
 import { createHazardData, WINDOW_M } from './hazard-data.js';
 import { Voice } from './voice.js';
@@ -111,15 +113,6 @@ window.addEventListener('orientationchange', () => setTimeout(fitMap, 250));
 if (window.visualViewport) window.visualViewport.addEventListener('resize', fitMap);
 [300, 1200, 3000].forEach((ms) => setTimeout(fitMap, ms));
 
-// Animacja światła płynącego po trasie: kolejne przesunięcia wzorca kreska-przerwa (ok. 9 klatek/s, tylko w jeździe)
-const FLOW = (() => { const out = []; const per = 8; for (let i = 0; i < per; i++) { const o = (i / per) * 6; out.push(o === 0 ? [1, 5] : [0, o, 1, 6 - o]); } return out; })();
-let flowI = 0;
-setInterval(() => {
-  if (S.mode !== 'nav' || document.hidden || !map.getLayer('sel-flow')) return;
-  flowI = (flowI + 1) % FLOW.length;
-  map.setPaintProperty('sel-flow', 'line-dasharray', FLOW[FLOW.length - 1 - flowI]);
-}, 110);
-
 function installLayers() {
   if (!map.getSource('alt')) {
     map.addSource('alt', { type: 'geojson', data: emptyFC() });
@@ -128,24 +121,27 @@ function installLayers() {
   if (!map.getSource('secs')) map.addSource('secs', { type: 'geojson', data: emptyFC() });
   // Trasa leży POD budynkami 3D, żeby bloki ją zasłaniały jak w rzeczywistości.
   const before = map.getLayer('building-3d') ? 'building-3d' : (map.getLayer('road-label') ? 'road-label' : undefined);
-  const route = night ? '#4c9bff' : '#1f6fe0';
-  const routeCase = night ? '#0a2a52' : '#ffffff';
+  addFacades(map, night);
+  const route = '#00D9FF';
+  const routeCase = '#74CFFF';
   const add = (def) => { if (!map.getLayer(def.id)) map.addLayer(def, before); };
   add({ id: 'alt-line', type: 'line', source: 'alt', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': night ? '#5a5a66' : '#9a9588', 'line-width': 6, 'line-opacity': 0.9 } });
   const grad = ['interpolate', ['linear'], ['line-progress'], 0, route, 1, route];
-  add({ id: 'sel-glow', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 14, 16, 52], 'line-blur': ['interpolate', ['linear'], ['zoom'], 8, 8, 16, 20], 'line-opacity': night ? 0.75 : 0.5 } });
-  add({ id: 'sel-case', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, routeCase, 1, routeCase], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 8, 16, 20] } });
-  add({ id: 'sel-line', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 4.5, 16, 11] } });
+  add({ id: 'sel-glow', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 9, 14, 19.8, 20, 277], 'line-blur': ['interpolate', ['exponential', 2], ['zoom'], 8, 6, 14, 12, 20, 110], 'line-opacity': night ? 0.7 : 0.45 } });
+  add({ id: 'sel-case', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, routeCase, 1, routeCase], 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 6.5, 14, 14.3, 20, 153] } });
+  add({ id: 'sel-line', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 4.5, 14, 9.9, 20, 132], 'line-opacity': 0.92 } });
   add({ id: 'sec-line', type: 'line', source: 'secs', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#ffcf3a', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.5, 16, 6], 'line-dasharray': [2, 1.3] } });
-  // płynące szewrony: światło „ucieka” wzdłuż trasy ku celowi (animacja w flowTick)
-  add({ id: 'sel-flow', type: 'line', source: 'sel', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#ffffff', 'line-opacity': night ? 0.55 : 0.7, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1.5, 16, 4.5], 'line-dasharray': FLOW[0] } });
+  // szewrony na wstędze: stałe, leżą na jezdni i pokazują kierunek przed autem (bez animacji w czasie jazdy)
+  if (!map.getSource('ahead')) map.addSource('ahead', { type: 'geojson', data: emptyFC() });
+  if (!map.hasImage('chevron')) map.addImage('chevron', chevronImage());
+  add({ id: 'sel-chevron', type: 'symbol', source: 'ahead', layout: { 'symbol-placement': 'line', 'symbol-spacing': 64, 'icon-image': 'chevron', 'icon-size': ['interpolate', ['exponential', 2], ['zoom'], 14, 0.018, 20, 1.15], 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-keep-upright': false }, paint: { 'icon-opacity': 0.85 } });
   // strzałka skrętu „namalowana” na jezdni (leży na ziemi, więc w widoku 3D jest w perspektywie)
   if (!map.getSource('arrow')) map.addSource('arrow', { type: 'geojson', data: emptyFC() });
   const aw = ['interpolate', ['linear'], ['zoom'], 14, 3, 17, 9, 19, 24];
-  add({ id: 'arrow-case', type: 'line', source: 'arrow', filter: ['==', ['geometry-type'], 'LineString'], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#1a1405', 'line-width': ['interpolate', ['linear'], ['zoom'], 14, 6, 17, 13, 19, 28], 'line-opacity': 0.85 } });
-  add({ id: 'arrow-line', type: 'line', source: 'arrow', filter: ['==', ['geometry-type'], 'LineString'], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#ffe9a8', 'line-width': aw } });
-  add({ id: 'arrow-head-case', type: 'line', source: 'arrow', filter: ['==', ['geometry-type'], 'Polygon'], layout: { 'line-join': 'round' }, paint: { 'line-color': '#1a1405', 'line-width': ['interpolate', ['linear'], ['zoom'], 14, 2, 19, 8], 'line-opacity': 0.85 } });
-  add({ id: 'arrow-head', type: 'fill', source: 'arrow', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#ffe9a8' } });
+  add({ id: 'arrow-case', type: 'line', source: 'arrow', filter: ['==', ['geometry-type'], 'LineString'], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#071426', 'line-width': ['interpolate', ['linear'], ['zoom'], 14, 6, 17, 13, 19, 28], 'line-opacity': 0.85 } });
+  add({ id: 'arrow-line', type: 'line', source: 'arrow', filter: ['==', ['geometry-type'], 'LineString'], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#F5FAFF', 'line-width': aw } });
+  add({ id: 'arrow-head-case', type: 'line', source: 'arrow', filter: ['==', ['geometry-type'], 'Polygon'], layout: { 'line-join': 'round' }, paint: { 'line-color': '#071426', 'line-width': ['interpolate', ['linear'], ['zoom'], 14, 2, 19, 8], 'line-opacity': 0.85 } });
+  add({ id: 'arrow-head', type: 'fill', source: 'arrow', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#F5FAFF' } });
   if (!map.getSource('trip')) map.addSource('trip', { type: 'geojson', data: emptyFC(), lineMetrics: true });
   const tripGrad = ['interpolate', ['linear'], ['line-progress'], 0, '#4cb8ff', 1, '#4cb8ff'];
   add({ id: 'trip-glow', type: 'line', source: 'trip', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': tripGrad, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 10, 16, 36], 'line-blur': 10, 'line-opacity': 0.55 } });
@@ -156,7 +152,13 @@ function installLayers() {
   drawSections(S.routes[S.sel]);
   drawTrip();
   applyAtmosphere();
-  if (S.nav) { S.nav.arrowIdx = null; S.nav.paintedAlong = null; }
+  if (S.nav) { S.nav.arrowIdx = null; S.nav.paintedAlong = null; S.nav.aheadAlong = null; }
+}
+function chevronImage() {
+  const n = 128; const c = document.createElement('canvas'); c.width = c.height = n; const g = c.getContext('2d');
+  g.strokeStyle = '#F5FAFF'; g.lineWidth = 24; g.lineCap = 'butt'; g.lineJoin = 'miter';
+  g.beginPath(); g.moveTo(38, 14); g.lineTo(90, 64); g.lineTo(38, 114); g.stroke();
+  return g.getImageData(0, 0, n, n);
 }
 const emptyFC = () => ({ type: 'FeatureCollection', features: [] });
 map.on('style.load', installLayers);
@@ -173,7 +175,7 @@ function paintRoute(consumed = 0) {
   map.setPaintProperty('sel-line', 'line-gradient', expr);
   map.setPaintProperty('sel-glow', 'line-gradient', expr);
   // obwódka też „znika” z przejechanym fragmentem
-  const caseCol = night ? '#0a2a52' : '#ffffff';
+  const caseCol = '#74CFFF';
   map.setPaintProperty('sel-case', 'line-gradient', gradientExpr(routeGradient(r || { distance: 1 }, { plain: caseCol, colorByLimit: false, consumed: r && S.nav ? consumed : 0 })));
 }
 
@@ -667,11 +669,37 @@ function startNav({ sim = false } = {}) {
   document.activeElement && document.activeElement.blur();
   $('results').hidden = true;
   const start = S.pos ? [S.pos.lng, S.pos.lat] : route.coords[0];
-  map.easeTo({ center: start, zoom: Math.min(16, travel().zoom(0)), pitch: camPitch(), bearing: S.heading, duration: 900, padding: camPadding() });
+  setFov(NAV_FOV);
+  document.body.classList.add('driving');
+  cam.s = null; cam.v = 0;
+  cam.place({ center: start, bearing: S.heading, zoom: travel().zoom(0), pitch: camPitch() });
+  map.easeTo({ center: start, zoom: travel().zoom(0), pitch: camPitch(), bearing: S.heading, duration: 900, padding: camPadding() });
   placePuck();
   // Pierwsza wypowiedź musi wyjść od razu z dotknięcia „Start”: tylko wtedy iPhone odblokuje mowę na całą jazdę.
   voice.say(travel().say.go, { prio: 3, ttl: 4000 });
 }
+
+// Szersze pole widzenia podczas jazdy: perspektywa drogi zamiast widoku z góry.
+const NAV_FOV = 50; const MAP_FOV = 36.87;
+const setFov = (d) => { try { if (map.setVerticalFieldOfView) map.setVerticalFieldOfView(d); } catch { /* starsza mapa: zwykła perspektywa */ } };
+const cam = new ChaseCam();
+let camLast = 0; let skyX = null;
+function camLoop(now) {
+  requestAnimationFrame(camLoop);
+  if (S.mode !== 'nav' || !S.nav || !S.follow || document.hidden) { camLast = now; return; }
+  if (now - camLast < 30) return;
+  const dt = Math.min(0.25, (now - camLast) / 1000) * (S.sim ? (S.simSpeedup || 1) : 1); camLast = now;
+  if (map.isEasing()) { const c = map.getCenter(); cam.place({ center: [c.lng, c.lat], bearing: map.getBearing(), zoom: map.getZoom(), pitch: map.getPitch() }); return; }
+  const p = cam.tick(dt);
+  if (!p) return;
+  map.jumpTo({ center: p.center, bearing: p.bearing, zoom: p.zoom, pitch: p.pitch, padding: camPadding() });
+  const pv = document.getElementById('puck-svg');
+  if (pv) pv.style.transform = `rotate(${p.carOffset.toFixed(1)}deg)`;
+  S.nav.cam = { c: [...p.center], hd: p.bearing, zoom: p.zoom };
+  const x = (-p.bearing / 360) * 2048;
+  if (skyX == null || Math.abs(x - skyX) > 0.3) { skyX = x; $('sky').style.backgroundPositionX = `${x.toFixed(1)}px`; }
+}
+requestAnimationFrame(camLoop);
 
 function camPitch() {
   if (!settings.tilt) return 0;
@@ -681,7 +709,7 @@ function camPitch() {
 
 function camPadding() {
   const h = window.innerHeight;
-  return { top: Math.round(h * 0.30), bottom: 60, left: 0, right: 0 };
+  return { top: Math.round(h * 0.46), bottom: 40, left: 0, right: 0 };
 }
 
 function placePuck() {
@@ -690,7 +718,7 @@ function placePuck() {
   const y = p.top + (h - p.top - p.bottom) / 2;
   const puck = $('puck');
   puck.style.top = `${y}px`;
-  puck.innerHTML = `<svg viewBox="0 0 64 64" id="puck-svg" aria-hidden="true"><path d="M32 8 L47 50 L32 42 L17 50Z" fill="#f3efe6" stroke="#0b0b0d" stroke-width="3.5" stroke-linejoin="round"/></svg>`;
+  puck.innerHTML = `<svg viewBox="0 0 64 64" id="puck-svg" aria-hidden="true"><path d="M32 8 L47 50 L32 42 L17 50Z" fill="#F5FAFF" stroke="#00D9FF" stroke-width="3" stroke-linejoin="round"/></svg>`;
 }
 window.addEventListener('resize', () => { if (S.mode === 'nav') placePuck(); });
 
@@ -759,7 +787,8 @@ function navTick(fix) {
   // Czas i dystans
   const arr = new Date((fix.t || Date.now()) + g.remTime * 1000);
   $('n-time').textContent = fmtDuration(g.remTime);
-  $('n-sub').textContent = `${fmtDist(g.remaining)} · przyjazd ${String(arr.getHours()).padStart(2, '0')}:${String(arr.getMinutes()).padStart(2, '0')}`;
+  $('n-dist').textContent = fmtDist(g.remaining);
+  $('n-eta').textContent = `${String(arr.getHours()).padStart(2, '0')}:${String(arr.getMinutes()).padStart(2, '0')}`;
 
   // Ostrzeżenia
   N.along = g.along;
@@ -789,26 +818,16 @@ function navTick(fix) {
   maybeExtendHazards(N, g.along);
   updateRoadArrow(N, g);
   if (N.paintedAlong == null || g.along - N.paintedAlong > 120) { N.paintedAlong = g.along; paintRoute(g.along); }
+  if (N.aheadAlong == null || g.along - N.aheadAlong > 35 || g.along < N.aheadAlong) { N.aheadAlong = g.along; drawAhead(N, g.along); }
 
-  // Kamera i znacznik pojazdu
-  const useSnap = g.offDist < 25 && g.point;
-  const c = useSnap ? g.point : [fix.lng, fix.lat];
-  // Kamera patrzy w zakręt (kierunek GPS przechylony ku temu, co trasa robi dalej), a tuż przed skrętem zbliża się.
-  const lookAhead = speedMs > 4 && g.offDist < 25 && travel().id !== 'pedestrian';
-  const camHd = lookAhead ? lookAheadBearing(N.route, g.along, hd) : hd;
-  const zoom = travel().zoom(kmh) + turnZoomBoost(g.distToNext, nx);
+  // Kamera i znacznik pojazdu: tu tylko nowy odczyt, płynny ruch liczy camLoop w każdej klatce
+  const onRoute = g.offDist < 25 && !!g.point;
+  const c = onRoute ? g.point : [fix.lng, fix.lat];
   N.kmh = kmh;
-  // przechył kamery w zakręt jak w kokpicie: im ostrzejszy zakręt przed nami, tym mocniej (do 9°), płynnie
-  const bankWant = lookAhead && settings.tilt ? Math.max(-9, Math.min(9, -signedAngle(hd, camHd) * 0.3)) : 0;
-  N.roll = (N.roll || 0) + (bankWant - (N.roll || 0)) * 0.25;
-  N.cam = { c, hd: camHd, zoom };
-  const pv = document.getElementById('puck-svg');
-  if (pv) pv.style.transform = `rotate(${Math.round(signedAngle(camHd, hd))}deg)`;
+  const baseZoom = travel().zoom(kmh);
+  if (!cam.center) { const mc = map.getCenter(); cam.place({ center: [mc.lng, mc.lat], bearing: map.getBearing(), zoom: map.getZoom(), pitch: map.getPitch() }); }
+  cam.fix({ along: g.along, line: N.route.line, onRoute, lng: fix.lng, lat: fix.lat, speed: speedMs, heading: fix.heading, zoom: settings.tilt ? baseZoom : baseZoom - 1, pitch: camPitch() });
   if (!S.follow && navMarker) { navMarker.setLngLat(c); navMarker.setRotation(hd); }
-  if (S.follow) {
-    const dur = fix.sim ? Math.max(120, 900 / (S.simSpeedup || 1)) : 950;
-    map.easeTo({ center: c, bearing: camHd, zoom, pitch: camPitch(), roll: N.roll || 0, duration: dur, easing: (t) => t, padding: camPadding() });
-  }
 
   // Zjechanie z trasy
   const now = Date.now();
@@ -824,6 +843,14 @@ function navTick(fix) {
 }
 
 // Strzałka skrętu na jezdni: pokazujemy ją na ostatnich ~220 m przed skrętem (nie przy jeździe prosto).
+// Szewrony tylko na odcinku przed autem, nie na przejechanym.
+function drawAhead(N, along) {
+  const src = map.getSource('ahead');
+  if (!src) return;
+  const coords = sliceLine(N.route.line, along + 45, Math.min(N.route.line.total, along + 1500));
+  src.setData(coords && coords.length > 1 ? { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } } : emptyFC());
+}
+
 function updateRoadArrow(N, g) {
   const src = map.getSource('arrow');
   if (!src) return;
@@ -1000,6 +1027,8 @@ function endNav() {
   if (destMarker) { destMarker.remove(); destMarker = null; }
   input.value = '';
   setMode('idle');
+  setFov(MAP_FOV);
+  document.body.classList.remove('driving');
   map.easeTo({ pitch: 0, bearing: 0, padding: { top: 0, bottom: 0, left: 0, right: 0 }, zoom: 14, duration: 700 });
   if (S.pos) { meMarker = new maplibregl.Marker({ element: meEl() }).setLngLat([S.pos.lng, S.pos.lat]).addTo(map); }
   if (memento) { saveLastTrip(memento); setTimeout(() => showTrip(memento), 900); }
@@ -1010,7 +1039,7 @@ $('btn-sim').onclick = () => {
   const route = S.routes[S.sel];
   if (!route) return;
   startNav({ sim: true });
-  S.simSpeedup = 4;
+  S.simSpeedup = 1; // tempo prawdziwej jazdy: to, co widać w symulacji, ma być tym, co widać w aucie
   S.sim = new Simulator(route, { speedKmh: travel().simKmh, speedup: S.simSpeedup, onFix: (f) => onFix(f) });
   S.sim.start();
   toast('Symulacja jazdy: dotknij prędkości, by ją zmienić', 4000);
@@ -1040,7 +1069,7 @@ function pauseFollow() {
   if (!navMarker && S.lastFix) {
     const el = document.createElement('div');
     el.className = 'nav-arrow';
-    el.innerHTML = '<svg viewBox="0 0 64 64" width="46" height="46" aria-hidden="true"><path d="M32 8 L47 50 L32 42 L17 50Z" fill="#f3efe6" stroke="#0b0b0d" stroke-width="3.5" stroke-linejoin="round"/></svg>';
+    el.innerHTML = '<svg viewBox="0 0 64 64" width="46" height="46" aria-hidden="true"><path d="M32 8 L47 50 L32 42 L17 50Z" fill="#F5FAFF" stroke="#00D9FF" stroke-width="3" stroke-linejoin="round"/></svg>';
     const at = (S.nav && S.nav.cam && S.nav.cam.c) || [S.lastFix.lng, S.lastFix.lat];
     navMarker = new maplibregl.Marker({ element: el, rotationAlignment: 'map', pitchAlignment: 'map' })
       .setLngLat(at).setRotation(S.heading).addTo(map);
@@ -1318,7 +1347,7 @@ $('btn-sound').onclick = () => {
 const SWITCHES = {
   voice: (v) => { settings.voice = v; voice.enabled = v; syncSoundIcon(); },
   hazardsVoice: (v) => { settings.hazardsVoice = v; },
-  tilt: (v) => { settings.tilt = v; if (S.mode === 'nav' && S.follow && S.nav) map.easeTo({ pitch: camPitch(), duration: 600 }); },
+  tilt: (v) => { settings.tilt = v; },
   roadAlerts: (v) => { settings.roadAlerts = v; if (!v) $('banner').hidden = true; },
   routeColor: (v) => { settings.routeColor = v; paintRoute(S.nav ? S.nav.paintedAlong || 0 : 0); },
 };

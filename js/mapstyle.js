@@ -2,28 +2,30 @@
 // Dwa warianty: noc i dzień. Styl nie kopiuje żadnej mapy komercyjnej.
 
 const PALETTE = {
-  // Noc: granat i „świecące” drogi; wyższe budynki jaśnieją na niebiesko
+  // Noc: granat, ciemny asfalt i światła w oknach
   night: {
-    bg: '#070B1A', land: '#0A1026', park: '#0B2230', wood: '#0A1D29', water: '#0A2A57', waterLine: '#123A74',
-    building: '#141C3A', buildingTop: '#3B52A0', industrial: '#0E1530', hospital: '#2A1530', school: '#101A38',
-    roadMinor: '#1B2550', roadMinorCase: '#070B1A', roadMid: '#2A3A78', roadMidCase: '#070B1A',
-    roadMain: '#4660B8', roadMainCase: '#0A1026', roadMajor: '#FF9F3A', roadMajorCase: '#5A3210',
-    rail: '#2A3566', path: '#26336B', pathPed: '#8FA0D0', steps: '#FFB454', cycle: '#37D6A0', boundary: '#34406E',
-    label: '#8FA0D0', labelMajor: '#D4DCF5', halo: '#070B1A', placeCity: '#E4EAFB', placeTown: '#AEBBE0',
+    bg: '#0A1524', land: '#0D1A2C', park: '#0E2A2A', wood: '#0B2426', water: '#0B2C52', waterLine: '#123A6A',
+    building: '#16233B', buildingTop: '#22324E', roofA: '#141E30', roofB: '#182337', roofC: '#111A2B', industrial: '#101D30', hospital: '#1C1F38', school: '#13223A',
+    roadMinor: '#232E40', roadMinorCase: '#101A29', roadMid: '#2A3648', roadMidCase: '#101A29',
+    roadMain: '#303C50', roadMainCase: '#101A29', roadMajor: '#354258', roadMajorCase: '#101A29', roadLine: '#8FA3BC',
+    rail: '#2F3D55', path: '#2B3950', pathPed: '#8FA8C4', steps: '#FFB547', cycle: '#32D69A', boundary: '#34456A',
+    label: '#A9C2DA', labelMajor: '#F5FAFF', halo: '#071426', placeCity: '#F5FAFF', placeTown: '#C3D5E8',
   },
-  // Dzień: chłodny, jasny błękit zamiast beżu; droga główna ciepła, zieleń i woda wyraźne
+  // Dzień: zieleń, ciepły tynk i prawdziwy kolor asfaltu
   day: {
-    bg: '#E3EBF3', land: '#EAF0F6', park: '#CBE8D4', wood: '#BCE0C9', water: '#9CC8EE', waterLine: '#86B8E4',
-    building: '#E1E7F0', buildingTop: '#A5B5D2', industrial: '#E2E7EF', hospital: '#F5DDE3', school: '#EEF0DC',
-    roadMinor: '#FFFFFF', roadMinorCase: '#CBD5E3', roadMid: '#FFFFFF', roadMidCase: '#B7C4D8',
-    roadMain: '#FFEBB5', roadMainCase: '#D9B565', roadMajor: '#FFC24D', roadMajorCase: '#D98E1E',
-    rail: '#B9C4D6', path: '#CBD5E3', pathPed: '#6F7C94', steps: '#C47A1E', cycle: '#1E9E73', boundary: '#AEB9CC',
-    label: '#5A6785', labelMajor: '#1E2A45', halo: '#F3F6FA', placeCity: '#1B2540', placeTown: '#3A4666',
+    bg: '#D5E0C8', land: '#DCE5CE', park: '#A9CF95', wood: '#8FBE7E', water: '#6FB1E3', waterLine: '#5BA3D9',
+    building: '#E8DCC8', buildingTop: '#CFC4B2', roofA: '#B8735C', roofB: '#9BA0A8', roofC: '#C08A70', industrial: '#DADBD4', hospital: '#EBDDE0', school: '#E6E4CC',
+    roadMinor: '#6E7681', roadMinorCase: '#C9CDC6', roadMid: '#646C78', roadMidCase: '#C2C6BF',
+    roadMain: '#5B636F', roadMainCase: '#BFC3BC', roadMajor: '#525A66', roadMajorCase: '#B8BCB5', roadLine: '#F5FAFF',
+    rail: '#8F96A0', path: '#C9CDC6', pathPed: '#6F7C94', steps: '#C47A1E', cycle: '#1E9E73', boundary: '#9AA6B5',
+    label: '#2A3648', labelMajor: '#111B28', halo: '#F5FAFF', placeCity: '#0B1F38', placeTown: '#26364E',
   },
 };
 
 const mix = (a, b, t) => { const p = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)); const x = p(a); const y = p(b); return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
 const lerpWidth = (a, b, c) => ['interpolate', ['exponential', 1.5], ['zoom'], 5, a, 12, b, 18, c];
+// Szerokość drogi w prawdziwych metrach od z16 w górę: przy kamerze tuż nad jezdnią ulica ma skalę ulicy.
+const meters = (lo, mid, m) => ['interpolate', ['exponential', 2], ['zoom'], 5, lo, 12, mid, 16, Math.max(mid * 2, m / 0.75), 21, m / 0.0234];
 // Ścieżki: domyślnie ledwo widoczne (jazda autem), dla pieszego i rowerzysty główny bohater mapy.
 function pathLayers(road, c, travel) {
   const P = ['path', 'track', 'pedestrian'];
@@ -44,6 +46,9 @@ function pathLayers(road, c, travel) {
   return [road('path', P, c.path, lerpWidth(0.3, 0.6, 2), { 'line-opacity': ['interpolate', ['linear'], ['zoom'], 13, 0, 15, 1] })];
 }
 
+const H = ['coalesce', ['get', 'render_height'], 6];
+// odmiana budynku: stała dla danej bryły, różna między sąsiadami
+const VAR = ['%', ['coalesce', ['id'], 7], 3];
 const NAME = ['coalesce', ['get', 'name:pl'], ['get', 'name']];
 
 /** travel: auto | pedestrian | bicycle. Pieszo wyraźnie rysujemy ścieżki i schody, rowerem drogi rowerowe. */
@@ -75,23 +80,35 @@ export function buildStyle(mode, cfg, travel = 'auto') {
       { id: 'rail', type: 'line', source: 'omt', 'source-layer': 'transportation', minzoom: 10, filter: ['==', ['get', 'class'], 'rail'], paint: { 'line-color': c.rail, 'line-width': lerpWidth(0.4, 0.8, 2), 'line-dasharray': [3, 2] } },
 
       ...pathLayers(road, c, travel),
-      road('minor-case', ['minor', 'service'], c.roadMinorCase, lerpWidth(0.3, 2.4, 14)),
-      road('minor', ['minor', 'service'], c.roadMinor, lerpWidth(0.2, 1.6, 12)),
-      road('mid-case', ['tertiary', 'secondary'], c.roadMidCase, lerpWidth(0.6, 3.6, 22)),
-      road('mid', ['tertiary', 'secondary'], c.roadMid, lerpWidth(0.4, 2.6, 18)),
-      road('main-case', ['primary'], c.roadMainCase, lerpWidth(1, 4.4, 26)),
-      road('main', ['primary'], c.roadMain, lerpWidth(0.8, 3.2, 21)),
-      road('major-case', ['motorway', 'trunk'], c.roadMajorCase, lerpWidth(1.4, 5.2, 30)),
-      road('major', ['motorway', 'trunk'], c.roadMajor, lerpWidth(1.1, 3.8, 25)),
+      road('minor-case', ['minor', 'service'], c.roadMinorCase, meters(0.3, 2.4, 7.4)),
+      road('minor', ['minor', 'service'], c.roadMinor, meters(0.2, 1.6, 6)),
+      road('mid-case', ['tertiary', 'secondary'], c.roadMidCase, meters(0.6, 3.6, 10.6)),
+      road('mid', ['tertiary', 'secondary'], c.roadMid, meters(0.4, 2.6, 9)),
+      road('main-case', ['primary'], c.roadMainCase, meters(1, 4.4, 13.8)),
+      road('main', ['primary'], c.roadMain, meters(0.8, 3.2, 12)),
+      road('major-case', ['motorway', 'trunk'], c.roadMajorCase, meters(1.4, 5.2, 20)),
+      road('major', ['motorway', 'trunk'], c.roadMajor, meters(1.1, 3.8, 18)),
+      { ...road('lane-line', ['tertiary', 'secondary', 'primary', 'trunk'], c.roadLine, ['interpolate', ['exponential', 2], ['zoom'], 15, 0.4, 21, 14], { 'line-dasharray': [6, 9], 'line-opacity': 0.75 }), minzoom: 15, layout: { 'line-cap': 'butt', 'line-join': 'round' } },
 
       { id: 'building', type: 'fill', source: 'omt', 'source-layer': 'building', minzoom: 13, maxzoom: 15.5, paint: { 'fill-color': c.building, 'fill-opacity': 0.9 } },
       {
-        id: 'building-3d', type: 'fill-extrusion', source: 'omt', 'source-layer': 'building', minzoom: 15,
+        id: 'building-3d', type: 'fill-extrusion', source: 'omt', 'source-layer': 'building', minzoom: 14.5,
         paint: {
-          'fill-extrusion-color': ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 6], 0, c.building, 30, mix(c.building, c.buildingTop, 0.45), 80, c.buildingTop],
-          'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 6],
+          'fill-extrusion-pattern': ['concat', ['step', H, 'fa-low-', 13, 'fa-high-'], ['to-string', VAR]],
+          'fill-extrusion-height': H,
           'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
-          'fill-extrusion-opacity': 0.96,
+          'fill-extrusion-opacity': 1,
+        },
+      },
+      // dach: cienka warstwa na wierzchu bryły, żeby tekstura okien nie wchodziła na dach
+      {
+        id: 'building-roof', type: 'fill-extrusion', source: 'omt', 'source-layer': 'building', minzoom: 14.5,
+        paint: {
+          'fill-extrusion-color': ['match', VAR, 0, c.roofA, 1, c.roofB, c.roofC],
+          'fill-extrusion-height': ['+', H, 0.4],
+          'fill-extrusion-base': H,
+          'fill-extrusion-opacity': 1,
+          'fill-extrusion-vertical-gradient': false,
         },
       },
       { id: 'boundary', type: 'line', source: 'omt', 'source-layer': 'boundary', filter: ['<=', ['get', 'admin_level'], 4], paint: { 'line-color': c.boundary, 'line-width': 0.8, 'line-dasharray': [4, 3] } },

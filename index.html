@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <title>Nawigacja</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#0b0b0d">
+<meta name="theme-color" content="#071426">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Nawigacja">
 <link rel="manifest" href="./manifest.webmanifest">
-<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="./icons/favicon-64.png" type="image/png">
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
 <link rel="stylesheet" href="./vendor/maplibre-gl.css">
 <link rel="stylesheet" href="./css/app.css">
@@ -23,6 +23,7 @@
   <linearGradient id="g-sec" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd84d"/><stop offset="1" stop-color="#e9a30c"/></linearGradient>
   <linearGradient id="g-end" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a5160"/><stop offset="1" stop-color="#1c2028"/></linearGradient>
 </defs></svg>
+<div id="sky" aria-hidden="true"></div>
 <div id="map" aria-label="Mapa"></div>
 <div id="puck" hidden></div>
 
@@ -91,9 +92,10 @@
 <!-- Pasek nawigacji -->
 <section id="nav-panel" class="panel" hidden>
   <div class="n-prog" aria-hidden="true"><i id="n-prog"></i></div>
-  <div>
-    <div class="eta" id="n-time">–</div>
-    <div class="eta-sub" id="n-sub"></div>
+  <div class="stats">
+    <div><small>Przyjazd</small><b id="n-eta">–</b></div>
+    <div><small>Dystans</small><b id="n-dist">–</b></div>
+    <div><small>Czas</small><b id="n-time">–</b></div>
   </div>
   <div class="chip" id="n-chip" hidden></div>
   <button id="btn-end" class="btn-end">Zakończ</button>

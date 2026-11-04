@@ -1,10 +1,10 @@
-# KONTYNUACJA: nawigacja (lewym90/nawigacja), stan na 2026-11-02, wersja 0.9.0
+# KONTYNUACJA: nawigacja (lewym90/nawigacja), stan na 2026-11-04, wersja 0.10.0
 
 Ten plik jest kompletnym przekazaniem pracy. Ma wystarczyć, żeby nowa sesja Claude (inne konto, bez dostępu do poprzedniej rozmowy i do Projektu „APLIKACJE”) mogła kontynuować bez zadawania pytań, które już padły. Czytaj całość, zanim cokolwiek zmienisz.
 
 > **Instrukcja startowa dla Claude (wykonaj po przeczytaniu):**
-> 1. Sklonuj repozytorium (patrz sekcja 1) i uruchom `npm install && npm test` (oczekiwane: 132 testy zielone).
-> 2. Napisz właścicielowi jedno zdanie po polsku, że przejąłeś pracę, i że czekasz na jego uwagi do wersji 0.9.0 (patrz sekcja 9, punkt A). Nie pytaj o rzeczy opisane tutaj.
+> 1. Sklonuj repozytorium (patrz sekcja 1) i uruchom `npm install && npm test` (oczekiwane: 138 testów zielonych).
+> 2. Napisz właścicielowi jedno zdanie po polsku, że przejąłeś pracę, i że czekasz na jego uwagi do wersji 0.10.0 (patrz sekcja 9, punkt A). Nie pytaj o rzeczy opisane tutaj.
 > 3. Pracuj według sekcji 8 (zasady współpracy) i 9 (co dalej).
 
 ---
@@ -25,7 +25,7 @@ Ten plik jest kompletnym przekazaniem pracy. Ma wystarczyć, żeby nowa sesja Cl
 - Klon i testy:
   ```
   git clone https://github.com/lewym90/nawigacja.git /tmp/navclone && cd /tmp/navclone
-  npm install && npm test          # 132 testy
+  npm install && npm test          # 138 testów
   python3 -m unittest server/test_nav_fixes.py   # 8 testów serwisu poprawek
   ```
 - Test w przeglądarce (Playwright, Chromium jest w środowisku): `python3 test/browser/run.py` (podstawione usługi, 0 błędów konsoli, trwa ok. 2 min, nie uruchamiaj dwóch naraz; w narzędziu z limitem czasu odpalaj w tle).
@@ -92,6 +92,8 @@ test/            – testy Node (`node --test`), test/browser/run.py (pełny tes
 - **0.8.4:** pamiątka z podróży: statystyki, ślad kolorowany prędkością, przelot 3D, plakat PNG, film (MediaRecorder).
 - **0.9.0 (obecna):** przebudowa wyglądu kokpitu po krytyce właściciela: kamera 76–79° (widać horyzont i niebo), nowa paleta mapy (dzień chłodny błękit, noc granat ze świecącymi drogami, budynki jaśnieją z wysokością), szklane panele (`--glass`, `--accent`), pływający dolny pasek, wstęga trasy z poświatą i płynącym światłem (warstwa `sel-flow`, animacja `FLOW`), przechył kamery (`roll` do ±9°) w zakrętach, mocniejszy `lookAheadBearing` (ahead 120 m, gain 0,8, max 55°), `maxPitch` 85, tło mapy w kolorze mgły.
 
+- **0.10.0 (obecna):** usunięty „helikopterowy” kokpit 0.9. Nowa kamera `js/camera.js` (`ChaseCam`, pętla `camLoop` w app.js, ok. 30 kl./s): jedzie sama wzdłuż trasy między odczytami GPS, kierunek bierze z geometrii trasy, zoom ciągły, stałe pochylenie 69°, pole widzenia 50° w jeździe, bez `roll`. Usunięta animacja `sel-flow`. Szata z dokumentu wizji (paleta Road Intelligence, zawsze ciemne szkło), panel Przyjazd/Dystans/Czas, drogi w skali metrów z linią środkową, elewacje `js/facades.js` + dachy `building-roof`, panorama nieba `#sky` za przezroczystą mapą (`tools/build-sky.py`), ikona z projektu (`tools/build-icons.py`), szewrony na odcinku przed autem. Symulacja domyślnie 1× (wcześniej 4×, co wyolbrzymiało ruch). Kolor trasy wg limitu domyślnie wyłączony (przełącznik został).
+
 ### Kluczowe szczegóły działania (żeby nie odkrywać na nowo)
 - **Kolor trasy:** `routeGradient` → `line-gradient` (źródło `sel` z `lineMetrics:true`), przejechana część przezroczysta (`paintRoute(consumed)`). Warstwy wstawiane PRZED `building-3d`. Po zmianie motywu `style.load` → `installLayers()` odtwarza warstwy (źródła `sel`, `alt`, `secs`, `arrow`, `fixes`, `trip`).
 - **Poprawki kierowców:** własne „unikaj” działa od razu (wykluczenie `exclude_locations` w trasowaniu, zawsze na początku listy, limit 50 punktów po stronie serwera Valhalli), cudze dopiero gdy potwierdziło je co najmniej 2 różnych kierowców (`FIXES.confirmN`). „Tu można jechać” tylko zapisywane i eksportowane do przeglądu w OSM. Serwer gdy niedostępny: aplikacja działa na własnych poprawkach.
@@ -133,6 +135,9 @@ python3 test/browser/look.py /tmp/look day     # i: night
 ```
 Zrzuty: `/tmp/look/<motyw>-2-nav0..4.png` (nav1–4 po przeskoku symulacji tuż przed zakręt, widać przechył kamery). Zawsze obejrzyj zrzut (`Read` na PNG), zanim napiszesz właścicielowi, że wygląd działa. Uwaga: to sztuczne dane; prawdziwy wygląd (kolory budynków, etykiety) oceni dopiero właściciel na telefonie.
 
+### 6a2. Prawdziwy Lublin: `test/browser/real.py`
+Prawdziwe kafelki i Valhalla przez proxy, GPS z szumem, pomiar kamery i zrzuty: `python3 test/browser/real.py /tmp/real day 6` (trwa ok. 3 min, w sandboxie ok. 5 kl./s, więc płynność ocenia dopiero telefon).
+
 ### 6b. Pełny test: `python3 test/browser/run.py` (podstawione usługi)
 Sprawdza m.in. sky/light w trybie nocnym (`#040716`), szybkie ustawienia w jeździe, punkty drogowe, „Dlaczego ta trasa”, pamiątkę (statystyki, przelot 3D, plakat PNG, film mp4), wznowienie po restarcie, 0 błędów konsoli.
 
@@ -156,7 +161,7 @@ Sprawdza m.in. sky/light w trybie nocnym (`#040716`), szybkie ustawienia w jeźd
 3. Pracuj w `/tmp/navclone`, `git pull --rebase` przed `git push`, version bump (config.js + sw.js), nowy plik JS do `SHELL` w `sw.js`.
 4. Dla właściciela: komunikaty po polsku, zwięzłe; komendy na serwer jako jedna linia z SHA.
 5. Nie zapisuj w repo haseł, kluczy ani tokenów. Nie dotykaj plików Caddy ani usług innych aplikacji na serwerze.
-6. Testy po każdej zmianie: `npm test` (132), przy zmianach UI także `test/browser/run.py` (0 błędów konsoli) i `look.py`.
+6. Testy po każdej zmianie: `npm test` (138), przy zmianach UI także `test/browser/run.py` (0 błędów konsoli) i `look.py`.
 7. Workflowy: nie dodawaj wyzwalaczy, które mogą wywołać czerwony przebieg (patrz sekcja 7).
 
 ## 9. Co dalej (kolejność)
@@ -171,6 +176,8 @@ Właściciel dostał wersję 0.9.0 i został poproszony o zrzuty z jazdy w dzie�
 - Zainstalować serwis `nav-fixes` na serwerze (komenda w sekcji 5). Do tego czasu poprawki działają tylko lokalnie na telefonie.
 - Sprawdzić na żywym serwerze, że zapytania `POST trace_attributes` i `exclude_locations` przechodzą przez Caddy: w aplikacji (diagnostyka trasy) linia „Drogi gruntowe/serwisowe w trasie: …” nie powinna mówić „błąd: …”. Sandbox nie widzi tego serwera, więc nie było to testowane na żywo.
 - Rotacja klucza Gemini i decyzja co z lektorką Agatą.
+
+- Fotorealistyczne miasto z Google 3D Tiles odpada: warunki zabraniają nawigacji w czasie rzeczywistym i łączenia z mapą inną niż Google.
 
 ### C. Propozycje kolejnych kierunków (właściciel miał wybrać; jeszcze nie wybrał)
 1. **Pas ruchu i skrzyżowania:** „trzymaj się lewego pasa”, widok skrzyżowania 3D (dane o pasach w OSM są nierówne: najpierw zmierz pokrycie na trasach).
@@ -205,7 +212,7 @@ Właściciel dostał wersję 0.9.0 i został poproszony o zrzuty z jazdy w dzie�
 
 ```
 cd /tmp/navclone && git pull --rebase origin main
-npm test                                           # 132
+npm test                                           # 138
 python3 test/browser/look.py /tmp/look night       # obejrzyj /tmp/look/night-2-nav*.png
 python3 test/browser/run.py                        # pełny test (w tle, ~2 min)
 git add -A && git commit -m "…" && git pull --rebase origin main && git push origin main
