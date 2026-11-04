@@ -70,6 +70,8 @@ with sync_playwright() as p:
     page.click('#results button:has-text("Stare Miasto")')
     page.wait_for_selector('.route-card', timeout=20000)
     page.wait_for_timeout(1500)
+    page.wait_for_timeout(5000)
+    print('KARTY', page.inner_text('#routes').replace('\n', ' | '), '| wyjazd', page.is_visible('#seg-depart'), flush=True)
     page.screenshot(path=f'{OUT}/{THEME}-preview.png')
     print('trasa ok', flush=True)
     page.click('#btn-sim')

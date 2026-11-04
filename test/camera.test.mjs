@@ -89,6 +89,8 @@ test('ruch: korki na naszej linii, próg zmiany trasy, godzina wyjazdu', async (
   assert.equal(j.length, 1); assert.equal(j[0].from, 1100); assert.equal(j[0].to, 1200);
   assert.equal(worthSwitch(1800, 1700), 0);
   assert.equal(worthSwitch(1800, 1500), 300);
+  const rw = jamsOnLine({ length: 1000, jams: [{ from: 10, to: 20, mag: 4, kind: 'ROAD_WORK' }] }, { total: 1000 });
+  assert.equal(rw.length, 1); assert.equal(nextJam(rw, 0), null);
   assert.equal(nextJam(j, 1150), j[0]); assert.equal(nextJam(j, 1300), null);
   assert.equal(departAt(0), null);
   assert.match(departAt(30, new Date('2026-11-05T06:00:00Z')), /^2026-11-05T\d\d:30:00[+-]\d\d:\d\d$/);

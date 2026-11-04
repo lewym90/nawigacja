@@ -32,12 +32,13 @@ export async function fetchTraffic(points, { depart = null, client = 'app', sign
 export function jamsOnLine(traffic, line, from = 0) {
   const span = line.total - from;
   const k = traffic.length ? span / traffic.length : 1;
-  return (traffic.jams || []).filter((j) => (j.mag || 0) >= 1 || j.kind === 'ROAD_CLOSURE').map((j) => ({ ...j, from: from + j.from * k, to: from + j.to * k }));
+  // skala TomTom: 1 mały, 2 średni, 3 duży; 4 = „nieokreślony”, czyli zwykle roboty lub zamknięcie, nie korek
+  return (traffic.jams || []).filter((j) => (j.mag >= 1 && j.mag <= 3) || j.kind === 'ROAD_CLOSURE' || j.kind === 'ROAD_WORK').map((j) => ({ ...j, from: from + j.from * k, to: from + j.to * k }));
 }
 
 /** Warstwa mapy: bursztyn = ruch utrudniony, czerwień = stoi, ciemna czerwień = zamknięte. */
 export function jamFeatures(jams, line) {
-  return jams.map((j) => ({ type: 'Feature', properties: { sev: j.kind === 'ROAD_CLOSURE' ? 3 : j.mag >= 3 ? 2 : 1 }, geometry: { type: 'LineString', coordinates: sliceLine(line, j.from, j.to) } }));
+  return jams.map((j) => ({ type: 'Feature', properties: { sev: j.kind === 'ROAD_CLOSURE' ? 3 : j.mag === 3 ? 2 : 1 }, geometry: { type: 'LineString', coordinates: sliceLine(line, j.from, j.to) } }));
 }
 
 /** Czy warto proponować zmianę: oszczędność co najmniej 3 minuty i 8% pozostałego czasu. */
@@ -46,8 +47,9 @@ export function worthSwitch(now, alt) {
   return save >= Math.max(180, now * 0.08) ? Math.round(save) : 0;
 }
 
+/** Najbliższy prawdziwy korek: roboty bez opóźnienia nie są powodem do komunikatu. */
 export function nextJam(jams, along) {
-  return jams.find((j) => j.to > along) || null;
+  return jams.find((j) => j.to > along && j.mag >= 2 && j.mag <= 3) || null;
 }
 
 export function departAt(minutes, now = new Date()) {

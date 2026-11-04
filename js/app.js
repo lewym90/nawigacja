@@ -533,7 +533,9 @@ function fitRoutes() {
 
 function routeName(r, i) {
   const via = r.via || r.summary;
-  if (i === 0) return `Najszybsza${via ? ` · przez ${via}` : ''}`;
+  // z ruchem najszybsza to ta z najkrótszym czasem, a nie pierwsza z silnika tras
+  const best = S.routes.reduce((b, x, k) => ((x.traffic ? x.traffic.time : x.duration) < (S.routes[b].traffic ? S.routes[b].traffic.time : S.routes[b].duration) ? k : b), 0);
+  if (i === best) return `Najszybsza${via ? ` · przez ${via}` : ''}`;
   return via ? `Alternatywa · przez ${via}` : `Alternatywa ${i}`;
 }
 
@@ -553,7 +555,7 @@ function renderRouteCards() {
     }
     const tr = r.traffic;
     if (tr) {
-      const d = Math.round(Math.max(0, tr.time - tr.free) / 60);
+      const d = Math.round(Math.max(0, tr.delay || 0) / 60); // opóźnienie względem zwykłego ruchu, nie względem pustych dróg
       tags = (d >= 2 ? `<span class="tag jam">korki +${d} min</span>` : '<span class="tag free">bez korków</span>') + tags;
       if (S.departMin) { const a = new Date(Date.now() + (S.departMin * 60 + tr.time) * 1000); tags = `<span class="tag ok">przyjazd ${String(a.getHours()).padStart(2, '0')}:${String(a.getMinutes()).padStart(2, '0')}</span>` + tags; }
     }
@@ -1069,13 +1071,13 @@ async function trafficTick(N, g, fix) {
     N.jams = jamsOnLine(t, route.line, along);
     drawJams(route, N.jams);
     const j = nextJam(N.jams, along);
-    if (j && j.mag >= 2 && N.jamSaid !== Math.round(j.from / 200)) {
+    if (j && N.jamSaid !== Math.round(j.from / 200)) {
       N.jamSaid = Math.round(j.from / 200);
       const m = Math.max(1, Math.round((j.delay || 0) / 60));
       toast(`Korek za ${fmtDist(j.from - along)}: +${m} min`, 5000);
       if (settings.hazardsVoice) voice.say(`Korek za ${fmtDist(j.from - along)}, około ${m} minut opóźnienia`, { prio: 2 });
     }
-    if (t.time - t.free >= 240 && !N.fasterShown) await checkFaster(N, t, fix);
+    if ((t.delay || 0) >= 240 && !N.fasterShown) await checkFaster(N, t, fix);
   } finally { N.trafficBusy = false; }
 }
 
