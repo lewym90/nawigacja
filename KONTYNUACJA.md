@@ -1,4 +1,4 @@
-# KONTYNUACJA: nawigacja (lewym90/nawigacja), stan na 2026-11-04, wersja 0.11.0
+# KONTYNUACJA: nawigacja (lewym90/nawigacja), stan na 2026-11-04, wersja 0.13.0
 
 Ten plik jest kompletnym przekazaniem pracy. Ma wystarczyć, żeby nowa sesja Claude (inne konto, bez dostępu do poprzedniej rozmowy i do Projektu „APLIKACJE”) mogła kontynuować bez zadawania pytań, które już padły. Czytaj całość, zanim cokolwiek zmienisz.
 
@@ -96,7 +96,8 @@ test/            – testy Node (`node --test`), test/browser/run.py (pełny tes
 
 - **0.11.0:** zdjęcia lotnicze Geoportalu pod mapą (warstwy `orto-base` + `orto`, WMS HighResolution, `js/orto.js` pobiera je zawczasu wzdłuż trasy, sw.js trzyma do 900 kafli w `nav-orto`, przełącznik `ortho`). Usługa daje 1–10 s na kafel: docelowo cache na własnym serwerze. Elewacje ze zdjęć: `assets/facades/<house|tenement|block|office>-<n>.png` + `python3 tools/build-facades.py` (robi też noc i `js/facade-list.js`); po dodaniu nowych dopisz je do SHELL w sw.js.
 
-- **Gałąź `wlasna-mapa` (niewdrożona):** własny silnik miasta `js/city3d.js` (warstwa WebGL2 w MapLibre) + `tools/build-city.py` z modeli GUGiK LoD2 (Lublin: TERYT 0663, `https://integracja.gugik.gov.pl/Budynki3D/pobierz.php?plik=powiaty/0663_gml.zip`, 35 602 budynki, 76 MB kafli, nie są w repo: `city/lublin`), atlas `tools/build-atlas.py`. Kamera zoom 18,6–17,6, pochylenie 73°, zdjęcia lotnicze domyślnie wyłączone (rozmazane i wolne). Do zrobienia: ziemia, drzewa, hosting kafli, test płynności na iPhonie.
+- **0.13.0 (obecna):** własna mapa 3D Lublina wdrożona: tekstury `assets/textures` -> `tools/build-textures.py`, drzewa `tools/build-trees.py` (lasy, parki, ulice z kafli OpenFreeMap, omija budynki i jezdnie), kafle gzip w `city/lublin` (rozpakowuje DecompressionStream), sw.js trzyma je w `nav-city-1`.
+- **Własna mapa, szczegóły:** własny silnik miasta `js/city3d.js` (warstwa WebGL2 w MapLibre) + `tools/build-city.py` z modeli GUGiK LoD2 (Lublin: TERYT 0663, `https://integracja.gugik.gov.pl/Budynki3D/pobierz.php?plik=powiaty/0663_gml.zip`, 35 602 budynki, 76 MB kafli), atlas `tools/build-atlas.py`. Kamera zoom 18,6–17,6, pochylenie 73°, zdjęcia lotnicze domyślnie wyłączone (rozmazane i wolne). Do zrobienia: test płynności na iPhonie, kolejne powiaty (LoD2 tam gdzie jest, LoD1 reszta), drogi i ziemia na własnych kaflach.
 
 ### Kluczowe szczegóły działania (żeby nie odkrywać na nowo)
 - **Kolor trasy:** `routeGradient` → `line-gradient` (źródło `sel` z `lineMetrics:true`), przejechana część przezroczysta (`paintRoute(consumed)`). Warstwy wstawiane PRZED `building-3d`. Po zmianie motywu `style.load` → `installLayers()` odtwarza warstwy (źródła `sel`, `alt`, `secs`, `arrow`, `fixes`, `trip`).

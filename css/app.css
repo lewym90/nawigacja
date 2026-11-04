@@ -453,3 +453,9 @@ body.driving #sky { opacity: 1; }
 #search { background: var(--glass); }
 #puck svg { transition: none; }
 #puck::before { background: radial-gradient(circle, rgba(0, 217, 255, 0.4), transparent 70%); }
+
+/* mgiełka na horyzoncie: dal rozpływa się w niebie zamiast kończyć się ostrą krawędzią */
+#haze { position: fixed; left: 0; right: 0; top: calc(37.8vh - 60px); height: 92px; z-index: 2; pointer-events: none; opacity: 0; transition: opacity 0.6s ease;
+  background: linear-gradient(to bottom, rgba(215, 230, 241, 0), rgba(215, 230, 241, 0.62) 62%, rgba(215, 230, 241, 0.5) 72%, rgba(215, 230, 241, 0)); }
+body:not(.day) #haze { background: linear-gradient(to bottom, rgba(16, 34, 62, 0), rgba(16, 34, 62, 0.95) 62%, rgba(16, 34, 62, 0.8) 72%, rgba(16, 34, 62, 0)); }
+body.driving #haze { opacity: 1; }

@@ -26,6 +26,7 @@ export async function loadFacades() {
       for (const t of ['day', 'night']) jobs.push(load(`./icons/fa/${kind}-${i}-${t}.webp`).then((im) => { cache[`${kind}-${i}-${t}`] = im; }));
     }
   }
+  for (const n of ['grass', 'pave', 'asphalt']) jobs.push(load(`./icons/tx-${n}.webp`).then((im) => { cache[`tx-${n}`] = im; }));
   await Promise.race([Promise.all(jobs), new Promise((r) => setTimeout(r, 4000))]);
 }
 
@@ -35,8 +36,20 @@ function plain(night) {
   return g.getImageData(0, 0, 16, 16);
 }
 
+function ground(im, night) {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+  if (im) g.drawImage(im, 0, 0, 256, 256); else { g.fillStyle = '#6f7a60'; g.fillRect(0, 0, 256, 256); }
+  if (night) { g.globalCompositeOperation = 'multiply'; g.fillStyle = '#1c2a40'; g.fillRect(0, 0, 256, 256); }
+  return g.getImageData(0, 0, 256, 256);
+}
+
 /** Dodaje tekstury do bieżącego stylu mapy (po każdej zmianie motywu trzeba je dodać ponownie). */
 export function addFacades(map, night) {
+  for (const [n, r] of [['grass', 2], ['pave', 2], ['asphalt', 1]]) {
+    const id = `tx-${n}`;
+    if (map.hasImage(id)) map.removeImage(id);
+    map.addImage(id, ground(cache[id], night), { pixelRatio: r });
+  }
   const t = night ? 'night' : 'day';
   for (const [kind, n] of Object.entries(FACADE_KINDS)) {
     for (let i = 0; i < n; i++) {

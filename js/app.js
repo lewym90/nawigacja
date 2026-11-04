@@ -101,6 +101,7 @@ const map = new maplibregl.Map({
   center: CONFIG.center,
   zoom: CONFIG.zoom,
   maxPitch: 85,
+  pixelRatio: Math.min(window.devicePixelRatio || 1, 2), // ostrość telefonu kosztuje płynność: 2× wystarcza w aucie
   attributionControl: false,
   dragRotate: true,
   pitchWithRotate: false,
