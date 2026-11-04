@@ -5,7 +5,8 @@ import glob, json, os, re
 import numpy as np
 from PIL import Image
 from scipy import ndimage as ndi
-SIZE = 160
+SIZE = 256
+os.makedirs('icons/fa-big', exist_ok=True)
 rng = np.random.default_rng(3)
 kinds = {}
 os.makedirs('icons/fa', exist_ok=True)
@@ -16,7 +17,8 @@ for p in sorted(glob.glob('assets/facades/*.png')):
     kind, _ = m.groups(); n = kinds.get(kind, 0); kinds[kind] = n + 1
     im = Image.open(p).convert('RGB')
     day = im.resize((SIZE, SIZE), Image.LANCZOS)
-    day.save(f'icons/fa/{kind}-{n}-day.webp', quality=80, method=6)
+    day.save(f'icons/fa-big/{kind}-{n}-day.png')
+    day.resize((160, 160), Image.LANCZOS).save(f'icons/fa/{kind}-{n}-day.webp', quality=80, method=6)
     a = np.asarray(day).astype(float)
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
     lum = a.mean(-1)
@@ -36,7 +38,8 @@ for p in sorted(glob.glob('assets/facades/*.png')):
     night = wall.copy()
     night[glass] = (win[glass] * np.array([20, 30, 48]) + np.array([6, 11, 20]))
     night[lit] = (0.55 + 0.45 * win[lit]) * np.array([255, 200, 125])
-    Image.fromarray(np.clip(night, 0, 255).astype('uint8')).save(f'icons/fa/{kind}-{n}-night.webp', quality=82, method=6)
+    Image.fromarray(np.clip(night, 0, 255).astype('uint8')).save(f'icons/fa-big/{kind}-{n}-night.png')
+    Image.open(f'icons/fa-big/{kind}-{n}-night.png').resize((160, 160), Image.LANCZOS).save(f'icons/fa/{kind}-{n}-night.webp', quality=82, method=6)
 open('js/facade-list.js', 'w').write('// Plik tworzy tools/build-facades.py: ile wariantów elewacji ma każdy rodzaj budynku.\nexport const FACADE_KINDS = ' + json.dumps(kinds) + ';\n')
 sw = open('sw.js').read()
 sw = re.sub(r"\.\.\.\[.*?\.webp`\)\),", "...Object.entries(" + json.dumps(kinds) + ").flatMap(([k, n]) => [...Array(n).keys()].flatMap((i) => ['day', 'night'].map((t) => `./icons/fa/${k}-${i}-${t}.webp`))),", sw, count=1)

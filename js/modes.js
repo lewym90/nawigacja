@@ -16,7 +16,7 @@ export const MODES = {
     pitch: 55,
     // kamera pościgowa nisko za autem: stałe pochylenie, zoom ciągły (bez progów, które dawały skoki)
     camPitch: () => 73,
-    zoom: (kmh) => zoomBySpeed(kmh, 19, 17.9, 130),
+    zoom: (kmh) => zoomBySpeed(kmh, 18.6, 17.6, 130),
     guide: {}, // domyślne progi z guidance.js
     say: { arrive: 'Dojechałeś do celu', off: 'Zjechałeś z trasy. Przeliczam…', go: 'Ruszaj' },
   },

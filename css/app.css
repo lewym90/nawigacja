@@ -415,7 +415,7 @@ body:not(.day) #map { background: #070B1A; }
 }
 html, body { background: #071426; }
 /* niebo stoi za mapą; canvas mapy jest przezroczysty nad horyzontem */
-#sky { position: fixed; left: 0; right: 0; top: 0; height: 37vh; z-index: 0; background: #2f84e6 url(../icons/sky-day.webp) 0 100% / auto 100% repeat-x; opacity: 0; transition: opacity 0.6s ease; }
+#sky { position: fixed; left: 0; right: 0; top: 0; height: 42vh; z-index: 0; background: #2f84e6 url(../icons/sky-day.webp) 0 100% / auto 100% repeat-x; opacity: 0; transition: opacity 0.6s ease; }
 body:not(.day) #sky { background: #040716 url(../icons/sky-night.webp) 0 100% / auto 100% repeat-x; }
 body.driving #sky { opacity: 1; }
 #map, body:not(.day) #map { background: transparent; z-index: 1; }

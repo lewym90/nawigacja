@@ -21,6 +21,7 @@ import {
   HazardWatch, SectionTracker, ReportStore, TYPES,
 } from './hazards.js';
 import { ChaseCam } from './camera.js';
+import { City3D } from './city3d.js';
 import { addFacades, loadFacades } from './facades.js';
 import { prefetchOrto } from './orto.js';
 import { corridorBoxesRange, haversine, bearing, sliceLine, project } from './geo.js';
@@ -137,9 +138,9 @@ function installLayers() {
   const add = (def) => { if (!map.getLayer(def.id)) map.addLayer(def, before); };
   add({ id: 'alt-line', type: 'line', source: 'alt', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': night ? '#5a5a66' : '#9a9588', 'line-width': 6, 'line-opacity': 0.9 } });
   const grad = ['interpolate', ['linear'], ['line-progress'], 0, route, 1, route];
-  add({ id: 'sel-glow', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 9, 14, 19.8, 20, 277], 'line-blur': ['interpolate', ['exponential', 2], ['zoom'], 8, 6, 14, 12, 20, 110], 'line-opacity': night ? 0.7 : 0.45 } });
-  add({ id: 'sel-case', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, routeCase, 1, routeCase], 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 6.5, 14, 14.3, 20, 153] } });
-  add({ id: 'sel-line', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 4.5, 14, 9.9, 20, 132], 'line-opacity': 0.92 } });
+  add({ id: 'sel-glow', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 9, 14, 19.8, 20, 170], 'line-blur': ['interpolate', ['exponential', 2], ['zoom'], 8, 6, 14, 12, 20, 110], 'line-opacity': night ? 0.7 : 0.45 } });
+  add({ id: 'sel-case', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, routeCase, 1, routeCase], 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 6.5, 14, 14.3, 20, 89] } });
+  add({ id: 'sel-line', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 4.5, 14, 9.9, 20, 77], 'line-opacity': 0.92 } });
   add({ id: 'sec-line', type: 'line', source: 'secs', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#ffcf3a', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.5, 16, 6], 'line-dasharray': [2, 1.3] } });
   // szewrony na wstędze: stałe, leżą na jezdni i pokazują kierunek przed autem (bez animacji w czasie jazdy)
   if (!map.getSource('ahead')) map.addSource('ahead', { type: 'geojson', data: emptyFC() });
@@ -158,6 +159,9 @@ function installLayers() {
   add({ id: 'trip-line', type: 'line', source: 'trip', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': tripGrad, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3.5, 16, 10] } });
   if (!map.getSource('fixes')) map.addSource('fixes', { type: 'geojson', data: emptyFC() });
   if (!map.getLayer('fixes-dot')) map.addLayer({ id: 'fixes-dot', type: 'circle', source: 'fixes', minzoom: 11, paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 5, 17, 11], 'circle-color': ['match', ['get', 'kind'], 'avoid', '#ff5a4d', '#3ddc84'], 'circle-stroke-width': 2.5, 'circle-stroke-color': '#ffffff', 'circle-opacity': 0.95 } });
+  if (CONFIG.cityBase && !map.getLayer('city3d')) {
+    map.addLayer(new City3D(map, { base: CONFIG.cityBase, night, onCover: (on) => { for (const id of ['building', 'building-3d', 'building-roof']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'none' : 'visible'); } }), map.getLayer('boundary') ? 'boundary' : undefined);
+  }
   drawRoutes();
   drawSections(S.routes[S.sel]);
   drawTrip();
@@ -1443,6 +1447,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 }
 
 // Haki do testów i diagnostyki (nie zmieniają działania aplikacji).
+window.__city = () => map.getLayer('city3d');
 window.__nav = { S, CONFIG, map, voice, settings, onFix, chooseDest, startNav, endNav, parsePhoton, reports };
 
 // Zapis aktualnego celu jako dom / praca / inne

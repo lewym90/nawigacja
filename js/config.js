@@ -3,6 +3,7 @@
 // OpenStreetMap: do prototypu i użytku własnego, nie do dużego ruchu.
 
 export const CONFIG = {
+  cityBase: './city/lublin/', // własne kafle 3D (tools/build-city.py)
   ortoUrl: 'https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/HighResolution?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=Raster&STYLES=&FORMAT=image/jpeg&CRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=512&HEIGHT=512',
   // Kafelki wektorowe w schemacie OpenMapTiles (OpenFreeMap). Docelowo: własny plik PMTiles.
   tilesUrl: 'https://tiles.openfreemap.org/planet',
