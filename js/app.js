@@ -21,7 +21,8 @@ import {
   HazardWatch, SectionTracker, ReportStore, TYPES,
 } from './hazards.js';
 import { ChaseCam } from './camera.js';
-import { lanesHtml, laneAdvice } from './lanes.js';
+import { lanesHtml, laneAdvice, junctionAhead } from './lanes.js';
+import { routeLanes } from './valhalla.js';
 import { routePoints, fetchTraffic, jamsOnLine, jamFeatures, worthSwitch, nextJam, departAt } from './traffic.js';
 import { City3D } from './city3d.js';
 import { addFacades, loadFacades } from './facades.js';
@@ -139,12 +140,16 @@ function installLayers() {
   const route = '#00D9FF';
   const routeCase = '#74CFFF';
   const add = (def) => { if (!map.getLayer(def.id)) map.addLayer(def, before); };
+  if (!map.getSource('lanes')) map.addSource('lanes', { type: 'geojson', data: emptyFC() });
+  add({ id: 'lane-road', type: 'line', source: 'lanes', minzoom: 15, filter: ['==', ['get', 'kind'], 'road'], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': night ? '#2F3B50' : '#50575F', 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 15, ['/', ['get', 'w'], 1.495], 20, ['/', ['get', 'w'], 0.0467]] } });
   add({ id: 'alt-line', type: 'line', source: 'alt', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': night ? '#8FA8C4' : '#5F7690', 'line-width': 7, 'line-opacity': 0.95 } });
   add({ id: 'alt-hit', type: 'line', source: 'alt', paint: { 'line-color': '#000', 'line-opacity': 0.01, 'line-width': 30 } });
   const grad = ['interpolate', ['linear'], ['line-progress'], 0, route, 1, route];
   add({ id: 'sel-glow', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 9, 14, 19.8, 20, 170], 'line-blur': ['interpolate', ['exponential', 2], ['zoom'], 8, 6, 14, 12, 20, 110], 'line-opacity': night ? 0.7 : 0.45 } });
   add({ id: 'sel-case', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, routeCase, 1, routeCase], 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 6.5, 14, 14.3, 20, 89] } });
   add({ id: 'sel-line', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 4.5, 14, 9.9, 20, 77], 'line-opacity': 0.92 } });
+  add({ id: 'lane-div', type: 'line', source: 'lanes', minzoom: 15.5, filter: ['==', ['get', 'kind'], 'div'], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#F5FAFF', 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 15.5, 0.6, 20, 3.2], 'line-offset': ['interpolate', ['exponential', 2], ['zoom'], 15, ['/', ['get', 'o'], 1.495], 20, ['/', ['get', 'o'], 0.0467]], 'line-dasharray': [5, 7] } });
+  add({ id: 'lane-solid', type: 'line', source: 'lanes', minzoom: 15.5, filter: ['in', ['get', 'kind'], ['literal', ['edge', 'mid']]], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#F5FAFF', 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 15.5, 0.6, 20, 3.2], 'line-offset': ['interpolate', ['exponential', 2], ['zoom'], 15, ['/', ['get', 'o'], 1.495], 20, ['/', ['get', 'o'], 0.0467]] } });
   add({ id: 'sec-line', type: 'line', source: 'secs', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#ffcf3a', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.5, 16, 6], 'line-dasharray': [2, 1.3] } });
   if (!map.getSource('jam')) map.addSource('jam', { type: 'geojson', data: emptyFC() });
   add({ id: 'jam-line', type: 'line', source: 'jam', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': ['match', ['get', 'sev'], 1, '#FFB547', 2, '#FF5364', '#A3122A'], 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 4.5, 14, 9.9, 20, 77] } });
@@ -170,6 +175,7 @@ function installLayers() {
   }
   drawRoutes();
   drawJams(S.nav ? S.nav.route : S.routes[S.sel], S.nav ? S.nav.jams : null);
+  { const src = map.getSource('lanes'); if (src && S.nav && S.nav.laneF) src.setData({ type: 'FeatureCollection', features: S.nav.laneF }); }
   drawSections(S.routes[S.sel]);
   drawTrip();
   applyAtmosphere();
@@ -520,6 +526,20 @@ $('seg-depart').onclick = (e) => {
   S.departMin = +b.dataset.m; syncDepart(); syncOpts();
   loadTraffic(S.routes);
 };
+// Pasy na trasie: linie podziału i szerokość jezdni z danych o liczbie pasów.
+async function drawLanes(N) {
+  const put = () => { const src = map.getSource('lanes'); if (src) src.setData({ type: 'FeatureCollection', features: (S.nav && S.nav.laneF) || [] }); };
+  if (!N) { put(); return; }
+  if (travel().costing !== 'auto' || N.route.distance > 120000) { N.laneF = []; put(); return; }
+  const route = N.route;
+  try { const r = await routeLanes(CONFIG.routingOwnUrl, route.line.coords);
+    if (S.nav !== N || N.route !== route) return;
+    N.laneF = r.features; put();
+    let hint = null;
+    N.junctions = r.junctions.map((j) => { const p = project(route.line, j.point, hint, 200); if (p.dist > 25) return null; hint = p.idx; return { at: p.along, lanes: j.lanes }; }).filter(Boolean).sort((a, b) => a.at - b.at);
+  } catch { /* trasa zostaje bez linii pasów */ }
+}
+
 function drawJams(route, jams = null) {
   const src = map.getSource('jam'); if (!src) return;
   const list = jams || (route && route.traffic ? jamsOnLine(route.traffic, route.line) : []);
@@ -753,6 +773,7 @@ function startNav({ sim = false } = {}) {
   $('results').hidden = true;
   const start = S.pos ? [S.pos.lng, S.pos.lat] : route.coords[0];
   setFov(NAV_FOV);
+  drawLanes(S.nav);
   document.body.classList.add('driving');
   cam.s = null; cam.v = 0;
   cam.place({ center: start, bearing: S.heading, zoom: travel().zoom(0), pitch: camPitch() });
@@ -864,12 +885,17 @@ function navTick(fix) {
     const sign = $('m-sign'); const near = g.distToNext < 1500;
     sign.hidden = !(nx.toward && near);
     if (!sign.hidden && sign.textContent !== nx.toward) sign.textContent = nx.toward;
-    const lanes = $('m-lanes'); const showL = !!nx.lanes && g.distToNext < 600 && g.distToNext > 8;
-    lanes.hidden = !showL;
-    document.body.classList.toggle('has-lanes', showL);
-    if (showL && N.lanesIdx !== g.nextIdx) {
-      N.lanesIdx = g.nextIdx; lanes.innerHTML = lanesHtml(nx.lanes);
-      const say = laneAdvice(nx.lanes);
+    // pasy przy każdym skrzyżowaniu na drodze, także mijanym na wprost; głos tylko przed skrętem
+    const lanes = $('m-lanes'); const win = Math.max(250, speedMs * 12);
+    const jn = junctionAhead(N.junctions, g.along, win);
+    const nearMan = !!nx.lanes && g.distToNext < win && g.distToNext > 8;
+    const cur = jn ? jn.lanes : nearMan ? nx.lanes : null;
+    lanes.hidden = !cur;
+    document.body.classList.toggle('has-lanes', !!cur);
+    if (cur && N.lanesShown !== cur) { N.lanesShown = cur; lanes.innerHTML = lanesHtml(cur); }
+    if (nearMan && N.lanesIdx !== g.nextIdx) {
+      N.lanesIdx = g.nextIdx;
+      const say = laneAdvice(nx.lanes, nx.modifier);
       if (say && g.distToNext > 120) voice.say(say, { prio: 2 });
     }
   }
@@ -1073,6 +1099,7 @@ function applyNewRoute(N, route) {
   S.sel = 0;
   setupRoad(N);
   N.trafficK = null; N.trafficT = 0; N.jams = []; drawJams(null);
+  N.laneF = []; N.junctions = []; drawLanes(N);
   drawRoutes();
   renderHazardMarkers(route);
 }
@@ -1169,7 +1196,7 @@ function endNav() {
   unlockScreen();
   clearMarkers();
   S.routes = []; S.dest = null;
-  drawJams(null); show('faster', false);
+  drawJams(null); show('faster', false); drawLanes(null);
   drawRoutes();
   if (destMarker) { destMarker.remove(); destMarker = null; }
   input.value = '';

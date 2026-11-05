@@ -72,15 +72,38 @@ test('zdjęcia lotnicze: adres kafla jak w mapie, kolejka wzdłuż trasy bez pow
 });
 
 test('pasy ruchu: kierunki, aktywny pas, porada i drogowskaz', async () => {
-  const { parseLanes, laneAdvice, towardOf } = await import('../js/lanes.js');
+  const { parseLanes, laneAdvice, towardOf, lanesStraight, laneFeatures, parseJunctionLanes, junctionAhead } = await import('../js/lanes.js');
   const l = parseLanes([{ directions: 8 }, { directions: 2 }, { directions: 64, active: 64 }]);
   assert.deepEqual(l.map((x) => x.angles[0]), [-90, 0, 90]);
-  assert.equal(laneAdvice(l), 'Zajmij prawy pas');
-  assert.equal(laneAdvice(parseLanes([{ directions: 8, active: 8 }, { directions: 2 }, { directions: 2 }])), 'Zajmij lewy pas');
-  assert.equal(laneAdvice(parseLanes([{ directions: 2, active: 2 }, { directions: 2, active: 2 }])), null);
+  assert.equal(laneAdvice(l, 'right'), 'Zajmij prawy pas');
+  assert.equal(laneAdvice(parseLanes([{ directions: 8, active: 8 }, { directions: 2 }, { directions: 2 }]), 'left'), 'Zajmij lewy pas');
+  assert.equal(laneAdvice(parseLanes([{ directions: 2, active: 2 }, { directions: 2, active: 2 }]), 'straight'), null);
+  // 2 w lewo + 2 prosto, jedziemy prosto: żadnego „trzymaj się prawych pasów”
+  const straight = [{ directions: 8 }, { directions: 8 }, { directions: 2, active: 2 }, { directions: 2, active: 2 }];
+  assert.equal(laneAdvice(parseLanes(straight), 'slight right'), null);
+  assert.equal(lanesStraight(straight), true);
+  assert.equal(lanesStraight([{ directions: 2 }, { directions: 64, active: 64 }]), false);
   assert.equal(parseLanes([{ directions: 2 }, { directions: 8 }]), null);
   assert.equal(towardOf('Skręć w prawo, kierunek: Przemyśl/Bychawa.'), 'Przemyśl, Bychawa');
   assert.equal(towardOf('Skręć w lewo.'), '');
+  const j = parseJunctionLanes([{ indications: ['left'] }, { indications: ['straight'], active: true }, { indications: ['straight'], active: true }, { indications: ['right'] }]);
+  assert.deepEqual(j.map((x) => [x.angles[0], x.on]), [[-90, false], [0, true], [0, true], [90, false]]);
+  assert.equal(junctionAhead([{ at: 100 }, { at: 500 }], 60, 250).at, 100);
+  assert.equal(junctionAhead([{ at: 100 }, { at: 500 }], 120, 250), null);
+  const f = laneFeatures([{ lane_count: 3, traversability: 'forward', begin_shape_index: 0, end_shape_index: 1 }, { lane_count: 3, traversability: 'forward', begin_shape_index: 1, end_shape_index: 2 }], [[0, 0], [0, 1], [0, 2]]);
+  assert.equal(f.filter((x) => x.properties.kind === 'div').length, 2);
+  assert.equal(f.find((x) => x.properties.kind === 'road').geometry.coordinates.length, 3);
+});
+
+test('nazwa ulicy zamiast samego numeru, a rozwidlenie z pasami prosto to jazda prosto', async () => {
+  const { tripToOsrmRoute } = await import('../js/valhalla.js');
+  const trip = { summary: {}, legs: [{ shape: '_ibE_seK_ibE_seK', maneuvers: [
+    { type: 1, length: 1, time: 1, begin_shape_index: 0, street_names: ['Armii Krajowej'] },
+    { type: 23, length: 1, time: 1, begin_shape_index: 1, street_names: ['830'], begin_street_names: ['Bohaterów Monte Cassino', '830'], lanes: [{ directions: 8 }, { directions: 2, active: 2 }] },
+    { type: 4, length: 0, time: 0, begin_shape_index: 1 } ] }] };
+  const st = tripToOsrmRoute(trip).legs[0].steps[1];
+  assert.equal(st.name, 'Bohaterów Monte Cassino');
+  assert.equal(st.maneuver.modifier, 'straight');
 });
 
 test('ruch: korki na naszej linii, próg zmiany trasy, godzina wyjazdu', async () => {

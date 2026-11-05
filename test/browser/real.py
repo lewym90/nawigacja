@@ -34,7 +34,7 @@ def forward(route):
     except urllib.error.HTTPError as e: route.fulfill(status=e.code, headers={'access-control-allow-origin': '*'}, body=e.read())
     except Exception: route.fulfill(status=503, headers={'access-control-allow-origin': '*'}, body=b'')
 
-START = (51.1905, 22.5465); DEST = [22.5680, 51.2477]
+START = tuple(json.loads(os.environ.get('ROUTE_FROM', '[51.1905, 22.5465]'))); DEST = json.loads(os.environ.get('ROUTE_TO', '[22.5680, 51.2477]'))
 errors = []
 SAMPLE = """() => { const m = window.__nav.map; const s = window.__cam = []; let on = true; window.__camStop = () => { on = false; };
   const f = (t) => { if (!on) return; const c = m.getCenter(); s.push([t, m.getBearing(), m.getPitch(), m.getZoom(), m.getRoll ? m.getRoll() : 0, c.lng, c.lat]); requestAnimationFrame(f); }; requestAnimationFrame(f); }"""
@@ -75,22 +75,33 @@ with sync_playwright() as p:
     page.screenshot(path=f'{OUT}/{THEME}-preview.png')
     cards = page.locator('.route-card').count()
     print('PANEL', page.evaluate("Math.round(document.getElementById('preview').offsetHeight / innerHeight * 100)"), '% ekranu, kart', cards, flush=True)
-    if cards > 1:
+    if cards > 1 and not os.environ.get('NOCARDS'):
         for i in range(1, cards):
             page.locator('.route-card').nth(i).click(); page.wait_for_timeout(2500)
             page.screenshot(path=f'{OUT}/{THEME}-route{i}.png')
             print('WYBRANA', page.evaluate('window.__nav.S.sel'), flush=True)
         page.locator('.route-card').nth(0).click(); page.wait_for_timeout(800)
     print('trasa ok', flush=True)
+    print('sim klik', flush=True)
     page.click('#btn-sim')
+    print('sim ok', flush=True)
     page.wait_for_timeout(4000)
     SPEEDUP = int(os.environ.get('SPEEDUP', '1'))
     page.evaluate("(k) => { const S = window.__nav.S; S.simSpeedup = k; S.sim.speedup = k; S.sim.start(); }", SPEEDUP)
+    print('szum', flush=True)
     page.evaluate(NOISE)
-    page.evaluate("window.__nav.S.sim.along = 1500")
+    print('szum ok', flush=True)
+    import time as _t
+    if os.environ.get('NOLANE'):
+        page.evaluate("for (const id of ['lane-div','lane-solid','lane-road']) window.__nav.map.setLayoutProperty(id,'visibility','none')")
+    for _i in range(6):
+        t0 = _t.time(); r = page.evaluate("(() => { const n = window.__nav.S.nav; return [(n.laneF||[]).length, (n.junctions||[]).length, Math.round(n.along||0)]; })()"); print('puls', round(_t.time()-t0,1), r, flush=True); page.wait_for_timeout(1500)
+    page.evaluate("window.__nav.S.sim.along = %s" % os.environ.get('FIRST', '1500'))
     page.wait_for_timeout(int(os.environ.get('SETTLE', '0')) * 1000)
     page.wait_for_timeout(7000)
+    print('A', page.evaluate("(() => { const e = document.getElementById('m-lanes'); const S = window.__nav.S; return { widoczne: !e.hidden, n: e.querySelectorAll('.lane').length, on: e.querySelectorAll('.lane.on').length, along: Math.round(S.nav.along) }; })()"), flush=True)
     page.screenshot(path=f'{OUT}/{THEME}-a.png')
+    print('A zrzut', flush=True)
     if os.environ.get('TOGGLE'):
         ST = "(() => { const m = window.__nav.map; const c = m.getLayer('city3d'); const i = c && (c.implementation || c); return { motyw: document.body.classList.contains('day') ? 'dzien' : 'noc', silnik_noc: i && i.night, pokrycie: i && i.cover, kafli: i && i.tiles && i.tiles.size, stare: m.getLayer('building-3d') ? m.getLayoutProperty('building-3d', 'visibility') : null, styl: m.getStyle().name, warstw_miasta: m.getStyle().layers.filter(l => l.id === 'city3d').length }; })()"
         print('PRZED', page.evaluate(ST), flush=True)
@@ -115,8 +126,10 @@ with sync_playwright() as p:
     json.dump(d, open(f'{OUT}/{THEME}-cam.json', 'w'))
     page.screenshot(path=f'{OUT}/{THEME}-b.png')
     print('stan', page.evaluate("(() => { const S = window.__nav.S; return { mode: S.mode, nav: !!S.nav, sim: !!S.sim, along: S.sim && S.sim.along, dist: S.sim && S.sim.route.distance }; })()"), flush=True)
+    page.wait_for_timeout(2500)
     print('pasy', page.evaluate("(() => { const st = window.__nav.S.sim.route.steps; return st.filter(x => x.lanes).map(x => [Math.round(x.at), x.lanes.length, x.toward || '']); })()"), flush=True)
-    page.evaluate("(() => { const s = window.__nav.S.sim; const l = s.route.steps.filter(x => x.lanes && x.at > 1500); if (s) s.along = Math.max(0, %s); })()" % os.environ.get('JUMP', 's.route.distance - 1800'))
+    page.evaluate("(() => { const s = window.__nav.S.sim; const l = s.route.steps.filter(x => x.lanes && x.at > 1500); const J = window.__nav.S.nav.junctions || []; if (s) s.along = Math.max(0, %s); })()" % os.environ.get('JUMP', 's.route.distance - 1800'))
     page.wait_for_timeout(int(os.environ.get('WAITC', '12')) * 1000)
+    print('PASY NA EKRANIE', page.evaluate("(() => { const e = document.getElementById('m-lanes'); const S = window.__nav.S; return { widoczne: !e.hidden, n: e.querySelectorAll('.lane').length, on: e.querySelectorAll('.lane.on').length, along: Math.round(S.nav.along), skrz: (S.nav.junctions || []).slice(0, 6).map(j => [Math.round(j.at), j.lanes.length]), linii: (S.nav.laneF || []).length, tekst: document.getElementById('m-text').textContent }; })()"), flush=True)
     page.screenshot(path=f'{OUT}/{THEME}-c.png')
     br.close()

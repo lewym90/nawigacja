@@ -94,7 +94,8 @@ function instructFull(step) {
     case 'off ramp':
       return { text: `Zjedź ${dir}${toward}`.replace('  ', ' ').trim(), icon: iconFor(mod) };
     case 'fork':
-      return { text: `Na rozwidleniu trzymaj się ${mod && mod.includes('left') ? 'lewej' : mod && mod.includes('right') ? 'prawej' : 'środka'}${toward}`, icon: iconFor(mod) };
+      if (mod === 'straight') return { text: `Jedź prosto${toward}`, icon: 'straight' };
+      return { text: `Trzymaj się ${mod && mod.includes('left') ? 'lewej' : 'prawej'}${on || toward}`, icon: iconFor(mod) };
     case 'end of road':
       return { text: `Na końcu drogi skręć ${dir}${on}`, icon: iconFor(mod) };
     case 'continue':

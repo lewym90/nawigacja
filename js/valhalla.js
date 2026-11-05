@@ -47,6 +47,22 @@ export function featureOf(m) {
   return null;
 }
 
+const REF_RE = /^(A|S|DK|DW)\s?\d+$|^\d{1,3}$/i;
+const hasName = (list) => (list || []).find((n) => !REF_RE.test(n) && /[a-ząćęłńóśźż]{3,}/i.test(n)) || '';
+
+/** Valhalla przy zmianie drogi podaje często sam numer: nazwę ulicy bierzemy z początku manewru albo z dalszego ciągu tej samej drogi. */
+function nameFrom(mans, k) {
+  const m = mans[k];
+  const own = hasName(m.street_names) || hasName(m.begin_street_names);
+  if (own) return own;
+  const ref = (m.street_names || []).find((n) => REF_RE.test(n));
+  if (!ref) return '';
+  for (let i = k + 1; i < Math.min(mans.length, k + 4); i++) {
+    if ((mans[i].street_names || []).includes(ref) && hasName(mans[i].street_names)) return hasName(mans[i].street_names);
+  }
+  return '';
+}
+
 function nameOf(m) {
   const names = (m.street_names && m.street_names.length ? m.street_names : m.begin_street_names) || [];
   // Valhalla miesza nazwy i numery dróg: nazwa to pierwszy wpis z literami, numer to np. „S17”, „DK 17”
@@ -127,12 +143,15 @@ export function tripToOsrmRoute(trip) {
       if (m.type === 27 && roundaboutIdx >= 0) { // zjazd z ronda: doliczamy do kroku „rondo” i bierzemy nazwę ulicy wyjazdowej
         const st = steps[roundaboutIdx];
         st.distance += meters; st.duration += seconds;
-        const nn = nameOf(m); if (nn.name || nn.ref) { st.name = nn.name; st.ref = nn.ref; }
+        const nn = nameOf(m); if (nn.name || nn.ref) { st.name = nn.name || nameFrom(mans, k); st.ref = nn.ref; }
         roundaboutIdx = -1;
         continue;
       }
-      const { name, ref } = nameOf(m);
+      const { name: plainName, ref } = nameOf(m);
+      const name = plainName || nameFrom(mans, k);
       const maneuver = { type: map[0], modifier: map[1] || undefined, location: shape[m.begin_shape_index || 0] };
+      // „rozwidlenie”, na którym wskazane pasy prowadzą prosto, to dla kierowcy jazda prosto
+      if (map[0] === 'fork' && lanesStraight(m.lanes)) maneuver.modifier = 'straight';
       const feature = m.travel_mode === 'pedestrian' ? featureOf(m) : null;
       if (feature) maneuver.feature = feature;
       if (m.type === 26) maneuver.exit = m.roundabout_exit_count || undefined;
@@ -191,7 +210,7 @@ export const COSTING_OPTIONS = {
  * Zapytanie o trasę. heading (stopnie) podajemy przy ponownym liczeniu w ruchu: trasa zaczyna się
  * wtedy zgodnie z kierunkiem jazdy (bez „zawróć” i objeżdżania bloku, gdy stoisz na wyjeździe).
  */
-import { towardOf } from './lanes.js';
+import { towardOf, lanesStraight, laneFeatures, parseJunctionLanes } from './lanes.js';
 
 export function valhallaRequest(points, { costing = 'auto', alternatives = true, heading = null, pref = DEFAULT_PREF, exclude = null } = {}) {
   // radius: Valhalla bierze pod uwagę WSZYSTKIE drogi w tym promieniu, a nie tylko najbliższą. Bez tego
@@ -361,6 +380,29 @@ async function postJson(base, path, body, signal) {
 /** Czy nowa trasa jest na tyle dobra, by zastąpić pierwotną (nie dłuższa i nie wolniejsza ponad miarę). */
 export function acceptDetour(base, cand) {
   return cand.duration <= base.duration * AVOID.maxTimeFactor + AVOID.maxTimeAddS && cand.distance <= base.distance * AVOID.maxLenFactor + AVOID.maxLenAddM;
+}
+
+/** Liczba pasów (linie na mapie) i układ pasów przy każdym mijanym skrzyżowaniu. Brak odpowiedzi nie przeszkadza w prowadzeniu. */
+export async function routeLanes(base, coords, signal) {
+  const enc = encodePolyline(coords);
+  const [ta, tr] = await Promise.allSettled([
+    postJson(base, 'trace_attributes', { encoded_polyline: enc, costing: 'auto', shape_match: 'edge_walk',
+      filters: { attributes: ['edge.lane_count', 'edge.traversability', 'edge.begin_shape_index', 'edge.end_shape_index', 'shape'], action: 'include' } }, signal),
+    postJson(base, 'trace_route', { encoded_polyline: enc, costing: 'auto', shape_match: 'edge_walk', format: 'osrm', turn_lanes: true }, signal),
+  ]);
+  const features = ta.status === 'fulfilled' ? laneFeatures(ta.value.edges || [], decodePolyline(ta.value.shape || '')) : [];
+  const junctions = [];
+  if (tr.status === 'fulfilled') {
+    for (const leg of (tr.value.matchings || [{}])[0].legs || []) {
+      for (const st of leg.steps || []) {
+        for (const i of st.intersections || []) {
+          const lanes = parseJunctionLanes(i.lanes);
+          if (lanes) junctions.push({ point: i.location, lanes });
+        }
+      }
+    }
+  }
+  return { features, junctions };
 }
 
 async function minorOf(base, route, signal) {
