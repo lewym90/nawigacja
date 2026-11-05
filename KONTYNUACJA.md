@@ -1,4 +1,4 @@
-# KONTYNUACJA: nawigacja (lewym90/nawigacja), stan na 2026-11-04, wersja 0.16.0
+# KONTYNUACJA: nawigacja (lewym90/nawigacja), stan na 2026-11-04, wersja 0.16.1
 
 Ten plik jest kompletnym przekazaniem pracy. Ma wystarczyć, żeby nowa sesja Claude (inne konto, bez dostępu do poprzedniej rozmowy i do Projektu „APLIKACJE”) mogła kontynuować bez zadawania pytań, które już padły. Czytaj całość, zanim cokolwiek zmienisz.
 
@@ -178,7 +178,7 @@ Sprawdza m.in. sky/light w trybie nocnym (`#040716`), szybkie ustawienia w jeźd
 
 ### A. Natychmiast: reakcja na uwagi właściciela do 0.9.0
 Właściciel dostał wersję 0.9.0 i został poproszony o zrzuty z jazdy w dzień i w nocy (zakręt i szybsza jazda). Spodziewaj się uwag typu: pochylenie zbyt płaskie (kamera 76–79°, `camPitch` w `js/modes.js`, `camPadding` w `app.js`), kolory mapy, czytelność paneli, wygląd wstęgi trasy. Strój według jego zrzutów, a wizualne zmiany sprawdzaj w `look.py`. Znane uwagi techniczne:
-- Na zrzucie z jazdy w Lublinie (ul. Zemborzycka) znak limitu pokazywał **90** przy jeździe 50 w terenie zabudowanym: **do zbadania** (`limitAt` w `routing.js`, dane z `limits.js`/Valhalli, być może limit z następnego odcinka lub brak limitu w mieście). To realny błąd zaufania do aplikacji.
+- Zemborzycka: w OSM kilka krótkich odcinków ma `maxspeed=90`, `source:maxspeed=PL:rural`. `cleanLimits` w `limits.js` traktuje takie krótkie 80+ na drogach lokalnych obok limitu miejskiego jak brak danych.
 - Domyślne limity gdy brak danych: pomysł 50 (miasto) / 90 (poza miastem), nie wdrożone.
 - Etykiety START/KONIEC na mapie nachodzą na siebie.
 

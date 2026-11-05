@@ -124,3 +124,19 @@ test('ruch: korki na naszej linii, próg zmiany trasy, godzina wyjazdu', async (
   assert.equal(departAt(0), null);
   assert.match(departAt(30, new Date('2026-11-05T06:00:00Z')), /^2026-11-05T\d\d:30:00[+-]\d\d:\d\d$/);
 });
+
+test('limity: podejrzane 90 w mieście znika, prawdziwe 90 zostaje, krótkie skoki się wygładzają', async () => {
+  const { cleanLimits } = await import('../js/limits.js');
+  const seg = (from, to, kmh, local = true) => ({ from, to, kmh, local });
+  // Zemborzycka: 50, 90, brak, 90, 50
+  assert.deepEqual(cleanLimits([seg(0, 500, 50), seg(500, 600, 90), seg(600, 710, null), seg(710, 800, 90), seg(800, 1200, 50)]).map((s) => s.kmh), [50]);
+  // dłuższy przebieg: sygnał o 90 poza miastem zostaje
+  assert.deepEqual(cleanLimits([seg(0, 500, 50), seg(500, 3000, 90), seg(3000, 3400, 50)]).map((s) => s.kmh), [50, 90, 50]);
+  // droga główna z krótkim 90 nie jest zgadywana
+  assert.deepEqual(cleanLimits([seg(0, 500, 50, false), seg(500, 900, 90, false), seg(900, 1200, 50, false)]).map((s) => s.kmh), [50, 90, 50]);
+  // długi łańcuch krótkich odcinków bez danych nie dostaje zmyślonego limitu
+  const chain = cleanLimits([seg(0, 500, 50), ...[0, 1, 2, 3, 4, 5].map((i) => seg(500 + i * 100, 600 + i * 100, null))]);
+  assert.equal(chain[chain.length - 1].kmh, null);
+  // niższy limit zostaje nawet na krótko
+  assert.deepEqual(cleanLimits([seg(0, 500, 50), seg(500, 560, 30), seg(560, 900, 50)]).map((s) => s.kmh), [50, 30, 50]);
+});
