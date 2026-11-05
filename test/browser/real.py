@@ -89,6 +89,7 @@ with sync_playwright() as p:
     SPEEDUP = int(os.environ.get('SPEEDUP', '1'))
     page.evaluate("(k) => { const S = window.__nav.S; S.simSpeedup = k; S.sim.speedup = k; S.sim.start(); }", SPEEDUP)
     print('szum', flush=True)
+    page.evaluate("(() => { const s = window.__nav.S.sim; s.setSpeed(0.1); })()") if os.environ.get('PRELOAD') else None
     page.evaluate(NOISE)
     print('szum ok', flush=True)
     import time as _t
@@ -96,12 +97,14 @@ with sync_playwright() as p:
         page.evaluate("for (const id of ['lane-div','lane-solid','lane-road']) window.__nav.map.setLayoutProperty(id,'visibility','none')")
     for _i in range(6):
         t0 = _t.time(); r = page.evaluate("(() => { const n = window.__nav.S.nav; return [(n.laneF||[]).length, (n.junctions||[]).length, Math.round(n.along||0)]; })()"); print('puls', round(_t.time()-t0,1), r, flush=True); page.wait_for_timeout(1500)
-    page.evaluate("window.__nav.S.sim.along = %s" % os.environ.get('FIRST', '1500'))
+    page.wait_for_timeout(int(os.environ.get('PRELOAD', '0')) * 1000)
+    page.evaluate("window.__nav.S.sim.along = %s; window.__nav.S.sim.setSpeed(45)" % os.environ.get('FIRST', '1500'))
     page.wait_for_timeout(int(os.environ.get('SETTLE', '0')) * 1000)
     page.wait_for_timeout(7000)
     print('A', page.evaluate("(() => { const e = document.getElementById('m-lanes'); const S = window.__nav.S; return { widoczne: !e.hidden, n: e.querySelectorAll('.lane').length, on: e.querySelectorAll('.lane.on').length, along: Math.round(S.nav.along) }; })()"), flush=True)
     page.screenshot(path=f'{OUT}/{THEME}-a.png')
     print('A zrzut', flush=True)
+    print('CEL', page.evaluate("(() => { const N = window.__nav.S.nav; return { skrz: (N.junctions||[]).slice(0,4).map(j => [Math.round(j.at), j.lanes.length, j.both, Math.round(j.back)]), teraz: N.targetJ ? Math.round(N.targetJ.at) : null, warstwa: !!window.__nav.map.getLayer('target-lane') }; })()"), flush=True)
     if os.environ.get('TOGGLE'):
         ST = "(() => { const m = window.__nav.map; const c = m.getLayer('city3d'); const i = c && (c.implementation || c); return { motyw: document.body.classList.contains('day') ? 'dzien' : 'noc', silnik_noc: i && i.night, pokrycie: i && i.cover, kafli: i && i.tiles && i.tiles.size, stare: m.getLayer('building-3d') ? m.getLayoutProperty('building-3d', 'visibility') : null, styl: m.getStyle().name, warstw_miasta: m.getStyle().layers.filter(l => l.id === 'city3d').length }; })()"
         print('PRZED', page.evaluate(ST), flush=True)
@@ -130,6 +133,7 @@ with sync_playwright() as p:
     print('pasy', page.evaluate("(() => { const st = window.__nav.S.sim.route.steps; return st.filter(x => x.lanes).map(x => [Math.round(x.at), x.lanes.length, x.toward || '']); })()"), flush=True)
     page.evaluate("(() => { const s = window.__nav.S.sim; const l = s.route.steps.filter(x => x.lanes && x.at > 1500); const J = window.__nav.S.nav.junctions || []; if (s) s.along = Math.max(0, %s); })()" % os.environ.get('JUMP', 's.route.distance - 1800'))
     page.wait_for_timeout(int(os.environ.get('WAITC', '12')) * 1000)
+    print('CEL c', page.evaluate("(() => { const N = window.__nav.S.nav; return { along: Math.round(N.along), teraz: N.targetJ ? [Math.round(N.targetJ.at), N.targetJ.lanes.map(l => (l.on ? '*' : '') + l.angles.join('/')).join(' ')] : null }; })()"), flush=True)
     print('PASY NA EKRANIE', page.evaluate("(() => { const e = document.getElementById('m-lanes'); const S = window.__nav.S; return { widoczne: !e.hidden, n: e.querySelectorAll('.lane').length, on: e.querySelectorAll('.lane.on').length, along: Math.round(S.nav.along), skrz: (S.nav.junctions || []).slice(0, 6).map(j => [Math.round(j.at), j.lanes.length]), linii: (S.nav.laneF || []).length, tekst: document.getElementById('m-text').textContent }; })()"), flush=True)
     page.screenshot(path=f'{OUT}/{THEME}-c.png')
     br.close()

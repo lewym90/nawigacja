@@ -31,6 +31,34 @@ export function junctionAhead(list, along, win) {
   return j && j.at - along <= win ? j : null;
 }
 
+/**
+ * Wstęga na właściwych pasach przed skrzyżowaniem: pod spodem jezdnia zasłaniająca zwykłą wstęgę, na niej pas lub pasy do zajęcia.
+ * coords = końcówka dojazdu. Offset dodatni to prawa strona w kierunku jazdy. Na drodze dwukierunkowej nasze pasy leżą w całości po prawej.
+ */
+export function laneTarget(j, coords) {
+  const n = j.lanes.length; const W = 3.3;
+  if (coords.length < 2 || n < 2 || j.lanes.every((l) => l.on)) return [];
+  const line = { type: 'LineString', coordinates: coords };
+  const out = [{ type: 'Feature', properties: { kind: 'bg', o: 0, w: (j.both ? 2 * n * W : n * W) + 0.8 }, geometry: line }];
+  j.lanes.forEach((l, i) => {
+    if (!l.on) return;
+    const o = j.both ? (i + 0.5) * W : (i - (n - 1) / 2) * W;
+    out.push({ type: 'Feature', properties: { kind: 'lane', o, w: W - 0.5 }, geometry: line });
+  });
+  return out;
+}
+
+/** Długość dojazdu z tą samą liczbą pasów, licząc wstecz od krawędzi kończącej się przy skrzyżowaniu: tam wolno przesunąć wstęgę. */
+export function approachOf(edges, idx, n) {
+  let k = edges.findIndex((e) => e.end_shape_index >= idx);
+  if (k < 0) return { both: false, back: 60 };
+  if (edges[k].begin_shape_index >= idx && k > 0) k -= 1;
+  const both = edges[k].traversability === 'both';
+  let m = 0;
+  for (let i = k; i >= 0 && (edges[i].lane_count || 1) === n; i--) m += (edges[i].length || 0) * 1000;
+  return { both, back: Math.max(130, Math.min(240, m)) };
+}
+
 /** Czy wskazane pasy prowadzą prosto: wtedy manewr nie jest skrętem ani rozwidleniem, nawet gdy silnik tak go nazywa. */
 export function lanesStraight(list) {
   const on = (list || []).filter((l) => l.active);

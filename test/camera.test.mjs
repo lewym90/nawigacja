@@ -72,7 +72,7 @@ test('zdjęcia lotnicze: adres kafla jak w mapie, kolejka wzdłuż trasy bez pow
 });
 
 test('pasy ruchu: kierunki, aktywny pas, porada i drogowskaz', async () => {
-  const { parseLanes, laneAdvice, towardOf, lanesStraight, laneFeatures, parseJunctionLanes, junctionAhead } = await import('../js/lanes.js');
+  const { parseLanes, laneAdvice, towardOf, lanesStraight, laneFeatures, parseJunctionLanes, junctionAhead, laneTarget, approachOf } = await import('../js/lanes.js');
   const l = parseLanes([{ directions: 8 }, { directions: 2 }, { directions: 64, active: 64 }]);
   assert.deepEqual(l.map((x) => x.angles[0]), [-90, 0, 90]);
   assert.equal(laneAdvice(l, 'right'), 'Zajmij prawy pas');
@@ -90,6 +90,12 @@ test('pasy ruchu: kierunki, aktywny pas, porada i drogowskaz', async () => {
   assert.deepEqual(j.map((x) => [x.angles[0], x.on]), [[-90, false], [0, true], [0, true], [90, false]]);
   assert.equal(junctionAhead([{ at: 100 }, { at: 500 }], 60, 250).at, 100);
   assert.equal(junctionAhead([{ at: 100 }, { at: 500 }], 120, 250), null);
+  const lt = [{ on: false }, { on: true }, { on: true }, { on: false }];
+  const tf = laneTarget({ lanes: lt, both: false }, [[0, 0], [0, 1]]);
+  assert.deepEqual(tf.filter((x) => x.properties.kind === 'lane').map((x) => +x.properties.o.toFixed(2)), [-1.65, 1.65]);
+  assert.deepEqual(laneTarget({ lanes: [{ on: true }, { on: false }], both: true }, [[0, 0], [0, 1]]).find((x) => x.properties.kind === 'lane').properties.o, 1.65);
+  assert.deepEqual(laneTarget({ lanes: [{ on: true }, { on: true }], both: false }, [[0, 0], [0, 1]]), []);
+  assert.equal(approachOf([{ begin_shape_index: 0, end_shape_index: 5, lane_count: 2, length: 0.5 }, { begin_shape_index: 5, end_shape_index: 9, lane_count: 4, length: 0.2, traversability: 'forward' }], 9, 4).back, 200);
   const f = laneFeatures([{ lane_count: 3, traversability: 'forward', begin_shape_index: 0, end_shape_index: 1 }, { lane_count: 3, traversability: 'forward', begin_shape_index: 1, end_shape_index: 2 }], [[0, 0], [0, 1], [0, 2]]);
   assert.equal(f.filter((x) => x.properties.kind === 'div').length, 2);
   assert.equal(f.find((x) => x.properties.kind === 'road').geometry.coordinates.length, 3);

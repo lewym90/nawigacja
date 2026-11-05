@@ -210,7 +210,7 @@ export const COSTING_OPTIONS = {
  * Zapytanie o trasę. heading (stopnie) podajemy przy ponownym liczeniu w ruchu: trasa zaczyna się
  * wtedy zgodnie z kierunkiem jazdy (bez „zawróć” i objeżdżania bloku, gdy stoisz na wyjeździe).
  */
-import { towardOf, lanesStraight, laneFeatures, parseJunctionLanes } from './lanes.js';
+import { towardOf, lanesStraight, laneFeatures, parseJunctionLanes, approachOf } from './lanes.js';
 
 export function valhallaRequest(points, { costing = 'auto', alternatives = true, heading = null, pref = DEFAULT_PREF, exclude = null } = {}) {
   // radius: Valhalla bierze pod uwagę WSZYSTKIE drogi w tym promieniu, a nie tylko najbliższą. Bez tego
@@ -387,17 +387,22 @@ export async function routeLanes(base, coords, signal) {
   const enc = encodePolyline(coords);
   const [ta, tr] = await Promise.allSettled([
     postJson(base, 'trace_attributes', { encoded_polyline: enc, costing: 'auto', shape_match: 'edge_walk',
-      filters: { attributes: ['edge.lane_count', 'edge.traversability', 'edge.begin_shape_index', 'edge.end_shape_index', 'shape'], action: 'include' } }, signal),
+      filters: { attributes: ['edge.lane_count', 'edge.traversability', 'edge.length', 'edge.begin_shape_index', 'edge.end_shape_index', 'shape'], action: 'include' } }, signal),
     postJson(base, 'trace_route', { encoded_polyline: enc, costing: 'auto', shape_match: 'edge_walk', format: 'osrm', turn_lanes: true }, signal),
   ]);
-  const features = ta.status === 'fulfilled' ? laneFeatures(ta.value.edges || [], decodePolyline(ta.value.shape || '')) : [];
+  const edges = ta.status === 'fulfilled' ? ta.value.edges || [] : [];
+  const shape = ta.status === 'fulfilled' ? decodePolyline(ta.value.shape || '') : [];
+  const features = laneFeatures(edges, shape);
   const junctions = [];
   if (tr.status === 'fulfilled') {
     for (const leg of (tr.value.matchings || [{}])[0].legs || []) {
       for (const st of leg.steps || []) {
         for (const i of st.intersections || []) {
           const lanes = parseJunctionLanes(i.lanes);
-          if (lanes) junctions.push({ point: i.location, lanes });
+          if (!lanes) continue;
+          let idx = 0; let best = Infinity;
+          shape.forEach((p, q) => { const d = (p[0] - i.location[0]) ** 2 + (p[1] - i.location[1]) ** 2; if (d < best) { best = d; idx = q; } });
+          junctions.push({ point: i.location, lanes, ...approachOf(edges, idx, lanes.length) });
         }
       }
     }
