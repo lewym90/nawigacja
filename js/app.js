@@ -318,6 +318,7 @@ function showQuick() {
   const rows = [];
   const items = [];
   const push = (html, fn) => { rows.push(html); items.push(fn); };
+  if (S.pickFrom) push(`<li class="row2"><button data-a="gps"><span class="r-ico">${icon.locate(22)}</span><span><div class="r-main">Moja lokalizacja</div></span></button></li>`, { gps: true });
   const home = saved.find((x) => x.kind === 'home');
   const work = saved.find((x) => x.kind === 'work');
   rows.push('<li class="sec">Moje adresy</li>'); items.push(null);
@@ -336,6 +337,7 @@ function showQuick() {
     if (!it) return;
     li.querySelectorAll('button').forEach((b) => (b.onclick = (ev) => {
       ev.preventDefault();
+      if (it.gps) { endPick(); if (S.from) { S.from = null; planRoute(); } return; }
       if (it.add) { S.assign = { kind: it.add }; input.value = ''; input.placeholder = it.add === 'home' ? 'Wpisz adres domu' : 'Wpisz adres pracy'; show('results', false); input.focus(); return; }
       if (b.dataset.a === 'del') { if (it.saved) places.removeSaved(it.x.id); else places.removeRecent(it.rec); showQuick(); return; }
       S.assign = null;
@@ -421,6 +423,12 @@ async function chooseDest(d) {
     toast(`Zapisano: ${a.kind === 'home' ? 'Dom' : a.kind === 'work' ? 'Praca' : a.label || d.main}`, 2500);
     return;
   }
+  if (S.pickFrom) { // wybrane miejsce startu: cel zostaje, liczymy trasę od nowa
+    endPick();
+    S.from = d;
+    planRoute();
+    return;
+  }
   input.value = d.main;
   places.addRecent(d);
   S.saveFrom = d;
@@ -459,9 +467,43 @@ function renderPrefSeg() {
 renderTravelSeg();
 renderPrefSeg();
 
+// Skąd: domyślnie GPS, inny adres służy do sprawdzania trasy i czasu. Prowadzenie zawsze rusza z miejsca, w którym jest kierowca.
+function syncFrom() {
+  $('p-from-name').textContent = S.from ? S.from.main : 'Moja lokalizacja';
+  $('go-txt').textContent = S.from ? 'Jedź z mojej lokalizacji' : 'Start';
+  if (fromMarker) { fromMarker.remove(); fromMarker = null; }
+  if (S.from) { const el = document.createElement('div'); el.className = 'from-pin'; fromMarker = new maplibregl.Marker({ element: el }).setLngLat([S.from.lng, S.from.lat]).addTo(map); }
+}
+let fromMarker = null;
+function endPick() {
+  S.pickFrom = false;
+  input.placeholder = 'Dokąd jedziemy?';
+  input.value = S.dest ? S.dest.main : '';
+  input.blur();
+  show('results', false);
+}
+$('p-from').onclick = () => {
+  if (S.pickFrom) { endPick(); return; }
+  S.pickFrom = true; S.assign = null;
+  input.value = ''; input.placeholder = 'Skąd jedziemy?';
+  input.focus();
+  showQuick();
+};
+$('btn-swap').onclick = () => {
+  const gps = S.pos ? { main: 'Moja lokalizacja', sub: '', lng: S.pos.lng, lat: S.pos.lat, gps: true } : null;
+  const nowFrom = S.from || gps;
+  if (!nowFrom) { toast('Brak sygnału GPS: najpierw wpisz miejsce startu', 3000); return; }
+  const oldDest = S.dest;
+  S.from = oldDest.gps ? null : oldDest;
+  S.dest = nowFrom;
+  input.value = S.dest.main;
+  planRoute();
+};
+
 async function planRoute() {
   const d = S.dest;
-  const from = S.pos ? [S.pos.lng, S.pos.lat] : map.getCenter().toArray();
+  const from = S.from ? [S.from.lng, S.from.lat] : S.pos ? [S.pos.lng, S.pos.lat] : map.getCenter().toArray();
+  syncFrom();
   toast('Wyznaczam trasę…', 8000);
   try {
     S.routes = await getRoutes(CONFIG, [from, [d.lng, d.lat]], { costing: travel().costing, alternatives: travel().alternatives, pref: S.pref, fixExclude: await fixEx(from, [d.lng, d.lat]) });
@@ -728,6 +770,8 @@ function setMode(m) {
 }
 
 $('btn-cancel').onclick = () => {
+  if (S.pickFrom) endPick();
+  S.from = null; syncFrom();
   S.routes = []; S.dest = null; clearMarkers(); drawRoutes();
   if (destMarker) { destMarker.remove(); destMarker = null; }
   input.value = '';
@@ -774,7 +818,7 @@ function startNav({ sim = false } = {}) {
   if (meMarker) { meMarker.remove(); meMarker = null; }
   document.activeElement && document.activeElement.blur();
   $('results').hidden = true;
-  const start = S.pos ? [S.pos.lng, S.pos.lat] : route.coords[0];
+  const start = S.pos && !S.from ? [S.pos.lng, S.pos.lat] : route.coords[0];
   setFov(NAV_FOV);
   drawLanes(S.nav);
   document.body.classList.add('driving');
@@ -1205,7 +1249,7 @@ function endNav() {
   S.nav = null;
   unlockScreen();
   clearMarkers();
-  S.routes = []; S.dest = null;
+  S.routes = []; S.dest = null; S.from = null; syncFrom();
   drawJams(null); show('faster', false); drawLanes(null); { const t = map.getSource('lane-target'); if (t) t.setData(emptyFC()); }
   drawRoutes();
   if (destMarker) { destMarker.remove(); destMarker = null; }
@@ -1218,7 +1262,16 @@ function endNav() {
   if (memento) { saveLastTrip(memento); setTimeout(() => showTrip(memento), 900); }
 }
 
-$('btn-start').onclick = () => { if (travel().compass) compass.start(); startNav(); };
+$('btn-start').onclick = async () => {
+  if (travel().compass) compass.start();
+  if (S.from) { // zaplanowana trasa była tylko do sprawdzenia: prowadzimy do celu od kierowcy
+    if (S.dest.gps) { toast('Celem jest Twoja lokalizacja: wybierz inny cel', 3500); return; }
+    if (!S.pos) { toast('Brak sygnału GPS', 3000); return; }
+    S.from = null;
+    await planRoute();
+  }
+  startNav();
+};
 $('btn-sim').onclick = () => {
   const route = S.routes[S.sel];
   if (!route) return;
@@ -1553,7 +1606,7 @@ $('btn-menu-x').onclick = () => show('menu', false);
 $('btn-quick').innerHTML = icon.tune(24);
 $('btn-quick').onclick = () => { syncMenu(); show('quick', $('quick').hidden); };
 $('btn-quick-x').onclick = () => show('quick', false);
-map.on('click', () => show('quick', false));
+map.on('click', () => { show('quick', false); if (S.pickFrom) endPick(); });
 document.querySelectorAll('[data-sw]').forEach((el) => (el.onclick = () => {
   const key = el.dataset.sw;
   SWITCHES[key](!settings[key]);

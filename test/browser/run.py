@@ -121,6 +121,23 @@ with sync_playwright() as p:
     page.wait_for_selector('.route-card', timeout=8000)
     page.wait_for_selector('.tag.jam', timeout=8000)
     page.evaluate("document.getElementById('opts').open = true")
+    # Skąd: inny start, zamiana, powrót do GPS
+    assert page.inner_text('#p-from-name') == 'Moja lokalizacja'
+    page.click('#p-from'); page.wait_for_selector('#results button[data-a=gps]', timeout=3000)
+    assert page.get_attribute('#q', 'placeholder') == 'Skąd jedziemy?'
+    page.fill('#q', 'Rynek Zamość'); page.wait_for_selector('#results .r-main:has-text("Rynek Testowy")', timeout=5000)
+    page.click('#results button:has-text("Rynek Testowy")')
+    page.wait_for_function("document.getElementById('p-from-name').textContent === 'Rynek Testowy' && window.__nav.S.routes.length > 0 && document.getElementById('toast').hidden", timeout=8000)
+    assert page.inner_text('#go-txt') == 'Jedź z mojej lokalizacji'
+    assert page.input_value('#q') != '' and page.get_attribute('#q', 'placeholder') == 'Dokąd jedziemy?'
+    print('SKĄD:', page.inner_text('#p-from-name'), '|', page.inner_text('#go-txt'), '| punkt startu:', page.evaluate("document.querySelectorAll('.from-pin').length"))
+    page.click('#btn-swap'); page.wait_for_function("window.__nav.S.dest.main === 'Rynek Testowy' || window.__nav.S.dest.gps === true", timeout=4000)
+    page.wait_for_timeout(1500)
+    print('ZAMIANA:', page.inner_text('#p-from-name'), '->', page.inner_text('#p-dest'))
+    page.click('#p-from'); page.wait_for_selector('#results button[data-a=gps]', timeout=3000)
+    page.click('#results button[data-a=gps]')
+    page.wait_for_function("document.getElementById('p-from-name').textContent === 'Moja lokalizacja' && document.getElementById('go-txt').textContent === 'Start'", timeout=8000)
+    page.wait_for_selector('.route-card', timeout=8000); page.wait_for_selector('.tag.jam', timeout=8000)
     assert 'korki +5 min' in page.inner_text('#routes'), page.inner_text('#routes')
     assert page.is_visible('#seg-depart')
     page.click('#seg-depart button[data-m="60"]'); page.wait_for_selector('.tag:has-text("przyjazd")', timeout=5000)

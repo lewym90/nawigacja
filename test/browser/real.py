@@ -47,7 +47,11 @@ with sync_playwright() as p:
     page = ctx.new_page()
     page.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
     page.on('pageerror', lambda e: errors.append(f'pageerror: {e}'))
-    page.route('https://photon.komoot.io/**', lambda r: r.fulfill(status=200, headers={'access-control-allow-origin': '*', 'content-type': 'application/json'}, body=json.dumps({'features': [{'geometry': {'coordinates': DEST}, 'properties': {'name': 'Stare Miasto', 'street': 'Rynek', 'housenumber': '1', 'city': 'Lublin'}}]})))
+    def photon(r):
+        pick = 'wawinek' in r.request.url or 'awinek' in r.request.url
+        f = {'geometry': {'coordinates': [22.5150, 51.2640] if pick else DEST}, 'properties': {'name': 'Sławinek' if pick else 'Stare Miasto', 'city': 'Lublin'}}
+        r.fulfill(status=200, headers={'access-control-allow-origin': '*', 'content-type': 'application/json'}, body=json.dumps({'features': [f]}))
+    page.route('https://photon.komoot.io/**', photon)
     page.route('https://overpass-api.de/**', lambda r: r.fulfill(status=503, headers={'access-control-allow-origin': '*'}, body=b''))
     page.route(re.compile(r'^https?://(?!127\.0\.0\.1|photon|mapy\.geoportal|overpass)'), forward)
     orto = []
@@ -73,6 +77,16 @@ with sync_playwright() as p:
     page.wait_for_timeout(5000)
     print('KARTY', page.inner_text('#routes').replace('\n', ' | '), '| wyjazd', page.is_visible('#seg-depart'), flush=True)
     page.screenshot(path=f'{OUT}/{THEME}-preview.png')
+    if os.environ.get('PICK'):
+        page.click('#p-from'); page.fill('#q', 'Sławinek'); page.wait_for_selector('#results button:has-text("Sławinek")', timeout=8000)
+        page.click('#results button:has-text("Sławinek")')
+        page.wait_for_function("document.getElementById('p-from-name').textContent === 'Sławinek' && document.getElementById('toast').hidden", timeout=20000)
+        page.wait_for_timeout(6000)
+        print('KARTY SKĄD', page.inner_text('#routes').replace('\n', ' | ')[:160], '|', page.inner_text('#go-txt'), flush=True)
+        page.screenshot(path=f'{OUT}/{THEME}-from.png')
+        page.click('#btn-sim'); page.wait_for_timeout(5000)
+        print('SIM START', page.evaluate("(() => { const S = window.__nav.S; const c = S.sim.route.line.coords[0]; const p = S.lastFix; return { start: c, teraz: [p.lng, p.lat], tryb: S.mode }; })()"), flush=True)
+        br.close(); sys.exit(0)
     cards = page.locator('.route-card').count()
     print('PANEL', page.evaluate("Math.round(document.getElementById('preview').offsetHeight / innerHeight * 100)"), '% ekranu, kart', cards, flush=True)
     if cards > 1 and not os.environ.get('NOCARDS'):

@@ -1,4 +1,4 @@
-# KONTYNUACJA: nawigacja (lewym90/nawigacja), stan na 2026-11-04, wersja 0.15.1
+# KONTYNUACJA: nawigacja (lewym90/nawigacja), stan na 2026-11-04, wersja 0.16.0
 
 Ten plik jest kompletnym przekazaniem pracy. Ma wystarczyć, żeby nowa sesja Claude (inne konto, bez dostępu do poprzedniej rozmowy i do Projektu „APLIKACJE”) mogła kontynuować bez zadawania pytań, które już padły. Czytaj całość, zanim cokolwiek zmienisz.
 
@@ -101,6 +101,7 @@ test/            – testy Node (`node --test`), test/browser/run.py (pełny tes
 - **0.14.0:** ruch drogowy: `server/nav-traffic.py` (pośrednik do TomTom Routing, klucz tylko w /etc/nav-traffic.env, cache 120 s, limit 18 000/mies., port 18789, `/traffic`), `js/traffic.js`. Podgląd: czas z korkami, godzina wyjazdu. Jazda: co 3 min ETA i korki na trasie, przy opóźnieniu ≥4 min propozycja szybszej trasy (zysk ≥3 min i 8%). Usługa zainstalowana na serwerze 2026-11-04, działa. `delay` to opóźnienie względem typowego ruchu; `magnitudeOfDelay` 4 to roboty/zamknięcia, nie korek. Warunki TomTom do przeczytania przez właściciela (strona ładowana skryptem, nie dało się jej odczytać).
 - **0.15.0:** prowadzenie: fork z aktywnymi pasami prosto = „Jedź prosto”, nazwa ulicy z begin_street_names lub dalszego ciągu drogi, porada głosowa o pasach tylko przy skręcie zgodnym ze stroną pasów, pasy przy każdym mijanym skrzyżowaniu z `trace_route` format osrm (`N.junctions`, panel do 250 m przed skrzyżowaniem), linie pasów na trasie z `trace_attributes` (`edge.lane_count`, tylko trasa, reszta dróg nie ma tych danych w OpenMapTiles). API OSM (api.openstreetmap.org) jest osiągalne z sandboxa, Overpass nie.
 - **0.15.1:** wstęga przechodzi na właściwe pasy przed skrzyżowaniem (`laneTarget`, warstwy `target-bg`, `target-lane`, długość dojazdu z `approachOf`).
+- **0.16.0:** pole Skąd (`S.from`, `S.pickFrom`, `syncFrom`), zamiana ⇅, inny start służy do sprawdzania trasy: Start przelicza od GPS, Symulacja jedzie od wybranego adresu.
 - **Własna mapa, szczegóły:** własny silnik miasta `js/city3d.js` (warstwa WebGL2 w MapLibre) + `tools/build-city.py` z modeli GUGiK LoD2 (Lublin: TERYT 0663, `https://integracja.gugik.gov.pl/Budynki3D/pobierz.php?plik=powiaty/0663_gml.zip`, 35 602 budynki, 76 MB kafli), atlas `tools/build-atlas.py`. Kamera zoom 18,6–17,6, pochylenie 73°, zdjęcia lotnicze domyślnie wyłączone (rozmazane i wolne). Do zrobienia: test płynności na iPhonie, kolejne powiaty (LoD2 tam gdzie jest, LoD1 reszta), drogi i ziemia na własnych kaflach.
 
 ### Kluczowe szczegóły działania (żeby nie odkrywać na nowo)
