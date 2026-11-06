@@ -136,6 +136,9 @@ with sync_playwright() as p:
             page.wait_for_timeout(int(os.environ.get('CAMWAIT', '14')) * 1000); page.evaluate("window.__nav.map.triggerRepaint()"); page.wait_for_timeout(2000)
             page.screenshot(path=f'{OUT}/{THEME}-cam-{name}.png'); print('KAMERA', name, flush=True)
         sys.exit(0) if False else None
+    if os.environ.get('DUMP'):
+        d = page.evaluate("(() => { const N = window.__nav; const st = N.S.nav.route.steps.filter((x) => x.type === 'turn' && x.at > 120)[0]; const out = []; for (let s = 0; s < N.S.nav.route.line.total; s += 5) out.push(N.cam.path(s).point); return { at: st.at, m: st.modifier, p: N.cam.path(st.at).point, raw: N.S.nav.route.coords, out }; })()")
+        json.dump(d, open(os.environ['DUMP'], 'w'))
     if os.environ.get('ARROWS'):
         for o in json.loads(os.environ['ARROWS']):
             r = page.evaluate("""(o) => { const N = window.__nav; const S = N.S; const m = N.map; const cam = N.cam;
@@ -144,12 +147,21 @@ with sync_playwright() as p:
               const P = (d) => cam.path(d).point; const shaft = []; for (let d = at - o.before; d <= at + o.after; d += 1.5) shaft.push(P(d));
               const e = cam.path(at + o.after); const b = (e.bearing * Math.PI) / 180; const k = 1 / (111320 * Math.cos((e.point[1] * Math.PI) / 180)); const q = 1 / 110540;
               const off = (f, r) => [e.point[0] + (Math.sin(b) * f + Math.cos(b) * r) * k, e.point[1] + (Math.cos(b) * f - Math.sin(b) * r) * q];
-              const head = [off(0, o.w * 1.25), off(o.w * 2.4, 0), off(0, -o.w * 1.25), off(0, o.w * 1.25)];
+              const head = o.up ? [off(0, 0), off(0.01, 0), off(0, 0.01), off(0, 0)] : [off(0, o.w * 1.25), off(o.w * 2.4, 0), off(0, -o.w * 1.25), off(0, o.w * 1.25)];
               const W = (w) => ['interpolate', ['exponential', 2], ['zoom'], 16, w * 1.33, 22, w * 1.33 * 64];
               for (const id of ['arrow-case', 'arrow-line', 'arrow-head-case', 'arrow-head']) { m.setLayoutProperty(id, 'visibility', 'visible'); m.moveLayer(id); }
               m.setPaintProperty('arrow-case', 'line-color', o.edge); m.setPaintProperty('arrow-line', 'line-color', o.fill); m.setPaintProperty('arrow-head-case', 'line-color', o.edge); m.setPaintProperty('arrow-head', 'fill-color', o.fill);
               m.setPaintProperty('arrow-line', 'line-width', W(o.w)); m.setPaintProperty('arrow-case', 'line-width', W(o.w + o.e)); m.setPaintProperty('arrow-head-case', 'line-width', W(o.e));
               m.getSource('arrow').setData({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: shaft } }, { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [head] } }] });
+              document.querySelectorAll('.up-arrow').forEach((e) => e.remove());
+              const mk = (html, pt, an) => { const el = document.createElement('div'); el.className = 'up-arrow'; el.innerHTML = html; el.style.pointerEvents = 'none'; new maplibregl.Marker({ element: el, anchor: an }).setLngLat(pt).addTo(m); return el; };
+              setTimeout(() => { setInterval(() => document.querySelectorAll('.up-arrow').forEach((e) => { const t = e.style.transform; const q = /translate\((-?[\d.]+)px/.exec(t); if (q && +q[1] > innerWidth - 56) e.style.transform = t.replace(q[0], `translate(${innerWidth - 56}px`); }), 50);
+                const dir = Math.atan2(m.project(P(at + o.after)).y - m.project(P(at + o.after - 7)).y, m.project(P(at + o.after)).x - m.project(P(at + o.after - 7)).x) * 180 / Math.PI;
+                const sh = 'style="filter:drop-shadow(0 4px 6px rgba(0,0,0,.45))"';
+                if (o.up === 1) mk(`<svg width="84" height="84" viewBox="0 0 84 84" ${sh}><g transform="rotate(${dir} 42 42)"><path d="M14 10 L76 42 L14 74 L28 42Z" fill="#fff" stroke="#071426" stroke-width="5" stroke-linejoin="round"/></g></svg>`, P(at + o.after + 3), 'center');
+                if (o.up === 2) mk(`<svg width="84" height="118" viewBox="0 0 84 118" ${sh}><rect x="38" y="70" width="8" height="48" fill="#071426"/><rect x="4" y="4" width="76" height="76" rx="14" fill="#fff" stroke="#071426" stroke-width="5"/><path d="M30 62 V36 Q30 28 38 28 H50" fill="none" stroke="#071426" stroke-width="9"/><path d="M48 15 L66 28 L48 41Z" fill="#071426"/></svg>`, P(at + o.after + 3), 'bottom');
+                if (o.up === 3) mk(`<svg width="150" height="70" viewBox="0 0 150 70" ${sh}><g transform="rotate(${dir > 90 || dir < -90 ? 180 : 0} 75 35)">${[0, 44, 88].map((x) => `<path d="M${x + 12} 8 L${x + 48} 35 L${x + 12} 62 L${x + 28} 35Z" fill="#fff" stroke="#071426" stroke-width="4" stroke-linejoin="round"/>`).join('')}</g></svg>`, P(at + o.after + 3), 'center');
+              }, 9000);
               return [at, st.modifier, st.name]; }""", o)
             print('STRZAŁKA', o['name'], r, flush=True)
             page.wait_for_timeout(int(os.environ.get('CAMWAIT', '14')) * 1000); page.evaluate("window.__nav.map.triggerRepaint()"); page.wait_for_timeout(1500)

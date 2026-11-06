@@ -784,7 +784,8 @@ function cityRoute() {
   const K = 1 / Math.cos((c[0][1] * Math.PI) / 180);
   const steps = S.nav.route.steps || [];
   const lefts = steps.filter((st) => st.type === 'turn' && /left/.test(st.modifier || '')).map((st) => st.at);
-  const path = { ...drivePath(c.map(([x, y]) => toMerc(x, y)), K, S.axes, { lefts }), K };
+  const turns = steps.filter((st) => wantsArrow(st) && st.at > 0).map((st) => st.at);
+  const path = { ...drivePath(c.map(([x, y]) => toMerc(x, y)), K, S.axes, { lefts, turns }), K };
   cam.path = (s) => pathAt(path, s, fromMerc);
   S.nav.cross = crossings(path, K, S.axes).map((q) => ({ ...q, point: fromMerc(q.x, q.y) }));
   S.city.setRoute(path);
@@ -1145,6 +1146,7 @@ function drawAhead(N, along) {
 let chipMarker = null; let chipKey = null; const crossMarkers = new Map();
 const shortStreet = (n) => { const w = n.split(' '); return w.length > 2 && !/\d$/.test(n) ? w[w.length - 1] : n; };
 function turnChip(N, nx, g) {
+  cam.turnAt = nx && wantsArrow(nx) ? nx.at : null;
   const name = nx && wantsArrow(nx) && g.distToNext < 500 && g.distToNext > 8 ? nx.name || nx.ref : null;
   const key = name ? `${g.nextIdx}:${name}` : null;
   if (key === chipKey) return;

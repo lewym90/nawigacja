@@ -6,6 +6,7 @@
 import { pointAt, bearing } from './geo.js';
 
 const M_PER_DEG = 111195;
+const MAX_LOOK = 14;
 const wrap = (d) => ((d + 540) % 360) - 180;
 const ease = (dt, tau) => 1 - Math.exp(-dt / tau);
 
@@ -21,12 +22,16 @@ export const CAM = {
 };
 
 /** Kierunek kadru: odcinek trasy przed autem. Im szybciej, tym dalej patrzy, więc krótkie załamania trasy nie ruszają kamerą. */
-export function pathBearing(line, along, kmh, at = null) {
+export function pathBearing(line, along, kmh, at = null, turnAt = null) {
   const ahead = Math.max(30, Math.min(110, (kmh / 3.6) * 3.2));
-  const a = (at ? at(along - 6) : pointAt(line, Math.max(0, along - 6))).point;
-  const b = (at ? at(along + ahead) : pointAt(line, Math.min(line.total, along + ahead))).point;
+  const pt = (d) => (at ? at(d) : pointAt(line, Math.max(0, Math.min(line.total, d)))).point;
+  const a = pt(along - 6); const b = pt(along + ahead);
   if (a[0] === b[0] && a[1] === b[1]) return null;
-  return bearing(a, b);
+  const base = bearing(a, b);
+  if (turnAt == null || turnAt <= along || turnAt - along > 130) return base;
+  // kadr lekko obraca się na wyjazd ze skrzyżowania, żeby skręt nie uciekał za krawędź, ale droga dalej biegnie prosto przed autem
+  const d = wrap(bearing(a, pt(turnAt + 14)) - base);
+  return (base + Math.max(-MAX_LOOK, Math.min(MAX_LOOK, d)) + 360) % 360;
 }
 
 export class ChaseCam {
@@ -66,7 +71,7 @@ export class ChaseCam {
       const p = this.path ? this.path(this.s) : pointAt(T.line, this.s);
       want = p.point;
       carHd = p.bearing;
-      tb = pathBearing(T.line, this.s, kmh, this.path);
+      tb = pathBearing(T.line, this.s, kmh, this.path, this.turnAt);
     } else {
       const hd = (T.heading != null && T.speed > 1.5) ? T.heading : this.bearing;
       const r = T.speed * T.age;

@@ -7,8 +7,10 @@ const STEP = 2.5;
 export class AxisIndex {
   /** lines: [{ pts: [[x, y], ...], w, two }] w metrach Merkatora. */
   constructor(lines) {
-    this.cells = new Map();
+    this.cells = new Map(); this.nodes = []; this.grid = new Map();
     lines.forEach((l, id) => {
+      let prev = null;
+      for (const q of l.pts) { const n = this.node(q); if (prev && prev !== n) { const d = Math.hypot(n.x - prev.x, n.y - prev.y); prev.out.push({ to: n, d, w: l.w, two: l.two }); n.out.push({ to: prev, d, w: l.w, two: l.two }); } prev = n; }
       for (let i = 1; i < l.pts.length; i++) {
         const [ax, ay] = l.pts[i - 1]; const [bx, by] = l.pts[i]; const seg = { ax, ay, bx, by, w: l.w, two: l.two, name: l.name, id };
         const n = Math.ceil(Math.hypot(bx - ax, by - ay) / (CELL / 2));
@@ -22,6 +24,38 @@ export class AxisIndex {
         }
       }
     });
+  }
+
+  /** Punkty osi w grafie: końce odcinków leżące do 2,5 m od siebie to jeden węzeł. */
+  node([x, y]) {
+    const cx = Math.floor(x / 3); const cy = Math.floor(y / 3);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (const n of this.grid.get((cx + i) * 1000003 + cy + j) || []) if (Math.hypot(n.x - x, n.y - y) < 2.5) return n;
+    const n = { x, y, out: [] }; const k = cx * 1000003 + cy;
+    this.nodes.push(n); if (!this.grid.has(k)) this.grid.set(k, []); this.grid.get(k).push(n);
+    return n;
+  }
+
+  /** Węzły w promieniu r metrów Merkatora. */
+  nodesNear(x, y, r) {
+    const c = Math.ceil(r / 3); const cx = Math.floor(x / 3); const cy = Math.floor(y / 3); const out = [];
+    for (let i = -c; i <= c; i++) for (let j = -c; j <= c; j++) for (const n of this.grid.get((cx + i) * 1000003 + cy + j) || []) if (Math.hypot(n.x - x, n.y - y) <= r) out.push(n);
+    return out;
+  }
+
+  /** Najkrótsza droga po osiach z okolic punktu a do okolic b. Prosty Dijkstra: pytamy o kilkaset węzłów na skrzyżowanie. */
+  route(a, b, r, limit) {
+    const dist = new Map(); const from = new Map(); const open = new Set(); const goal = new Set(this.nodesNear(b[0], b[1], r));
+    for (const n of this.nodesNear(a[0], a[1], r)) { dist.set(n, Math.hypot(n.x - a[0], n.y - a[1])); open.add(n); }
+    let best = null; let bestCost = Infinity;
+    while (open.size) {
+      let n = null; let d = Infinity; for (const q of open) if (dist.get(q) < d) { d = dist.get(q); n = q; }
+      open.delete(n); if (d > limit || d >= bestCost) break;
+      if (goal.has(n)) { const c = d + Math.hypot(n.x - b[0], n.y - b[1]); if (c < bestCost) { bestCost = c; best = n; } }
+      for (const e of n.out) { const v = d + e.d; if (v < (dist.get(e.to) ?? Infinity)) { dist.set(e.to, v); from.set(e.to, { n, e }); open.add(e.to); } }
+    }
+    if (!best) return null;
+    const chain = []; for (let n = best; n; n = from.get(n)?.n) chain.unshift({ n, e: from.get(n)?.e });
+    return chain;
   }
 
   key(x, y) { return Math.floor(x / CELL) * 1000003 + Math.floor(y / CELL); }
@@ -115,9 +149,33 @@ function arc(T, a, b) {
   }
 }
 
+/** Przejazd przez skrzyżowanie po prawdziwych osiach: jezdnia powstała z tych osi, więc tor nie może wejść na chodnik ani wyspę, a zjazd łącznicą wypada na łącznicy. */
+function followAxes(T, a, b, K, axes, left) {
+  const chord = Math.hypot(T[b][0] - T[a][0], T[b][1] - T[a][1]);
+  const chain = axes.route(T[a], T[b], 14 * K, chord * 1.7); if (!chain || chain.length < 2) return false;
+  const line = [T[a]];
+  for (let i = 0; i < chain.length; i++) {
+    const n = chain[i].n; const p0 = chain[Math.max(0, i - 1)].n; const p1 = chain[Math.min(chain.length - 1, i + 1)].n; const f = unit([p0.x, p0.y], [p1.x, p1.y]);
+    const e = chain[i].e || chain[i + 1]?.e; const off = (e ? laneOffset(e.w, e.two, left) : 0) * K;
+    line.push([n.x + f[1] * off, n.y - f[0] * off]);
+  }
+  line.push(T[b]);
+  // pierwszy i ostatni węzeł mogą leżeć za końcami odcinka: odrzucamy zawrotki
+  const clean = [line[0]];
+  for (let i = 1; i < line.length; i++) { const u = unit(clean[clean.length - 1], line[i]); const g = unit(line[i], line[Math.min(line.length - 1, i + 1)]); if (i < line.length - 1 && i < 3 && u[0] * g[0] + u[1] * g[1] < -0.2) continue; clean.push(line[i]); }
+  const cum = [0]; for (let i = 1; i < clean.length; i++) cum.push(cum[i - 1] + Math.hypot(clean[i][0] - clean[i - 1][0], clean[i][1] - clean[i - 1][1]));
+  let k = 1;
+  for (let j = a + 1; j < b; j++) {
+    const d = (cum[cum.length - 1] * (j - a)) / (b - a); while (k < clean.length - 1 && cum[k] < d) k++;
+    const u = (d - cum[k - 1]) / ((cum[k] - cum[k - 1]) || 1);
+    T[j] = [clean[k - 1][0] + (clean[k][0] - clean[k - 1][0]) * u, clean[k - 1][1] + (clean[k][1] - clean[k - 1][1]) * u];
+  }
+  return true;
+}
+
 /** Zwraca tor: punkty w metrach Merkatora i odległość wzdłuż trasy dla każdego z nich. Długości zostają z trasy, więc postęp i dystanse się nie rozjeżdżają.
  *  lefts: miejsca (metry trasy) skrętów w lewo, przed którymi tor przechodzi na lewy pas. */
-export function drivePath(raw, K = 1, axes = null, { lefts = [] } = {}) {
+export function drivePath(raw, K = 1, axes = null, { lefts = [], turns = [] } = {}) {
   const { p, along } = resample(raw, K); const n = p.length; let pts = p;
   if (axes) {
     const prev = { id: -1 }; const T = new Array(n).fill(null);
@@ -150,9 +208,14 @@ export function drivePath(raw, K = 1, axes = null, { lefts = [] } = {}) {
       }
       last = i;
     }
+    for (const at of turns) {
+      const c = along.findIndex((v) => v >= at); if (c < 0) continue;
+      const a = Math.max(0, c - 18); const b = Math.min(n - 1, c + 18); // ok. 45 m w obie strony
+      if (a < b) followAxes(T, a, b, K, axes, lefts.includes(at));
+    }
     pts = T;
   }
-  return { pts: smooth(pts, axes ? 3 : 5), along };
+  return { pts: smooth(pts, axes ? 2 : 5), along };
 }
 
 /** Przecznice na torze: po jednej na ulicę, z nazwą z BDOT. */
