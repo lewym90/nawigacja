@@ -7,9 +7,6 @@ import numpy as np
 from PIL import Image, ImageDraw
 from shapely.geometry import shape, Point, LineString
 OUT = sys.argv[1]; GRID = 400.0; PX = 2.0; N = int(GRID / PX); W = 40075016.68
-ctx = ssl.create_default_context(cafile='/root/.ccr/ca-bundle.crt')
-op = urllib.request.build_opener(urllib.request.ProxyHandler(), urllib.request.HTTPSHandler(context=ctx))
-get = lambda u: op.open(urllib.request.Request(u, headers={'User-Agent': 'nawigacja-build'}), timeout=30).read()
 idx = json.load(open(f'{OUT}/index.json')); tiles = {tuple(t) for t in idx['tiles']}
 xs = [t[0] for t in tiles]; ys = [t[1] for t in tiles]
 masks = {}

@@ -138,7 +138,7 @@ with sync_playwright() as p:
     page.click('#results button[data-a=gps]')
     page.wait_for_function("document.getElementById('p-from-name').textContent === 'Moja lokalizacja' && document.getElementById('go-txt').textContent === 'Start'", timeout=8000)
     page.wait_for_selector('.route-card', timeout=8000); page.wait_for_selector('.tag.jam', timeout=8000)
-    assert 'korki +5 min' in page.inner_text('#routes'), page.inner_text('#routes')
+    page.wait_for_function("document.getElementById('routes').innerText.includes('korki +5 min')", timeout=10000)
     assert page.is_visible('#seg-depart')
     page.click('#seg-depart button[data-m="60"]'); page.wait_for_selector('.tag:has-text("przyjazd")', timeout=5000)
     print('RUCH podgląd:', page.inner_text('.route-card.sel').replace('\n', ' | '))
