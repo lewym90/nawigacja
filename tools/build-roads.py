@@ -2,7 +2,7 @@
 Użycie: python3 tools/build-roads.py <powiat_GML.zip> <katalog_kafli>
 Kafel <x>_<y>.r.bin (gzip): u32 liczba_trójkątów_wierzch, u32 liczba_wierzch_linii,
  powierzchnie [x,y,rodzaj] f32 (0 chodnik, 1 krawężnik, 2 asfalt główne, 3 kostka, 4 żwir, 5 asfalt zbiorcze i lokalne, 6 asfalt małe uliczki), linie [x,y,u,rodzaj] f32 (0 ciągła, 1 przerywana).
-Plik axes.bin (gzip): u32 liczba, potem dla każdej osi u32 punkty, f32 szerokość, f32 dwukierunkowa (0/1), punkty [x,y] f32 względem index.axesOrg. Na niej dopasowuje się tor jazdy."""
+Plik axes.bin (gzip): u32 liczba, potem dla każdej osi u32 punkty, f32 szerokość, f32 dwukierunkowa (0/1), u16 długość nazwy, nazwa utf-8, punkty [x,y] f32 względem index.axesOrg. Na niej dopasowuje się tor jazdy."""
 import gzip, json, math, re, struct, sys, zipfile
 from collections import defaultdict
 import numpy as np
@@ -32,7 +32,7 @@ for m in FEAT('OT_SKJZ_L'):
     P = L.buffer(w / 2 * M, quad_segs=6)
     tier = 0 if any(k in cl for k in MAJOR) else 1 if any(k in cl for k in MID) else 2
     ((asphalt, asphaltMid, asphaltMin)[tier] if 'bitumiczna' in mat else cobble if 'kostka' in mat or 'płyty' in mat else gravel).append(P)
-    allAxes.append((L, w))
+    allAxes.append((L, w, tag(x, 'ulicaNazwa1'), tier))
     if 'bitumiczna' in mat and tier < 2 and w >= 5: axes.append((L, w, cl))
 print('jezdnie', len(asphalt), len(asphaltMid), len(asphaltMin), len(cobble), len(gravel), 'osie', len(axes), flush=True)
 A = unary_union(asphalt); AM = unary_union(asphaltMid).difference(A); AS = unary_union(asphaltMin).difference(unary_union([A, AM])); AALL = unary_union([A, AM, AS])
@@ -83,16 +83,17 @@ print('linie', sum(len(v) for v in marks.values()) // 6, flush=True)
 idx = json.load(open(f'{OUT}/index.json')); xs = [t[0] for t in idx['tiles']]; ys = [t[1] for t in idx['tiles']]
 # osie do dopasowania toru: jezdnia podwójna (druga równoległa blisko) jest jednokierunkowa
 t3 = STRtree([a[0] for a in allAxes]); ax0 = min(a[0].bounds[0] for a in allAxes); ay0 = min(a[0].bounds[1] for a in allAxes); blob = bytearray(struct.pack('<I', len(allAxes)))
-for i, (L, w) in enumerate(allAxes):
+for i, (L, w, nm, tier) in enumerate(allAxes):
     m = L.interpolate(0.5, normalized=True); q = L.interpolate(min(L.length, L.length * 0.5 + 3)); dx, dy = q.x - m.x, q.y - m.y; dl = math.hypot(dx, dy) or 1; two = 1
     for j in t3.query(m.buffer(35)):
         if j == i: continue
         o = allAxes[j][0]; d = o.distance(m)
         if d < 6 or d > 35: continue
         s = o.project(m); a = o.interpolate(s); b = o.interpolate(min(o.length, s + 3)); ex, ey = b.x - a.x, b.y - a.y; el = math.hypot(ex, ey) or 1
-        if abs(dx * ex + dy * ey) / (dl * el) > 0.97 and allAxes[j][1] >= 5 and w >= 5: two = 0; break
+        same = nm == allAxes[j][2] and (nm or tier == 0) # druga jezdnia tej samej ulicy, nie boczna równoległa
+        if same and abs(dx * ex + dy * ey) / (dl * el) > 0.97 and allAxes[j][1] >= 5 and w >= 5: two = 0; break
     c = np.array(L.simplify(0.5).coords, dtype=np.float64)[:, :2] - (ax0, ay0)
-    blob += struct.pack('<Iff', len(c), w, two) + c.astype(np.float32).tobytes()
+    nb = nm.encode('utf8'); blob += struct.pack('<IffH', len(c), w, two, len(nb)) + nb + c.astype(np.float32).tobytes()
 with gzip.open(f'{OUT}/axes.bin', 'wb', 9) as f: f.write(blob)
 print('osie', len(allAxes), len(blob) // 1024, 'KB', flush=True)
 surf = [(W, 0), (KERB, 1), (A, 2), (AM, 5), (AS, 6), (C, 3), (G, 4)]

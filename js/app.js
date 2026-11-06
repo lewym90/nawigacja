@@ -1,6 +1,6 @@
 import { Places } from './places.js';
 import { CONFIG, APP_VERSION, VOICES, loadSettings, saveSettings, STORAGE } from './config.js';
-import { buildStyle, isNight, NAME, STREET_ROADS } from './mapstyle.js';
+import { buildStyle, isNight } from './mapstyle.js';
 import { ROUTE_PREFS, DEFAULT_PREF } from './valhalla.js';
 import { getRoutes } from './provider.js';
 import { FixStore, FIX_LABEL } from './fixes.js';
@@ -8,7 +8,7 @@ import { unpackFuel, candidatesAhead, fuelDetours, bestStation, fmtExtra } from 
 import { explainRoute } from './explain.js';
 import { TripRecorder, TRIP, speedStops, revealStops, replayFrames, drawPoster, fmtTripTime } from './trip.js';
 import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
-import { drivePath, parseAxes, pathAt } from './snap.js';
+import { drivePath, parseAxes, pathAt, crossings } from './snap.js';
 import { CAMERA_PROFILES, QUALITY_PROFILES, CLOSE_CAM, RIBBON_WIDE, cameraProfile, qualityProfile, lerp, zoomForDistance, closeUntil } from './profiles.js';
 import { Compass } from './compass.js';
 import { buildRoadItems, unpackRoadPoints, RoadWatch, describe as describeRoad } from './roadwise.js';
@@ -775,16 +775,18 @@ function roadLabels() {
   vis(['road-label'], !drive);
   vis(OMT_ROADS, !own);
   vis(['sel-glow', 'sel-case', 'sel-line', 'sel-core', 'sel-chevron', 'jam-line'], !own); // korek pokazuje się na samej wstędze
-  vis(['street-name'], drive);
 }
 // Auto, kamera i wstęga jadą po tym samym torze, dopasowanym do jezdni własnej mapy.
 function cityRoute() {
   if (!NEW || !S.city) return;
   const c = S.nav && S.nav.route.coords;
-  if (!c) { cam.path = null; S.city.setRoute(null); return; }
+  if (!c) { cam.path = null; S.city.setRoute(null); for (const m of crossMarkers.values()) m.remove(); crossMarkers.clear(); return; }
   const K = 1 / Math.cos((c[0][1] * Math.PI) / 180);
-  const path = { ...drivePath(c.map(([x, y]) => toMerc(x, y)), K, S.axes), K };
+  const steps = S.nav.route.steps || [];
+  const lefts = steps.filter((st) => st.type === 'turn' && /left/.test(st.modifier || '')).map((st) => st.at);
+  const path = { ...drivePath(c.map(([x, y]) => toMerc(x, y)), K, S.axes, { lefts }), K };
   cam.path = (s) => pathAt(path, s, fromMerc);
+  S.nav.cross = crossings(path, K, S.axes).map((q) => ({ ...q, point: fromMerc(q.x, q.y) }));
   S.city.setRoute(path);
 }
 if (NEW) loadAxes();
@@ -904,19 +906,29 @@ function closeTick(dt, p) {
   }
   const k = S.closeK || 0; const nk = k + (target - k) * (1 - Math.exp(-dt / CLOSE_CAM.tau));
   S.closeK = Math.abs(nk - target) < 0.002 ? target : nk;
+  // ściana za plecami: kamera dojeżdża do auta, zamiast wchodzić w budynek
+  S.tightHold = Math.max(0, (S.tightHold || 0) - dt);
+  if (S.closeK > 0.5 && sightFrom(p.center, p.bearing, closeDist(), CLOSE_PITCH)) S.tightHold = 1.5;
+  S.tight = (S.tight || 0) + ((S.tightHold > 0 ? 1 : 0) - (S.tight || 0)) * (1 - Math.exp(-dt / 0.45));
   cam.bearingTau = lerp(prof.bearingTau, 0.5, S.closeK); // nisko kamera musi szybciej wchodzić w zakręt, inaczej ląduje w ścianie
   if (S.city) S.city.ribbonW = lerp(RIBBON_WIDE, CLOSE_CAM.ribbon, S.closeK);
 }
 
+const closeDist = () => lerp(Math.hypot(CLOSE_CAM.height, CLOSE_CAM.back), 13, S.tight || 0);
+
+/** Czy budynek przecina linię wzroku z kamery stojącej `dist` metrów od auta pod danym kątem. */
+function sightFrom(center, bearingDeg, dist, pitch, to = center) {
+  if (!S.city || !S.city.sightBlocked) return false;
+  const pr = (pitch * Math.PI) / 180; const back = dist * Math.sin(pr); const br = (bearingDeg * Math.PI) / 180;
+  const from = [center[0] - (back * Math.sin(br)) / (111320 * Math.cos((center[1] * Math.PI) / 180)), center[1] - (back * Math.cos(br)) / 110540];
+  return S.city.sightBlocked(from, dist * Math.cos(pr), to);
+}
+
 /** Czy z wysokiej kamery budynek zasłania auto albo drogę tuż przed nim. Liczone zawsze dla wysokiej, bo inaczej niska kamera sama by się odwoływała. */
 function viewBlocked(p, along) {
-  if (!S.city || !S.city.sightBlocked) return false;
   const line = S.nav.route.line; const f = window.innerHeight / 2 / Math.tan((NAV_FOV * Math.PI) / 360);
   const dist = (f / (512 * 2 ** p.zoom)) * 40075016.68 * Math.cos((p.center[1] * Math.PI) / 180);
-  const pr = (p.pitch * Math.PI) / 180; const back = dist * Math.sin(pr); const br = (p.bearing * Math.PI) / 180;
-  const from = [p.center[0] - (back * Math.sin(br)) / (111320 * Math.cos((p.center[1] * Math.PI) / 180)), p.center[1] - (back * Math.cos(br)) / 110540];
-  const z = dist * Math.cos(pr);
-  return S.city.sightBlocked(from, z, p.center) || S.city.sightBlocked(from, z, pointAt(line, Math.min(line.total, along + 40)).point);
+  return sightFrom(p.center, p.bearing, dist, p.pitch) || sightFrom(p.center, p.bearing, dist, p.pitch, pointAt(line, Math.min(line.total, along + 40)).point);
 }
 const SKY_RATIO = 2048 / 683; // proporcje obrazów nieba
 let camLast = 0; let skyX = null;
@@ -931,7 +943,7 @@ function camLoop(now) {
   if (S.city) S.city.along = cam.s - (cam.lag || 0) - 1;
   closeTick(dt, p);
   const k = S.closeK || 0;
-  const zoom = k ? lerp(p.zoom, zoomForDistance(Math.hypot(CLOSE_CAM.height, CLOSE_CAM.back), p.center[1], window.innerHeight, NAV_FOV), k) : p.zoom;
+  const zoom = k ? lerp(p.zoom, zoomForDistance(closeDist(), p.center[1], window.innerHeight, NAV_FOV), k) : p.zoom;
   const pitch = k ? lerp(p.pitch, CLOSE_PITCH, k) : p.pitch;
   map.jumpTo({ center: p.center, bearing: p.bearing, zoom, pitch, padding: camPadding() });
   if (k !== S.closeShown) { S.closeShown = k; placePuckY(); }
@@ -1130,14 +1142,7 @@ function drawAhead(N, along) {
 }
 
 // Nazwa ulicy stoi nad miejscem skrętu, żeby od razu było wiadomo, w którą przecznicę wjechać.
-let chipMarker = null; let chipKey = null; let ownStreet = null;
-// Ulicy, którą jedziemy, nie ma co podpisywać w kółko: jej nazwa zasłaniałaby drogę.
-function hideOwnStreet(N, g) {
-  const st = (N.route.steps || [])[Math.max(0, (g.nextIdx || 0) - 1)]; const cur = (st && st.name) || null;
-  if (cur === ownStreet || !map.getLayer('street-name')) return;
-  ownStreet = cur;
-  map.setFilter('street-name', cur ? ['all', STREET_ROADS, ['!=', NAME, cur]] : STREET_ROADS);
-}
+let chipMarker = null; let chipKey = null; const crossMarkers = new Map();
 const shortStreet = (n) => { const w = n.split(' '); return w.length > 2 && !/\d$/.test(n) ? w[w.length - 1] : n; };
 function turnChip(N, nx, g) {
   const name = nx && wantsArrow(nx) && g.distToNext < 500 && g.distToNext > 8 ? nx.name || nx.ref : null;
@@ -1151,11 +1156,24 @@ function turnChip(N, nx, g) {
   chipMarker = new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat(at).addTo(map);
 }
 
+// Najbliższe przecznice: po jednej tabliczce na skrzyżowanie, tylko dwie naraz.
+function crossChips(N, nx, g) {
+  const turn = nx && nx.name ? shortStreet(nx.name) : null;
+  const list = (N.cross || []).filter((c) => c.at > g.along + 15 && c.at < g.along + 350 && !(turn && (turn.endsWith(c.name) || Math.abs(c.at - nx.at) < 40))).slice(0, 2);
+  const keep = new Set(list.map((c) => c.at + c.name));
+  for (const [k, m] of crossMarkers) if (!keep.has(k)) { m.remove(); crossMarkers.delete(k); }
+  for (const c of list) {
+    const k = c.at + c.name; if (crossMarkers.has(k)) continue;
+    const el = document.createElement('div'); el.className = 'cross-chip'; el.textContent = c.name;
+    crossMarkers.set(k, new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat(c.point).addTo(map));
+  }
+}
+
 function updateRoadArrow(N, g) {
   const src = map.getSource('arrow');
   if (!src) return;
   const nx = g.next;
-  if (NEW) { turnChip(N, nx, g); hideOwnStreet(N, g); }
+  if (NEW) { turnChip(N, nx, g); crossChips(N, nx, g); }
   const want = !NEW && wantsArrow(nx) && g.distToNext < 220 && g.distToNext > 6; // w nowym wyglądzie zakręt pokazuje sama wstęga
   const key = want ? g.nextIdx : null;
   if (key === N.arrowIdx) return;

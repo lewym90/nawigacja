@@ -75,7 +75,7 @@ export class ChaseCam {
       tb = hd;
     }
     if (this.jump) { this.center = [...want]; this.jump = false; }
-    const k = ease(dt, CAM.centerTau);
+    const k = this.path && T.onRoute ? 1 : ease(dt, CAM.centerTau); // na torze postęp jest już gładki, a pościg ścinałby zakręty obok wstęgi
     this.center[0] += (want[0] - this.center[0]) * k;
     this.center[1] += (want[1] - this.center[1]) * k;
     this.lag = Math.hypot((want[0] - this.center[0]) * M_PER_DEG * Math.cos(want[1] * Math.PI / 180), (want[1] - this.center[1]) * M_PER_DEG); // o tyle ekranowe auto jest za punktem trasy

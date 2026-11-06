@@ -175,3 +175,29 @@ test('tor: trasa kładzie się na prawym pasie jezdni i nie skacze do sąsiednie
   const free = drivePath([[0, 500], [400, 500]], 1, axes);
   assert.equal(free.pts[80][1], 500); // poza jezdniami tor zostaje na trasie
 });
+
+test('tor: prawy pas, a przed skrętem w lewo lewy', async () => {
+  const { laneOffset } = await import('../js/snap.js');
+  assert.equal(laneOffset(8, true, false), 2); // jeden pas w każdą stronę: ćwierć szerokości
+  assert.equal(laneOffset(14, true, false), 5.25); // dwa pasy w każdą stronę: skrajny prawy
+  assert.equal(laneOffset(14, true, true), 1.75);
+  assert.equal(laneOffset(7, false, false), 1.75); // jezdnia jednokierunkowa, dwa pasy
+  assert.equal(laneOffset(7, false, true), -1.75);
+  assert.equal(laneOffset(4, true, false), 0); // wąska uliczka: środkiem
+});
+
+test('tor: zakręt nie ścina narożnika', async () => {
+  const { drivePath, AxisIndex } = await import('../js/snap.js');
+  const axes = new AxisIndex([{ pts: [[0, 0], [200, 0]], w: 7, two: true, name: 'A' }, { pts: [[200, 0], [200, -200]], w: 7, two: true, name: 'B' }]);
+  const { pts } = drivePath([[0, 0], [200, 0], [200, -200]], 1, axes); // skręt w prawo
+  assert.ok(pts.every(([x, y]) => !(x < 195.5 && y < -4.5)), 'tor wszedł na chodnik'); // prawdziwy narożnik ma promień, więc metr zapasu od kwadratowego rogu
+});
+
+test('przecznice: po jednej tabliczce na ulicę, bez bieżącej', async () => {
+  const { drivePath, AxisIndex, crossings } = await import('../js/snap.js');
+  const axes = new AxisIndex([{ pts: [[0, 0], [400, 0]], w: 7, two: true, name: 'Główna' }, { pts: [[100, -50], [100, 50]], w: 6, two: true, name: 'Boczna' }]);
+  const p = drivePath([[0, 0], [400, 0]], 1, axes);
+  const c = crossings(p, 1, axes);
+  assert.deepEqual(c.map((x) => x.name), ['Boczna']);
+  assert.ok(Math.abs(c[0].at - 100) < 15, String(c[0].at));
+});

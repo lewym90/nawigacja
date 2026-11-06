@@ -528,3 +528,4 @@ body.driving #haze { top: calc(var(--horizon, 37.8vh) - 52px); height: 86px; }
 
 /* Nazwa ulicy nad miejscem skrętu */
 .turn-chip { padding: 5px 10px; border-radius: 9px; background: rgba(10, 24, 44, .92); color: #fff; font: 700 14px/1.1 Inter, system-ui, sans-serif; border: 1.5px solid var(--cyan); box-shadow: 0 3px 10px rgba(0, 0, 0, .35); white-space: nowrap; pointer-events: none; }
+.cross-chip { padding: 3px 7px; border-radius: 6px; background: rgba(245, 250, 255, .94); color: #0E1A2B; font: 700 12px/1.1 Inter, system-ui, sans-serif; box-shadow: 0 2px 6px rgba(0, 0, 0, .3); white-space: nowrap; pointer-events: none; }
