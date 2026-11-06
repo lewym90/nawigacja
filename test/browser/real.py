@@ -118,21 +118,21 @@ with sync_playwright() as p:
     print('A', page.evaluate("(() => { const e = document.getElementById('m-lanes'); const S = window.__nav.S; return { widoczne: !e.hidden, n: e.querySelectorAll('.lane').length, on: e.querySelectorAll('.lane.on').length, along: Math.round(S.nav.along) }; })()"), flush=True)
     page.screenshot(path=f'{OUT}/{THEME}-a.png')
     if os.environ.get('CAMS'):
-        for name, H, D in json.loads(os.environ['CAMS']):
-            page.evaluate("""([H, D]) => { const S = window.__nav.S; const m = window.__nav.map; S.follow = false; S.sim.setSpeed(0.1); m.setMaxZoom(24);
+        for name, H, D, AX in json.loads(os.environ['CAMS']):
+            page.evaluate("""([H, D, AX]) => { const S = window.__nav.S; const m = window.__nav.map; S.follow = false; S.sim.setSpeed(0.1); m.setMaxZoom(24);
               const R = 6371000; const L = S.nav.route.line.coords; const toM = (a, c) => Math.hypot((c[0] - a[0]) * 111320 * Math.cos((a[1] * Math.PI) / 180), (c[1] - a[1]) * 110540);
               let k = 0; let w = 0; while (k < L.length - 2 && w + toM(L[k], L[k + 1]) < S.nav.along) { w += toM(L[k], L[k + 1]); k++; }
               const u = Math.min(1, (S.nav.along - w) / (toM(L[k], L[k + 1]) || 1)); const f = { lng: L[k][0] + (L[k + 1][0] - L[k][0]) * u, lat: L[k][1] + (L[k + 1][1] - L[k][1]) * u };
               let q = k + 1; while (q < L.length - 1 && toM(L[k + 1], L[q]) < 12) q++;
               const b = Math.atan2((L[q][0] - f.lng) * Math.cos((f.lat * Math.PI) / 180), L[q][1] - f.lat); const K = Math.cos((f.lat * Math.PI) / 180);
               const at = (d) => new maplibregl.LngLat(f.lng + ((d * Math.sin(b)) / (R * K)) * 180 / Math.PI, f.lat + ((d * Math.cos(b)) / R) * 180 / Math.PI);
-              const dep = Math.atan2(H, D) - (12.5 * Math.PI) / 180;
+              const dep = (AX * Math.PI) / 180; const cc = S.city; cc.ribbonW = 1.9; cc.setRoute(S.nav.route.line.coords); cc.along = S.nav.along; const pv = document.getElementById('puck-svg'); if (pv) pv.style.transform = 'none';
               const c = m.calculateCameraOptionsFromTo(at(-D), H, at(-D + H / Math.tan(dep)), 0);
               m.jumpTo({ ...c, padding: { top: 0, bottom: 0, left: 0, right: 0 } });
               const p = m.project([f.lng, f.lat]); const e = document.getElementById('puck'); e.style.position = 'fixed'; e.style.left = p.x + 'px'; e.style.top = p.y + 'px'; e.style.transform = 'translate(-50%,-50%)';
               const hz = innerHeight / 2 - (innerHeight / 2 / Math.tan((m.getVerticalFieldOfView() * Math.PI) / 360)) * Math.tan(((90 - c.pitch) * Math.PI) / 180);
               document.documentElement.style.setProperty('--horizon', Math.max(0, hz) + 'px'); document.body.style.setProperty('--horizon', Math.max(0, hz) + 'px'); const hh = document.getElementById('haze'); if (hh) hh.style.display = 'none';
-              return [c.pitch, c.zoom]; }""", [H, D])
+              return [c.pitch, c.zoom]; }""", [H, D, AX])
             page.wait_for_timeout(int(os.environ.get('CAMWAIT', '14')) * 1000); page.evaluate("window.__nav.map.triggerRepaint()"); page.wait_for_timeout(2000)
             page.screenshot(path=f'{OUT}/{THEME}-cam-{name}.png'); print('KAMERA', name, flush=True)
         sys.exit(0) if False else None

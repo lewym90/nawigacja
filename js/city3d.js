@@ -465,7 +465,7 @@ export class City3D {
     const gl = this.gl; if (!gl || !this.rib) { this.pendingRoute = coords; return; }
     if (this.ribbon) { gl.deleteBuffer(this.ribbon.b); gl.deleteVertexArray(this.ribbon.v); this.ribbon = null; }
     if (!coords || coords.length < 2) return;
-    const K = 1 / Math.cos((coords[0][1] * Math.PI) / 180); const H = 4.2 * K;
+    const K = 1 / Math.cos((coords[0][1] * Math.PI) / 180); const H = (this.ribbonW || 4.2) * K;
     const { pts, along } = ribbonPath(coords.map(([x, y]) => [mercX(x), mercY(y)]), K); const org = pts[0];
     const out = new Float32Array(pts.length * 8);
     for (let i = 0; i < pts.length; i++) {
