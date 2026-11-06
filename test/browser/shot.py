@@ -61,11 +61,16 @@ with sync_playwright() as p:
           try { m.setVerticalFieldOfView(50); } catch {}
           if (m.getLayer('road-label') && new_) m.setLayoutProperty('road-label', 'visibility', 'none');
           m.getSource('sel').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: pts.slice(k) } });
-          m.setPaintProperty('sel-line', 'line-gradient', ['interpolate', ['linear'], ['line-progress'], 0, '#00D9FF', 1, '#00D9FF']);
-          m.setPaintProperty('sel-glow', 'line-gradient', ['interpolate', ['linear'], ['line-progress'], 0, '#00D9FF', 1, '#00D9FF']);
-          const h = innerHeight; m.jumpTo({ center: pts[k], bearing: brg, pitch: 73, zoom: 18.2, padding: { top: Math.round(h * 0.46), bottom: 40, left: 0, right: 0 } }); }""", [pts, k, brg, LOOK == 'new'])
+          for (const id of ['sel-line', 'sel-glow']) m.setPaintProperty(id, 'line-gradient', ['interpolate', ['linear'], ['line-progress'], 0, '#00D9FF', 1, '#00D9FF']);
+          const S = window.__nav.S; if (S.city && new_) { S.mode = 'nav'; S.cityCover = true; S.city.setRoute(pts); S.city.along = 0; window.__nav.roadLabels(); const K = 1 / Math.cos(pts[0][1] * Math.PI / 180); let L = 0; for (let i = 1; i <= k; i++) L += Math.hypot((pts[i][0] - pts[i - 1][0]) * 111320 * Math.cos(pts[0][1] * Math.PI / 180), (pts[i][1] - pts[i - 1][1]) * 110570); S.city.along = L; }
+          const h = innerHeight; if (new_) { const pad = { top: Math.round(h * 0.46), bottom: 40 }; const cy = pad.top + (h - pad.top - pad.bottom) / 2; const y = cy - (h / 2 / Math.tan(25 * Math.PI / 180)) * Math.tan((90 - 68) * Math.PI / 180); document.documentElement.style.setProperty('--horizon', y + 'px'); } m.jumpTo({ center: pts[k], bearing: brg, pitch: new_ ? 68 : 73, zoom: 18.2, padding: { top: Math.round(h * 0.46), bottom: 40, left: 0, right: 0 } }); }""", [pts, k, brg, LOOK == 'new'])
         page.wait_for_timeout(25000 if not os.environ.get('FAST') else 9000)
         page.evaluate("window.__nav.map.triggerRepaint()"); page.wait_for_timeout(2500)
         page.screenshot(path=f'{OUT}/{name}-{LOOK}-{THEME}.png'); print(name, 'ok', flush=True)
+        if os.environ.get('SEQ'):
+            for q in range(1, 7):
+                k2 = min(len(pts) - 2, k + q * int(os.environ['SEQ']))
+                page.evaluate("([p, b]) => { window.__nav.map.jumpTo({ center: p, bearing: b }); }", [pts[k2], math.degrees(math.atan2((pts[min(k2 + 6, len(pts) - 1)][0] - pts[k2][0]) * 0.626, pts[min(k2 + 6, len(pts) - 1)][1] - pts[k2][1]))])
+                page.wait_for_timeout(5000); page.screenshot(path=f'{OUT}/{name}-seq{q}.png')
         pickle.dump(cache, open(CACHE, 'wb'))
     print('błędy', errs[:3]); br.close()

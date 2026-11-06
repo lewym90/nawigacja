@@ -29,7 +29,7 @@ void main(){
   float ao=mix(0.62,1.0,smoothstep(0.0,5.0,v_pos.z));
   if(u_soft>0.5){ ao=mix(0.5,1.0,smoothstep(0.0,9.0,v_pos.z)); tex=mix(tex,vec3(dot(tex,vec3(.3,.55,.15))),0.22); }
   vec3 col=tex*(u_night>0.5?1.0:(u_soft>0.5?(0.7+0.38*d):(0.62+0.5*d)))*ao;
-  float fog=smoothstep(600.0,1700.0,distance(v_pos,u_eye));
+  float fog=smoothstep(800.0,2500.0,distance(v_pos,u_eye));
   o=vec4(mix(col,u_fog,fog*0.72),1.0);
 }`;
 const VS_ROOF = `#version 300 es
@@ -67,7 +67,7 @@ void main(){
   if(u_soft>0.5) tex=mix(tex,vec3(dot(tex,vec3(.3,.55,.15))),0.35)*0.92;
   vec3 col=tex*(0.62+0.55*d);
   if(u_night>0.5) col*=0.15;
-  float fog=smoothstep(600.0,1700.0,distance(v_pos,u_eye));
+  float fog=smoothstep(800.0,2500.0,distance(v_pos,u_eye));
   o=vec4(mix(col,u_fog,fog*0.72),1.0);
 }`;
 const VS_TREE = `#version 300 es
@@ -96,7 +96,7 @@ void main(){
   vec3 col=t.rgb*mix(vec3(.82,.88,.8),vec3(1.05,1.02,.92),v_tint);
   col*=mix(0.72,1.0,smoothstep(0.0,6.0,v_pos.z));
   if(u_night>0.5) col*=0.2;
-  float fog=smoothstep(600.0,1700.0,distance(v_pos,u_eye));
+  float fog=smoothstep(800.0,2500.0,distance(v_pos,u_eye));
   o=vec4(mix(col,u_fog,fog*0.72),1.0);
 }`;
 
@@ -162,15 +162,15 @@ void main(){
   float d=abs(v_s)*R;
   float aa=fwidth(d);
   float core=1.0-smoothstep(0.16,0.16+aa+0.1,d);
-  float body=1.0-smoothstep(1.32,1.32+aa+0.12,d);
-  float rim=smoothstep(1.02,1.2,d)*body;
+  float body=1.0-smoothstep(1.55,1.55+aa+0.12,d);
+  float rim=smoothstep(1.28,1.45,d)*body;
   float glow=exp(-d*d*0.42);
   float flow=pow(0.5+0.5*sin((v_l-u_t*16.0)*0.2),10.0);
   float ch=fract((v_l-u_t*4.0)/26.0); float w=abs(v_s)*R*0.5;
   float arrow=smoothstep(0.03,0.0,abs(ch-0.22-w*0.45)-0.022)*(1.0-smoothstep(0.42,0.5,w));
   vec3 cy=vec3(0.0,0.82,1.0); vec3 hi=vec3(0.86,0.99,1.0);
   vec3 c=mix(cy,hi,clamp(core+0.55*rim+0.6*flow*body+0.75*arrow*body,0.0,1.0));
-  float a=max(glow*(u_night>0.5?0.34:0.24), body*0.5);
+  float a=max(glow*(u_night>0.5?0.34:0.26), body*0.66);
   a=max(a,rim*0.92); a=max(a,core*0.96); a=max(a,flow*body*0.72); a=max(a,arrow*body*0.8);
   a*=smoothstep(-1.0,3.0,l);
   if(u_ghost>0.5) a*=0.34*(0.75+0.25*sin(v_l*0.8));
@@ -285,10 +285,8 @@ export class City3D {
       const v = gl.createVertexArray(); gl.bindVertexArray(v);
       const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, t, gl.STATIC_DRAW);
       const l = gl.getAttribLocation(this.tree, 'a_tree'); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 4, gl.FLOAT, false, 16, 0); gl.vertexAttribDivisor(l, 1);
-      const sv = gl.createVertexArray(); gl.bindVertexArray(sv); gl.bindBuffer(gl.ARRAY_BUFFER, b);
-      const l2 = gl.getAttribLocation(this.tshadow, 'a_tree'); gl.enableVertexAttribArray(l2); gl.vertexAttribPointer(l2, 4, gl.FLOAT, false, 16, 0); gl.vertexAttribDivisor(l2, 1);
       gl.bindVertexArray(null);
-      treeObj = { v, b, s: sv, n: t.byteLength / 16 };
+      treeObj = { v, b, n: t.byteLength / 16 };
     }
     const wbytes = buf && new Uint8Array(buf, 8, nw * 24); const rbytes = buf && new Uint8Array(buf, 8 + nw * 24, nr * 16);
     const prev = this.tiles.get(key) || {};

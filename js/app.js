@@ -848,7 +848,7 @@ function startNav({ sim = false } = {}) {
   setFov(NAV_FOV);
   drawLanes(S.nav);
   document.body.classList.add('driving');
-  S.mode = 'nav'; roadLabels(); cityRoute();
+  S.mode = 'nav'; roadLabels(); cityRoute(); drawRoutes(); // alternatywy znikają już przy starcie
   cam.s = null; cam.v = 0;
   cam.place({ center: start, bearing: S.heading, zoom: travel().zoom(0), pitch: camPitch() });
   map.easeTo({ center: start, zoom: travel().zoom(0), pitch: camPitch(), bearing: S.heading, duration: 900, padding: camPadding() });
@@ -876,11 +876,20 @@ function camLoop(now) {
   const pv = document.getElementById('puck-svg');
   if (pv) pv.style.transform = `rotate(${p.carOffset.toFixed(1)}deg)`;
   S.nav.cam = { c: [...p.center], hd: p.bearing, zoom: p.zoom };
+  fitSky();
   const x = (-p.bearing / 360) * ($('sky').clientHeight * SKY_RATIO); // panorama przesuwa się razem z kierunkiem jazdy
   if (skyX == null || Math.abs(x - skyX) > 0.3) { skyX = x; $('sky').style.backgroundPositionX = `${x.toFixed(1)}px`; }
 }
 requestAnimationFrame(camLoop);
 
+// Niebo i mgiełka muszą kończyć się dokładnie na horyzoncie mapy, także po zmianie pochylenia.
+function fitSky() {
+  if (!NEW) return;
+  const h = window.innerHeight; const pad = camPadding(); const cy = pad.top + (h - pad.top - pad.bottom) / 2;
+  const pitch = map.getPitch() * Math.PI / 180; const f = (h / 2) / Math.tan((NAV_FOV * Math.PI / 180) / 2);
+  const y = Math.max(40, cy - f * Math.tan(Math.PI / 2 - pitch));
+  document.documentElement.style.setProperty('--horizon', `${Math.round(y)}px`);
+}
 function camPitch() {
   if (!settings.tilt) return 0;
   if (NEW && travel().costing === 'auto') return 68; // trochę wyżej: widać zakręty ponad zabudową
@@ -1694,7 +1703,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 
 // Haki do testów i diagnostyki (nie zmieniają działania aplikacji).
 window.__city = () => map.getLayer('city3d');
-window.__nav = { S, CONFIG, map, voice, settings, onFix, chooseDest, startNav, endNav, parsePhoton, reports };
+window.__nav = { roadLabels, S, CONFIG, map, voice, settings, onFix, chooseDest, startNav, endNav, parsePhoton, reports };
 
 // Zapis aktualnego celu jako dom / praca / inne
 document.querySelectorAll('#save-row button').forEach((b) => (b.onclick = () => {
