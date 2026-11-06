@@ -79,7 +79,7 @@ export class ChaseCam {
     this.center[0] += (want[0] - this.center[0]) * k;
     this.center[1] += (want[1] - this.center[1]) * k;
     if (tb != null && (this.v > 0.8 || !T.onRoute)) {
-      const step = wrap(tb - this.bearing) * ease(dt, CAM.bearingTau);
+      const step = wrap(tb - this.bearing) * ease(dt, this.bearingTau || CAM.bearingTau);
       const lim = CAM.maxTurn * dt;
       this.bearing = (this.bearing + Math.max(-lim, Math.min(lim, step)) + 360) % 360;
     }

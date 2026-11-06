@@ -135,3 +135,10 @@ test('limity: podejrzane 90 w mieście znika, prawdziwe 90 zostaje, krótkie sko
   // niższy limit zostaje nawet na krótko
   assert.deepEqual(cleanLimits([seg(0, 500, 50), seg(500, 560, 30), seg(560, 900, 50)]).map((s) => s.kmh), [50, 30, 50]);
 });
+
+test('profile: nieznana wartość z ustawień wraca do domyślnej', async () => {
+  const { cameraProfile, qualityProfile, CAMERA_PROFILES, QUALITY_PROFILES } = await import('../js/profiles.js');
+  assert.equal(cameraProfile('x'), CAMERA_PROFILES.dynamic);
+  assert.equal(qualityProfile(undefined), QUALITY_PROFILES.high);
+  for (const q of Object.values(QUALITY_PROFILES)) assert.ok(q.drop > q.radius);
+});

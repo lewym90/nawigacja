@@ -194,8 +194,8 @@ const mercX = (lng) => (lng * W) / 360;
 const mercY = (lat) => (Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) * W) / (2 * Math.PI);
 
 export class City3D {
-  constructor(map, { base, night, onCover, soft = false }) {
-    this.soft = soft; this.map = map; this.base = base; this.night = night; this.onCover = onCover;
+  constructor(map, { base, night, onCover, soft = false, quality = null }) {
+    this.q = quality || { radius: 2000, drop: 3000, shadows: true }; this.soft = soft; this.map = map; this.base = base; this.night = night; this.onCover = onCover;
     this.id = 'city3d'; this.type = 'custom'; this.renderingMode = '3d';
     this.tiles = new Map(); this.loading = 0; this.ready = false; this.t = 0; this.cover = null;
   }
@@ -247,6 +247,13 @@ export class City3D {
     const r = await fetch(url);
     if (!r.ok) return null;
     return new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  }
+
+  /** Nowa jakość: kafle bez cieni trzeba wczytać jeszcze raz, resztę załatwia zwykła aktualizacja. */
+  setQuality(q) {
+    const reload = q.shadows && !this.q.shadows; this.q = q;
+    if (reload) for (const k of [...this.tiles.keys()]) this.drop(k);
+    this.update();
   }
 
   uploadExtra(key, r, sh) {
@@ -308,7 +315,7 @@ export class City3D {
     if (inside !== this.cover) { this.cover = inside; this.onCover?.(inside); }
     this.eye = [x, y];
     const ax = x + Math.sin(br) * 500; const ay = y + Math.cos(br) * 420;
-    const g = this.grid; const R = this.soft ? 2000 : 1300; const want = [];
+    const g = this.grid; const R = this.soft ? this.q.radius : 1300; const want = [];
     for (let i = Math.floor((ax - R) / g); i <= Math.floor((ax + R) / g); i++) {
       for (let j = Math.floor((ay - R) / g); j <= Math.floor((ay + R) / g); j++) {
         const k = `${i}_${j}`;
@@ -324,14 +331,14 @@ export class City3D {
       this.pending.add(k); this.loading++;
       Promise.all([this.bld.has(k) ? this.get(`${this.base}${k}.bin`).catch(() => null) : null, this.treeIndex.has(k) ? this.get(`${this.base}${k}.t.bin`).catch(() => null) : null]).then(async ([b, t]) => {
         const [rd, sh] = this.soft ? await Promise.all([this.roadIndex.has(k) ? this.get(`${this.base}${k}.r.bin`).catch(() => null) : null,
-          this.shIndex.has(k) ? fetch(`${this.base}${k}.s.webp`).then((x) => x.blob()).then((x) => createImageBitmap(x)).catch(() => null) : null]) : [null, null];
+          this.shIndex.has(k) && this.q.shadows ? fetch(`${this.base}${k}.s.webp`).then((x) => x.blob()).then((x) => createImageBitmap(x)).catch(() => null) : null]) : [null, null];
         if (this.removed) return;
         if (b || t) this.upload(k, b, t);
         if (rd || sh) this.uploadExtra(k, rd, sh);
         this.map.triggerRepaint();
       }).finally(() => { this.loading--; this.pending.delete(k); });
     }
-    for (const [k, t] of this.tiles) if (Math.hypot((t.k[0] + 0.5) * g - x, (t.k[1] + 0.5) * g - y) > (this.soft ? 3000 : 2500)) this.drop(k);
+    for (const [k, t] of this.tiles) if (Math.hypot((t.k[0] + 0.5) * g - x, (t.k[1] + 0.5) * g - y) > (this.soft ? this.q.drop : 2500)) this.drop(k);
   }
 
   render(gl, args) {
@@ -428,7 +435,7 @@ export class City3D {
     each(this.mark, (t) => { if (t.markv) { gl.bindVertexArray(t.markv.v); gl.drawArrays(gl.TRIANGLES, 0, t.markv.n); } });
     if (!this.night) {
       gl.useProgram(this.shq); gl.activeTexture(gl.TEXTURE0); gl.uniform1i(gl.getUniformLocation(this.shq, 'u_s'), 0); gl.bindVertexArray(this.dummy);
-      each(this.shq, (t) => { if (t.sh) { gl.bindTexture(gl.TEXTURE_2D, t.sh); gl.drawArrays(gl.TRIANGLES, 0, 6); } });
+      each(this.shq, (t) => { if (t.sh && this.q.shadows) { gl.bindTexture(gl.TEXTURE_2D, t.sh); gl.drawArrays(gl.TRIANGLES, 0, 6); } });
     }
     gl.bindVertexArray(null); gl.disable(gl.BLEND); gl.depthMask(true); gl.enable(gl.DEPTH_TEST);
     gl.activeTexture(gl.TEXTURE0);

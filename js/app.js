@@ -8,6 +8,7 @@ import { unpackFuel, candidatesAhead, fuelDetours, bestStation, fmtExtra } from 
 import { explainRoute } from './explain.js';
 import { TripRecorder, TRIP, speedStops, revealStops, replayFrames, drawPoster, fmtTripTime } from './trip.js';
 import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
+import { CAMERA_PROFILES, QUALITY_PROFILES, cameraProfile, qualityProfile } from './profiles.js';
 import { Compass } from './compass.js';
 import { buildRoadItems, unpackRoadPoints, RoadWatch, describe as describeRoad } from './roadwise.js';
 import {
@@ -108,7 +109,7 @@ const map = new maplibregl.Map({
   center: CONFIG.center,
   zoom: CONFIG.zoom,
   maxPitch: 85,
-  pixelRatio: Math.min(window.devicePixelRatio || 1, 2), // ostrość telefonu kosztuje płynność: 2× wystarcza w aucie
+  pixelRatio: Math.min(window.devicePixelRatio || 1, NEW ? qualityProfile(settings.quality).pixelRatio : 2), // ostrość telefonu kosztuje płynność: 2× wystarcza w aucie
   attributionControl: false,
   dragRotate: true,
   pitchWithRotate: false,
@@ -146,7 +147,7 @@ function installLayers() {
   const routeCase = '#74CFFF';
   const add = (def) => { if (!map.getLayer(def.id)) map.addLayer(def, before); };
   if (CONFIG.cityBase && !map.getLayer('city3d')) {
-    S.city = new City3D(map, { base: CONFIG.cityBase, night, soft: NEW, onCover: (on) => { S.cityCover = on; for (const id of ['building', 'building-3d', 'building-roof']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'none' : 'visible'); roadLabels(); } });
+    S.city = new City3D(map, { base: CONFIG.cityBase, night, soft: NEW, quality: NEW ? qualityProfile(settings.quality) : null, onCover: (on) => { S.cityCover = on; for (const id of ['building', 'building-3d', 'building-roof']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'none' : 'visible'); roadLabels(); } });
     map.addLayer(S.city, map.getLayer('boundary') ? 'boundary' : undefined);
     if (NEW) map.addLayer(new CityGround(S.city), before);
     if (S.nav) { S.city.drive = true; S.city.pendingRoute = smoothLine(S.nav.route.coords); }
@@ -892,7 +893,7 @@ function fitSky() {
 }
 function camPitch() {
   if (!settings.tilt) return 0;
-  if (NEW && travel().costing === 'auto') return 68; // trochę wyżej: widać zakręty ponad zabudową
+  if (NEW && travel().costing === 'auto') return cameraProfile(settings.cameraProfile).pitch;
   const t = travel();
   return t.camPitch && S.nav ? t.camPitch(S.nav.kmh || 0) : t.pitch;
 }
@@ -1038,7 +1039,7 @@ function navTick(fix) {
   N.kmh = kmh;
   const baseZoom = travel().zoom(kmh);
   if (!cam.center) { const mc = map.getCenter(); cam.place({ center: [mc.lng, mc.lat], bearing: map.getBearing(), zoom: map.getZoom(), pitch: map.getPitch() }); }
-  cam.fix({ along: g.along, line: N.route.line, onRoute, lng: fix.lng, lat: fix.lat, speed: speedMs, heading: fix.heading, zoom: settings.tilt ? baseZoom : baseZoom - 1, pitch: camPitch() });
+  cam.fix({ along: g.along, line: N.route.line, onRoute, lng: fix.lng, lat: fix.lat, speed: speedMs, heading: fix.heading, zoom: (settings.tilt ? baseZoom : baseZoom - 1) + (NEW && travel().costing === 'auto' ? cameraProfile(settings.cameraProfile).zoom : 0), pitch: camPitch() });
   if (!S.follow && navMarker) { navMarker.setLngLat(c); navMarker.setRotation(hd); }
 
   // Zjechanie z trasy
@@ -1630,11 +1631,29 @@ function syncMenu() {
     el.classList.toggle('on', on); el.setAttribute('aria-checked', String(on));
   });
   document.querySelectorAll('[data-seg=theme] button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.theme));
+  document.querySelectorAll('[data-seg=cameraProfile] button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.cameraProfile));
+  document.querySelectorAll('[data-seg=quality] button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.quality));
   document.querySelectorAll('[data-seg=engine] button').forEach((b) => b.classList.toggle('on', b.dataset.v === settings.ttsEngine));
 }
 document.querySelectorAll('[data-seg=engine]').forEach((el) => {
   el.innerHTML = VOICES.map((v) => `<button data-v="${v.id}"${v.enabled ? '' : ' disabled title="Niedostępna"'}>${v.label}</button>`).join('');
 });
+// Kamera i jakość mają sens tylko w nowym wyglądzie.
+function applyProfiles() {
+  cam.bearingTau = NEW ? cameraProfile(settings.cameraProfile).bearingTau : 0;
+  if (!NEW) return;
+  const q = qualityProfile(settings.quality);
+  map.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatio));
+  if (S.city) S.city.setQuality(q);
+}
+for (const [seg, list] of [['cameraProfile', CAMERA_PROFILES], ['quality', QUALITY_PROFILES]]) {
+  document.querySelectorAll(`[data-seg=${seg}]`).forEach((el) => {
+    el.closest('.m-row').hidden = !NEW;
+    el.innerHTML = Object.entries(list).map(([id, p]) => `<button data-v="${id}">${p.label}</button>`).join('');
+    el.querySelectorAll('button').forEach((b) => (b.onclick = () => { settings[seg] = b.dataset.v; saveSettings(settings); syncMenu(); applyProfiles(); }));
+  });
+}
+applyProfiles();
 $('btn-menu').onclick = () => { syncMenu(); show('menu', true); };
 $('btn-menu-x').onclick = () => show('menu', false);
 $('btn-quick').innerHTML = icon.tune(24);

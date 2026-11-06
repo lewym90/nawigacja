@@ -56,7 +56,7 @@ with sync_playwright() as p:
     page.route(re.compile(r'^https?://(?!127\.0\.0\.1|photon|mapy\.geoportal|overpass)'), forward)
     orto = []
     page.on('response', lambda r: orto.append(r.status) if 'ORTO' in r.url else None)
-    page.add_init_script("localStorage.setItem('nav.settings', JSON.stringify({theme: '%s'}))" % THEME)
+    page.add_init_script("localStorage.setItem('nav.settings', JSON.stringify({theme: '%s', ...%s}))" % (THEME, os.environ.get('SETTINGS', '{}')))
     page.goto(f'http://127.0.0.1:{PORT}/index.html' + ('?nowy=1' if os.environ.get('NOWY') else ''))
     page.wait_for_function("window.__nav && window.__nav.map && window.__nav.map.getLayer('sel-line')", timeout=30000)
     page.wait_for_timeout(1500)
@@ -118,6 +118,10 @@ with sync_playwright() as p:
     print('A', page.evaluate("(() => { const e = document.getElementById('m-lanes'); const S = window.__nav.S; return { widoczne: !e.hidden, n: e.querySelectorAll('.lane').length, on: e.querySelectorAll('.lane.on').length, along: Math.round(S.nav.along) }; })()"), flush=True)
     page.screenshot(path=f'{OUT}/{THEME}-a.png')
     print('A zrzut', flush=True)
+    if os.environ.get('QUICK'):
+        page.evaluate("document.getElementById('btn-quick').click()"); page.wait_for_timeout(1200); page.screenshot(path=f'{OUT}/{THEME}-quick.png')
+        print('JAKOŚĆ', page.evaluate("(() => { const b = document.querySelector('#quick [data-seg=quality] button[data-v=high]'); b.click(); return { on: b.classList.contains('on'), pr: window.__nav.map.getPixelRatio() }; })()"), flush=True)
+        page.evaluate("document.getElementById('btn-quick-x').click()")
     if os.environ.get('TOP'):
         page.evaluate("(() => { const S = window.__nav.S; S.follow = false; const m = window.__nav.map; m.jumpTo({ pitch: 45, zoom: 17.2, bearing: 20 }); })()"); page.wait_for_timeout(4000); page.screenshot(path=f'{OUT}/{THEME}-top.png'); br.close(); sys.exit(0)
     print('CEL', page.evaluate("(() => { const N = window.__nav.S.nav; return { skrz: (N.junctions||[]).slice(0,4).map(j => [Math.round(j.at), j.lanes.length, j.both, Math.round(j.back)]), teraz: N.targetJ ? Math.round(N.targetJ.at) : null, warstwa: !!window.__nav.map.getLayer('target-lane') }; })()"), flush=True)

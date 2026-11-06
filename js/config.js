@@ -41,11 +41,13 @@ export const CONFIG = {
   zoom: 12,
 };
 
-export const APP_VERSION = '0.19.0';
+export const APP_VERSION = '0.20.0';
 
 export const STORAGE = { settings: 'nav.settings', lastDest: 'nav.lastDest' };
 
 export const DEFAULT_SETTINGS = {
+  cameraProfile: 'dynamic',
+  quality: 'high',
   voice: true,
   theme: 'auto', // auto | day | night
   tilt: true,
