@@ -136,6 +136,24 @@ with sync_playwright() as p:
             page.wait_for_timeout(int(os.environ.get('CAMWAIT', '14')) * 1000); page.evaluate("window.__nav.map.triggerRepaint()"); page.wait_for_timeout(2000)
             page.screenshot(path=f'{OUT}/{THEME}-cam-{name}.png'); print('KAMERA', name, flush=True)
         sys.exit(0) if False else None
+    if os.environ.get('ARROWS'):
+        for o in json.loads(os.environ['ARROWS']):
+            r = page.evaluate("""(o) => { const N = window.__nav; const S = N.S; const m = N.map; const cam = N.cam;
+              const st = S.nav.route.steps.filter((x) => x.type === 'turn' && new RegExp(o.turn).test(x.modifier || '') && x.at > 120)[0]; const at = st.at;
+              S.sim.setSpeed(5); S.sim.along = at - o.car - 16; S.city.ribbonOff = true; document.querySelectorAll('.turn-chip,.cross-chip,#toast').forEach((e) => { e.style.display = 'none'; }); S.closeUntil = at + 200;
+              const P = (d) => cam.path(d).point; const shaft = []; for (let d = at - o.before; d <= at + o.after; d += 1.5) shaft.push(P(d));
+              const e = cam.path(at + o.after); const b = (e.bearing * Math.PI) / 180; const k = 1 / (111320 * Math.cos((e.point[1] * Math.PI) / 180)); const q = 1 / 110540;
+              const off = (f, r) => [e.point[0] + (Math.sin(b) * f + Math.cos(b) * r) * k, e.point[1] + (Math.cos(b) * f - Math.sin(b) * r) * q];
+              const head = [off(0, o.w * 1.25), off(o.w * 2.4, 0), off(0, -o.w * 1.25), off(0, o.w * 1.25)];
+              const W = (w) => ['interpolate', ['exponential', 2], ['zoom'], 16, w * 1.33, 22, w * 1.33 * 64];
+              for (const id of ['arrow-case', 'arrow-line', 'arrow-head-case', 'arrow-head']) { m.setLayoutProperty(id, 'visibility', 'visible'); m.moveLayer(id); }
+              m.setPaintProperty('arrow-case', 'line-color', o.edge); m.setPaintProperty('arrow-line', 'line-color', o.fill); m.setPaintProperty('arrow-head-case', 'line-color', o.edge); m.setPaintProperty('arrow-head', 'fill-color', o.fill);
+              m.setPaintProperty('arrow-line', 'line-width', W(o.w)); m.setPaintProperty('arrow-case', 'line-width', W(o.w + o.e)); m.setPaintProperty('arrow-head-case', 'line-width', W(o.e));
+              m.getSource('arrow').setData({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: shaft } }, { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [head] } }] });
+              return [at, st.modifier, st.name]; }""", o)
+            print('STRZAŁKA', o['name'], r, flush=True)
+            page.wait_for_timeout(int(os.environ.get('CAMWAIT', '14')) * 1000); page.evaluate("window.__nav.map.triggerRepaint()"); page.wait_for_timeout(1500)
+            page.screenshot(path=f"{OUT}/{THEME}-arr-{o['name']}.png")
     print('A zrzut', flush=True)
     if os.environ.get('QUICK'):
         page.evaluate("document.getElementById('btn-quick').click()"); page.wait_for_timeout(1200); page.screenshot(path=f'{OUT}/{THEME}-quick.png')

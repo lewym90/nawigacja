@@ -506,7 +506,7 @@ export class City3D {
   }
 
   drawRibbon(gl) {
-    if (!this.ribbon || !this.drive) return;
+    if (!this.ribbon || !this.drive || this.ribbonOff) return;
     const r = this.ribbon; gl.useProgram(this.rib);
     gl.uniformMatrix4fv(gl.getUniformLocation(this.rib, 'u_m'), false, this.tileM(r.org[0], r.org[1]));
     gl.uniform1f(gl.getUniformLocation(this.rib, 'u_t'), performance.now() / 1000);

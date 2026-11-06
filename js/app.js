@@ -1830,7 +1830,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 
 // Haki do testów i diagnostyki (nie zmieniają działania aplikacji).
 window.__city = () => map.getLayer('city3d');
-window.__nav = { roadLabels, S, CONFIG, map, voice, settings, onFix, chooseDest, startNav, endNav, parsePhoton, reports };
+window.__nav = { cam, roadLabels, S, CONFIG, map, voice, settings, onFix, chooseDest, startNav, endNav, parsePhoton, reports };
 
 // Zapis aktualnego celu jako dom / praca / inne
 document.querySelectorAll('#save-row button').forEach((b) => (b.onclick = () => {
