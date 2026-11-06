@@ -115,7 +115,8 @@ out vec4 o;
 void main(){
   int k=int(v_k+0.5); vec3 c;
   vec2 m=v_xy/1.6;
-  if(k==2){ float big=texture(u_asphalt,m/37.0).r; c=texture(u_asphalt,m/6.0).rgb*(0.82+0.42*big); c=mix(c,vec3(dot(c,vec3(.33))),0.6)*0.86; }
+  if(k==2||k==5||k==6){ float big=texture(u_asphalt,m/37.0).r; c=texture(u_asphalt,m/6.0).rgb*(0.82+0.42*big); c=mix(c,vec3(dot(c,vec3(.33))),0.6);
+    c=k==2?c*0.8:k==5?c*1.08+vec3(.035):mix(c*1.25,vec3(.42,.42,.41),.45); } // główne ciemne i wyraźne, małe uliczki jasne, żeby schodziły na drugi plan
   else if(k==0){ c=texture(u_pave,m/5.0).rgb*0.92; }
   else if(k==3){ c=texture(u_pave,m/3.0).rgb*vec3(.72,.7,.68); }
   else if(k==1){ c=vec3(.76,.76,.72); }
@@ -156,7 +157,7 @@ void main(){ v_s=a_s; v_l=a_l; gl_Position=u_m*vec4(a_p+a_n*a_s*u_wid,0.55,1.0);
 const FS_RIB = `#version 300 es
 precision highp float;
 in float v_s; in float v_l;
-uniform float u_t; uniform float u_from; uniform float u_ghost; uniform float u_night;
+uniform float u_t; uniform float u_from; uniform float u_ghost; uniform float u_night; uniform vec3 u_jam[6];
 out vec4 o;
 const float R=4.2;
 void main(){
@@ -171,6 +172,7 @@ void main(){
   float ch=fract((v_l-u_t*4.0)/26.0); float w=abs(v_s)*R*0.5;
   float arrow=smoothstep(0.03,0.0,abs(ch-0.22+w*0.45)-0.03)*(1.0-smoothstep(0.52,0.6,w));
   vec3 cy=vec3(0.0,0.82,1.0); vec3 hi=vec3(0.86,0.99,1.0);
+  for(int i=0;i<6;i++){ vec3 j=u_jam[i]; if(j.z>0.0 && v_l>j.x && v_l<j.y){ cy=j.z>2.5?vec3(.72,.06,.14):j.z>1.5?vec3(1.,.2,.27):vec3(1.,.62,.13); hi=vec3(1.,.93,.86); } }
   vec3 c=mix(cy,hi,clamp(core+0.55*rim+0.6*flow*body+0.75*arrow*body,0.0,1.0));
   float a=max(glow*(u_night>0.5?0.34:0.26), body*0.66);
   a=max(a,rim*0.92); a=max(a,core*0.96); a=max(a,flow*body*0.72); a=max(a,arrow*body*0.8);
@@ -186,22 +188,6 @@ export class CityGround {
 
 const W = 40075016.68;
 
-/** Oś wstęgi: równe odcinki i uśrednione narożniki, bo ostry zakręt składał pas na pół. Długość zostaje z trasy, więc zjadanie wstęgi trzyma się auta. */
-export function ribbonPath(raw, K = 1, step = 2.5, reach = 5) {
-  const p = []; const along = []; let s = 0; let next = 0;
-  for (let i = 1; i < raw.length; i++) {
-    const [ax, ay] = raw[i - 1]; const [bx, by] = raw[i]; const d = Math.hypot(bx - ax, by - ay) / K;
-    while (d > 0 && next <= s + d) { const u = (next - s) / d; p.push([ax + (bx - ax) * u, ay + (by - ay) * u]); along.push(next); next += step; }
-    s += d;
-  }
-  const last = raw[raw.length - 1]; p.push([...last]); along.push(s);
-  const pts = p.map((q, i) => {
-    const r = Math.min(reach, i, p.length - 1 - i); let x = 0; let y = 0; // przy końcach okno się zwęża: początek i cel zostają na miejscu
-    for (let j = i - r; j <= i + r; j++) { x += p[j][0]; y += p[j][1]; }
-    return [x / (2 * r + 1), y / (2 * r + 1)];
-  });
-  return { pts, along };
-}
 function prog(gl, vs, fs) {
   const mk = (t, src) => { const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
   const p = gl.createProgram(); gl.attachShader(p, mk(gl.VERTEX_SHADER, vs)); gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fs)); gl.bindAttribLocation(p, 0, 'a_pos'); gl.linkProgram(p);
@@ -211,6 +197,8 @@ function prog(gl, vs, fs) {
 const mul = (a, b) => { const o = new Float64Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let v = 0; for (let k = 0; k < 4; k++) v += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = v; } return o; };
 const mercX = (lng) => (lng * W) / 360;
 const mercY = (lat) => (Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) * W) / (2 * Math.PI);
+export const toMerc = (lng, lat) => [mercX(lng), mercY(lat)];
+export const fromMerc = (x, y) => [(x * 360) / W, (Math.atan(Math.exp((y * 2 * Math.PI) / W)) * 360) / Math.PI - 90];
 
 export class City3D {
   constructor(map, { base, night, onCover, soft = false, quality = null }) {
@@ -496,12 +484,12 @@ export class City3D {
   }
 
   /** Trasa jako własna siatka: stała szerokość w metrach, gładkie łuki, widoczna też za budynkami. */
-  setRoute(coords) {
-    const gl = this.gl; if (!gl || !this.rib) { this.pendingRoute = coords; return; }
+  /** Tor z snap.js: { pts w metrach Merkatora, along, K }. */
+  setRoute(path) {
+    const gl = this.gl; if (!gl || !this.rib) { this.pendingRoute = path; return; }
     if (this.ribbon) { gl.deleteBuffer(this.ribbon.b); gl.deleteVertexArray(this.ribbon.v); this.ribbon = null; }
-    if (!coords || coords.length < 2) return;
-    const K = 1 / Math.cos((coords[0][1] * Math.PI) / 180);
-    const { pts, along } = ribbonPath(coords.map(([x, y]) => [mercX(x), mercY(y)]), K); const org = pts[0];
+    if (!path) return;
+    const { pts, along, K } = path; const org = pts[0];
     const out = new Float32Array(pts.length * 12);
     for (let i = 0; i < pts.length; i++) {
       const a = pts[Math.max(0, i - 1)]; const b = pts[Math.min(pts.length - 1, i + 1)];
@@ -524,6 +512,8 @@ export class City3D {
     gl.uniform1f(gl.getUniformLocation(this.rib, 'u_t'), performance.now() / 1000);
     gl.uniform1f(gl.getUniformLocation(this.rib, 'u_from'), this.along || 0);
     gl.uniform1f(gl.getUniformLocation(this.rib, 'u_wid'), (this.ribbonW || 4.2) * r.K);
+    const jam = new Float32Array(18); (this.jams || []).filter((j) => j.to > (this.along || 0)).slice(0, 6).forEach((j, i) => jam.set([j.from, j.to, j.sev], i * 3));
+    gl.uniform3fv(gl.getUniformLocation(this.rib, 'u_jam'), jam);
     gl.uniform1f(gl.getUniformLocation(this.rib, 'u_night'), this.night ? 1 : 0);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
     gl.bindVertexArray(r.v);

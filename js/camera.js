@@ -21,10 +21,10 @@ export const CAM = {
 };
 
 /** Kierunek kadru: odcinek trasy przed autem. Im szybciej, tym dalej patrzy, więc krótkie załamania trasy nie ruszają kamerą. */
-export function pathBearing(line, along, kmh) {
+export function pathBearing(line, along, kmh, at = null) {
   const ahead = Math.max(30, Math.min(110, (kmh / 3.6) * 3.2));
-  const a = pointAt(line, Math.max(0, along - 6)).point;
-  const b = pointAt(line, Math.min(line.total, along + ahead)).point;
+  const a = (at ? at(along - 6) : pointAt(line, Math.max(0, along - 6))).point;
+  const b = (at ? at(along + ahead) : pointAt(line, Math.min(line.total, along + ahead))).point;
   if (a[0] === b[0] && a[1] === b[1]) return null;
   return bearing(a, b);
 }
@@ -63,10 +63,10 @@ export class ChaseCam {
       const target = T.along + T.speed * T.age;
       this.s += (target - this.s) * ease(dt, CAM.alongTau);
       this.s = Math.max(0, Math.min(T.line.total, this.s));
-      const p = pointAt(T.line, this.s);
+      const p = this.path ? this.path(this.s) : pointAt(T.line, this.s);
       want = p.point;
       carHd = p.bearing;
-      tb = pathBearing(T.line, this.s, kmh);
+      tb = pathBearing(T.line, this.s, kmh, this.path);
     } else {
       const hd = (T.heading != null && T.speed > 1.5) ? T.heading : this.bearing;
       const r = T.speed * T.age;

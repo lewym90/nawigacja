@@ -144,9 +144,8 @@ test('profile: nieznana wartość z ustawień wraca do domyślnej', async () => 
 });
 
 test('wstęga: ostry narożnik jest zaokrąglony, a końce i długość zostają', async () => {
-  globalThis.WebGL2RenderingContext ??= class {};
-  const { ribbonPath } = await import('../js/city3d.js');
-  const { pts, along } = ribbonPath([[0, 0], [100, 0], [100, 100]]);
+  const { drivePath } = await import('../js/snap.js');
+  const { pts, along } = drivePath([[0, 0], [100, 0], [100, 100]]);
   assert.deepEqual(pts[0], [0, 0]); assert.deepEqual(pts.at(-1), [100, 100]);
   assert.equal(along.at(-1), 200);
   const corner = Math.min(...pts.map(([x, y]) => Math.hypot(x - 100, y)));
@@ -162,4 +161,17 @@ test('niska kamera: włącza się 100 m przed skrzyżowaniem i schodzi 100 m za 
   assert.equal(closeUntil({ along: 10, kmh: 50, nextAt: null, blocked: false, until: 2000 }), -1); // stary znacznik po nowej trasie
   const z = zoomForDistance(26, 51.25, 844, 50);
   assert.ok(z > 20 && z < 21.5, String(z));
+});
+
+test('tor: trasa kładzie się na prawym pasie jezdni i nie skacze do sąsiedniej', async () => {
+  const { drivePath, AxisIndex, pathAt } = await import('../js/snap.js');
+  const axes = new AxisIndex([{ pts: [[0, 8], [400, 8]], w: 8, two: true }, { pts: [[0, 30], [400, 30]], w: 8, two: true }]);
+  const { pts, along } = drivePath([[0, 0], [400, 0]], 1, axes); // trasa 8 m obok osi, jedzie na wschód
+  const mid = pts[Math.floor(pts.length / 2)];
+  assert.ok(Math.abs(mid[1] - 6) < 0.5, String(mid[1])); // oś minus ćwierć szerokości, czyli w prawo
+  assert.equal(Math.round(along.at(-1)), 400);
+  const p = pathAt({ pts, along }, 200, (x, y) => [x, y]);
+  assert.ok(Math.abs(p.bearing - 90) < 3, String(p.bearing));
+  const free = drivePath([[0, 500], [400, 500]], 1, axes);
+  assert.equal(free.pts[80][1], 500); // poza jezdniami tor zostaje na trasie
 });

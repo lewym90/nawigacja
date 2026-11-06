@@ -1,6 +1,6 @@
 import { Places } from './places.js';
 import { CONFIG, APP_VERSION, VOICES, loadSettings, saveSettings, STORAGE } from './config.js';
-import { buildStyle, isNight } from './mapstyle.js';
+import { buildStyle, isNight, NAME, STREET_ROADS } from './mapstyle.js';
 import { ROUTE_PREFS, DEFAULT_PREF } from './valhalla.js';
 import { getRoutes } from './provider.js';
 import { FixStore, FIX_LABEL } from './fixes.js';
@@ -8,6 +8,7 @@ import { unpackFuel, candidatesAhead, fuelDetours, bestStation, fmtExtra } from 
 import { explainRoute } from './explain.js';
 import { TripRecorder, TRIP, speedStops, revealStops, replayFrames, drawPoster, fmtTripTime } from './trip.js';
 import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
+import { drivePath, parseAxes, pathAt } from './snap.js';
 import { CAMERA_PROFILES, QUALITY_PROFILES, CLOSE_CAM, RIBBON_WIDE, cameraProfile, qualityProfile, lerp, zoomForDistance, closeUntil } from './profiles.js';
 import { Compass } from './compass.js';
 import { buildRoadItems, unpackRoadPoints, RoadWatch, describe as describeRoad } from './roadwise.js';
@@ -25,7 +26,7 @@ import { ChaseCam } from './camera.js';
 import { lanesHtml, laneAdvice, junctionAhead } from './lanes.js';
 import { routeLanes } from './valhalla.js';
 import { routePoints, fetchTraffic, jamsOnLine, jamFeatures, worthSwitch, nextJam, departAt } from './traffic.js';
-import { City3D, CityGround } from './city3d.js';
+import { City3D, CityGround, toMerc, fromMerc } from './city3d.js';
 import { addFacades, loadFacades } from './facades.js';
 import { prefetchOrto } from './orto.js';
 import { corridorBoxesRange, haversine, bearing, sliceLine, project, pointAt } from './geo.js';
@@ -151,7 +152,7 @@ function installLayers() {
     S.city = new City3D(map, { base: CONFIG.cityBase, night, soft: NEW, quality: NEW ? qualityProfile(settings.quality) : null, onCover: (on) => { S.cityCover = on; for (const id of ['building', 'building-3d', 'building-roof']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'none' : 'visible'); roadLabels(); } });
     map.addLayer(S.city, map.getLayer('boundary') ? 'boundary' : undefined);
     if (NEW) map.addLayer(new CityGround(S.city), before);
-    if (S.nav) { S.city.drive = true; S.city.pendingRoute = smoothLine(S.nav.route.coords); }
+    if (S.nav) { S.city.drive = true; cityRoute(); }
   }
   if (!map.getSource('lanes')) map.addSource('lanes', { type: 'geojson', data: emptyFC() });
   add({ id: 'alt-line', type: 'line', source: 'alt', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': night ? '#8FA8C4' : '#5F7690', 'line-width': 7, 'line-opacity': 0.95 } });
@@ -603,7 +604,9 @@ async function drawLanes(N) {
 function drawJams(route, jams = null) {
   const src = map.getSource('jam'); if (!src) return;
   const list = jams || (route && route.traffic ? jamsOnLine(route.traffic, route.line) : []);
-  src.setData({ type: 'FeatureCollection', features: route ? jamFeatures(list, route.line) : [] });
+  const feats = route ? jamFeatures(list, route.line) : [];
+  src.setData({ type: 'FeatureCollection', features: feats });
+  if (S.city) S.city.jams = route ? list.map((j, i) => ({ from: j.from, to: j.to, sev: feats[i].properties.sev })) : [];
 }
 
 function fitRoutes() {
@@ -771,9 +774,28 @@ function roadLabels() {
   const vis = (ids, on) => { for (const id of ids) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none'); };
   vis(['road-label'], !drive);
   vis(OMT_ROADS, !own);
-  vis(['sel-glow', 'sel-case', 'sel-line', 'sel-core', 'sel-chevron'], !own);
+  vis(['sel-glow', 'sel-case', 'sel-line', 'sel-core', 'sel-chevron', 'jam-line'], !own); // korek pokazuje się na samej wstędze
+  vis(['street-name'], drive);
 }
-function cityRoute() { if (NEW && S.city) S.city.setRoute(S.nav ? smoothLine(S.nav.route.coords) : null); }
+// Auto, kamera i wstęga jadą po tym samym torze, dopasowanym do jezdni własnej mapy.
+function cityRoute() {
+  if (!NEW || !S.city) return;
+  const c = S.nav && S.nav.route.coords;
+  if (!c) { cam.path = null; S.city.setRoute(null); return; }
+  const K = 1 / Math.cos((c[0][1] * Math.PI) / 180);
+  const path = { ...drivePath(c.map(([x, y]) => toMerc(x, y)), K, S.axes), K };
+  cam.path = (s) => pathAt(path, s, fromMerc);
+  S.city.setRoute(path);
+}
+if (NEW) loadAxes();
+async function loadAxes() {
+  try {
+    const idx = await (await fetch(`${CONFIG.cityBase}index.json`)).json();
+    const r = await fetch(`${CONFIG.cityBase}axes.bin`); if (!r.ok || !idx.axesOrg) return;
+    S.axes = parseAxes(await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer(), idx.axesOrg);
+    if (S.nav) cityRoute();
+  } catch { /* bez osi tor biegnie po trasie */ }
+}
 function setMode(m) {
   S.mode = m;
   show('search', m !== 'nav');
@@ -1107,10 +1129,33 @@ function drawAhead(N, along) {
   src.setData(coords && coords.length > 1 ? { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } } : emptyFC());
 }
 
+// Nazwa ulicy stoi nad miejscem skrętu, żeby od razu było wiadomo, w którą przecznicę wjechać.
+let chipMarker = null; let chipKey = null; let ownStreet = null;
+// Ulicy, którą jedziemy, nie ma co podpisywać w kółko: jej nazwa zasłaniałaby drogę.
+function hideOwnStreet(N, g) {
+  const st = (N.route.steps || [])[Math.max(0, (g.nextIdx || 0) - 1)]; const cur = (st && st.name) || null;
+  if (cur === ownStreet || !map.getLayer('street-name')) return;
+  ownStreet = cur;
+  map.setFilter('street-name', cur ? ['all', STREET_ROADS, ['!=', NAME, cur]] : STREET_ROADS);
+}
+const shortStreet = (n) => { const w = n.split(' '); return w.length > 2 && !/\d$/.test(n) ? w[w.length - 1] : n; };
+function turnChip(N, nx, g) {
+  const name = nx && wantsArrow(nx) && g.distToNext < 500 && g.distToNext > 8 ? nx.name || nx.ref : null;
+  const key = name ? `${g.nextIdx}:${name}` : null;
+  if (key === chipKey) return;
+  chipKey = key;
+  if (chipMarker) { chipMarker.remove(); chipMarker = null; }
+  if (!name) return;
+  const el = document.createElement('div'); el.className = 'turn-chip'; el.textContent = shortStreet(name);
+  const at = cam.path ? cam.path(nx.at).point : pointAt(N.route.line, nx.at).point;
+  chipMarker = new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat(at).addTo(map);
+}
+
 function updateRoadArrow(N, g) {
   const src = map.getSource('arrow');
   if (!src) return;
   const nx = g.next;
+  if (NEW) { turnChip(N, nx, g); hideOwnStreet(N, g); }
   const want = !NEW && wantsArrow(nx) && g.distToNext < 220 && g.distToNext > 6; // w nowym wyglądzie zakręt pokazuje sama wstęga
   const key = want ? g.nextIdx : null;
   if (key === N.arrowIdx) return;

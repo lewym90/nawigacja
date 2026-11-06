@@ -54,7 +54,8 @@ const VAR = ['%', ['coalesce', ['id'], 7], 3];
 // rodzaj elewacji wg wysokości, wariant wg numeru budynku
 const pick = (kind) => ['concat', `fa-${kind}-`, ['to-string', ['%', ['coalesce', ['id'], 7], FACADE_KINDS[kind] || 1]]];
 const facadeExpr = () => ['case', ['<', H, 9], pick('house'), ['<', H, 16], pick('tenement'), ['<', H, 32], pick('block'), pick('office')];
-const NAME = ['coalesce', ['get', 'name:pl'], ['get', 'name']];
+export const NAME = ['coalesce', ['get', 'name:pl'], ['get', 'name']];
+export const STREET_ROADS = ['in', ['get', 'class'], ['literal', ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor']]];
 
 // Nowy wygląd: prawdziwe użytkowanie terenu z BDOT10k. Miasto jest miastem, a trawa tylko tam, gdzie naprawdę rośnie.
 function groundNew(mode) {
@@ -158,6 +159,16 @@ export function buildStyle(mode, cfg, travel = 'auto') {
           'text-letter-spacing': 0.04, 'text-max-angle': 30,
         },
         paint: { 'text-color': c.label, 'text-halo-color': c.halo, 'text-halo-width': 1.6 },
+      },
+      {
+        // podczas jazdy: nazwy stoją do oka kierowcy, główne ulice większe od małych
+        id: 'street-name', type: 'symbol', source: 'omt', 'source-layer': 'transportation_name', minzoom: 15,
+        filter: STREET_ROADS,
+        layout: {
+          visibility: 'none', 'symbol-placement': 'line', 'symbol-spacing': 900, 'text-field': NAME, 'text-font': [cfg.fontBold], 'text-pitch-alignment': 'viewport', 'text-rotation-alignment': 'viewport', 'text-keep-upright': true,
+          'text-size': ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary'], 15, 'tertiary', 14, 12], 'text-max-angle': 70, 'text-padding': 18, 'text-letter-spacing': 0.02,
+        },
+        paint: { 'text-color': mode === 'night' ? '#F2F7FF' : '#0E1A2B', 'text-halo-color': mode === 'night' ? '#0B1524' : '#FFFFFF', 'text-halo-width': 2 },
       },
       {
         id: 'place-small', type: 'symbol', source: 'omt', 'source-layer': 'place', minzoom: 11,
