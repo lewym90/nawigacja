@@ -12,9 +12,11 @@ in vec2 v_uv; in vec3 v_pos; flat in float v_cell;
 uniform vec2 u_camp; uniform vec2 u_car; uniform float u_camz;
 void cut(vec3 p){
   vec2 ab=u_car-u_camp; float l=dot(ab,ab); if(l<1.0) return;
-  float t=clamp(dot(p.xy-u_camp,ab)/l,0.0,1.0); float d=length(p.xy-(u_camp+ab*t));
-  if(p.z<mix(u_camz,2.0,t)-4.0) return;
-  if(d<21.0) discard;
+  float t=dot(p.xy-u_camp,ab)/l; if(t<0.0||t>1.0) return; // tylko to, co stoi między kamerą a autem: nic przed autem ani obok drogi
+  float d=length(p.xy-(u_camp+ab*t)); float r=mix(14.0,5.0,t);
+  if(p.z<mix(u_camz,1.5,t)-1.0) return;
+  float f=smoothstep(r,r+3.0,d);
+  if(f<1.0 && f<fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(0.06711056,0.00583715))))) discard;
 }
 uniform sampler2D u_atlas; uniform vec3 u_sun; uniform vec3 u_fog; uniform vec3 u_eye; uniform float u_night; uniform float u_soft;
 out vec4 o;
@@ -42,9 +44,11 @@ in vec3 v_pos; flat in float v_kind;
 uniform vec2 u_camp; uniform vec2 u_car; uniform float u_camz;
 void cut(vec3 p){
   vec2 ab=u_car-u_camp; float l=dot(ab,ab); if(l<1.0) return;
-  float t=clamp(dot(p.xy-u_camp,ab)/l,0.0,1.0); float d=length(p.xy-(u_camp+ab*t));
-  if(p.z<mix(u_camz,2.0,t)-4.0) return;
-  if(d<21.0) discard;
+  float t=dot(p.xy-u_camp,ab)/l; if(t<0.0||t>1.0) return; // tylko to, co stoi między kamerą a autem: nic przed autem ani obok drogi
+  float d=length(p.xy-(u_camp+ab*t)); float r=mix(14.0,5.0,t);
+  if(p.z<mix(u_camz,1.5,t)-1.0) return;
+  float f=smoothstep(r,r+3.0,d);
+  if(f<1.0 && f<fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(0.06711056,0.00583715))))) discard;
 }
 uniform sampler2D u_roofs; uniform vec3 u_sun; uniform vec3 u_fog; uniform vec3 u_eye; uniform float u_night; uniform float u_soft;
 out vec4 o;
