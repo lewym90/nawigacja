@@ -1426,7 +1426,7 @@ function startReplay(onFrame, onDone) {
   replay = { raf: 0, done: onDone };
   const tick = (now) => {
     if (!replay) return;
-    const k = Math.min(1, (now - t0) / dur);
+    const k = Math.max(0, Math.min(1, (now - t0) / dur)); // znacznik klatki bywa wcześniejszy niż t0
     const f = k * (frames.length - 1); const i = Math.min(frames.length - 2, Math.floor(f)); const u = f - i;
     const a = frames[i]; const b = frames[i + 1];
     const zoomWave = 15.6 + Math.sin(k * Math.PI) * -0.5; // lekkie oddalenie w środku
