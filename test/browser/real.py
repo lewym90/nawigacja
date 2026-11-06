@@ -137,8 +137,12 @@ with sync_playwright() as p:
             page.screenshot(path=f'{OUT}/{THEME}-cam-{name}.png'); print('KAMERA', name, flush=True)
         sys.exit(0) if False else None
     if os.environ.get('DUMP'):
-        d = page.evaluate("(() => { const N = window.__nav; const st = N.S.nav.route.steps.filter((x) => x.type === 'turn' && x.at > 120)[0]; const out = []; for (let s = 0; s < N.S.nav.route.line.total; s += 5) out.push(N.cam.path(s).point); return { at: st.at, m: st.modifier, p: N.cam.path(st.at).point, raw: N.S.nav.route.coords, out }; })()")
+        d = page.evaluate("(() => { const N = window.__nav; const st = N.S.nav.route.steps.filter((x) => x.type === 'turn' && x.at > 120)[0]; const out = []; for (let s = 0; s < N.S.nav.route.line.total; s += 1) out.push(N.cam.path(s).point); return { at: st.at, m: st.modifier, p: N.cam.path(st.at).point, raw: N.S.nav.route.coords, out, path: { pts: N.S.city.path.pts, along: N.S.city.path.along, K: N.S.city.path.K }, turns: N.S.city.turns }; })()")
         json.dump(d, open(os.environ['DUMP'], 'w'))
+    if os.environ.get('ROT'):
+        page.evaluate("window.__rot = setInterval(() => { const N = window.__nav; N.S.city.carHd = N.map.getBearing() + 60; }, 1)")
+        page.evaluate("(() => { const N = window.__nav; const f = N.S.city.drawPuck.bind(N.S.city); N.S.city.drawPuck = (gl) => { N.S.city.carHd = N.map.getBearing() + 60; f(gl); }; })()")
+        page.wait_for_timeout(2500); page.screenshot(path=f'{OUT}/{THEME}-rot.png')
     if os.environ.get('HEADS'):
         for o in json.loads(os.environ['HEADS']):
             r = page.evaluate("""(o) => { const S = window.__nav.S; const st = S.nav.route.steps.filter((x) => x.type === 'turn' && new RegExp(o.turn).test(x.modifier || '') && x.at > 120)[0];
@@ -146,6 +150,7 @@ with sync_playwright() as p:
             print('GROT', o['name'], r, flush=True)
             page.wait_for_timeout(int(os.environ.get('CAMWAIT', '10')) * 1000)
             page.screenshot(path=f"{OUT}/{THEME}-head-{o['name']}.png")
+            print('KIER', page.evaluate("(() => { const N = window.__nav; return [N.S.city.carHd, N.map.getBearing(), N.cam.path(N.cam.s).bearing, N.cam.s, N.S.nav.along]; })()"), flush=True)
     if os.environ.get('ARROWS'):
         for o in json.loads(os.environ['ARROWS']):
             r = page.evaluate("""(o) => { const N = window.__nav; const S = N.S; const m = N.map; const cam = N.cam;

@@ -45,12 +45,12 @@ export class AxisIndex {
   /** Najkrótsza droga po osiach z okolic punktu a do okolic b. Prosty Dijkstra: pytamy o kilkaset węzłów na skrzyżowanie. */
   route(a, b, r, limit) {
     const dist = new Map(); const from = new Map(); const open = new Set(); const goal = new Set(this.nodesNear(b[0], b[1], r));
-    for (const n of this.nodesNear(a[0], a[1], r)) { dist.set(n, Math.hypot(n.x - a[0], n.y - a[1])); open.add(n); }
+    for (const n of this.nodesNear(a[0], a[1], r)) { dist.set(n, 3 * Math.hypot(n.x - a[0], n.y - a[1])); open.add(n); } // dojście z boku słono kosztuje: zaczynamy na tej osi, po której jedziemy
     let best = null; let bestCost = Infinity;
     while (open.size) {
       let n = null; let d = Infinity; for (const q of open) if (dist.get(q) < d) { d = dist.get(q); n = q; }
       open.delete(n); if (d > limit || d >= bestCost) break;
-      if (goal.has(n)) { const c = d + Math.hypot(n.x - b[0], n.y - b[1]); if (c < bestCost) { bestCost = c; best = n; } }
+      if (goal.has(n)) { const c = d + 3 * Math.hypot(n.x - b[0], n.y - b[1]); if (c < bestCost) { bestCost = c; best = n; } }
       for (const e of n.out) { const v = d + e.d; if (v < (dist.get(e.to) ?? Infinity)) { dist.set(e.to, v); from.set(e.to, { n, e }); open.add(e.to); } }
     }
     if (!best) return null;
@@ -215,7 +215,7 @@ export function drivePath(raw, K = 1, axes = null, { lefts = [], turns = [] } = 
     }
     pts = T;
   }
-  return { pts: smooth(pts, axes ? 2 : 5), along };
+  return { pts: smooth(smooth(pts, axes ? 2 : 5), 2), along };
 }
 
 /** Przecznice na torze: po jednej na ulicę, z nazwą z BDOT. */

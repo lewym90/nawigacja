@@ -201,3 +201,14 @@ test('przecznice: po jednej tabliczce na ulicę, bez bieżącej', async () => {
   assert.deepEqual(c.map((x) => x.name), ['Boczna']);
   assert.ok(Math.abs(c[0].at - 100) < 15, String(c[0].at));
 });
+
+test('wstęga 3D: grot na każdym skręcie, kolejny odcinek za skrzyżowaniem, grot stoi', async () => {
+  const { ribbonMesh, segments, RIB } = await import('../js/solid.js');
+  const pts = []; const along = []; for (let i = 0; i <= 200; i++) { pts.push([i * 2.5, 0]); along.push(i * 2.5); }
+  assert.deepEqual(segments(500, [200, 300]).map((s) => [s.a, s.b, s.head]), [[0, 216, true], [223, 316, true], [323, 500, false]]);
+  const m = ribbonMesh({ pts, along, K: 1 }, [200], { style: 'up' });
+  let top = 0; for (let i = 0; i < m.data.length; i += 17) top = Math.max(top, m.data[i + 5]);
+  assert.ok(top > 4 && top < 7, String(top)); // grot stoi, ok. 5 m nad drogą
+  assert.ok(m.index.every((i) => i < m.data.length / 17));
+  assert.deepEqual(m.heads, [216 - RIB.head - RIB.twist]);
+});
