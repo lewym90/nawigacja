@@ -1,3 +1,4 @@
+import { ribbonMesh, puckMesh } from './solid.js';
 // Własny silnik miasta 3D: rysuje prawdziwe bryły budynków (GUGiK LoD2, tools/build-city.py) wewnątrz mapy.
 // Ściany dostają elewacje z atlasu, dachy kolor wg kształtu. Kafle dociągane wokół punktu przed autem.
 
@@ -181,6 +182,75 @@ void main(){
   o=vec4(c,a);
 }`;
 
+// Wstęga i znacznik jako bryły: światło słońca, odblask, świecące krawędzie.
+const VS_SOL = `#version 300 es
+in vec2 a_c; in vec2 a_n; in vec2 a_off; in vec3 a_nrm; in float a_l; in float a_u; in float a_top;
+uniform mat4 u_m; uniform float u_from;
+out vec3 v_nrm; out vec3 v_pos; out float v_l; out float v_u; out float v_top;
+void main(){
+  v_top=a_top;
+  float sc=smoothstep(u_from-0.5,u_from+4.0,a_l); // spod auta wstęga wyrasta, zamiast zaczynać się ściętym końcem
+  vec3 p=vec3(a_c+a_n*a_off.x*sc,a_off.y*sc);
+  v_nrm=a_nrm; v_pos=p; v_l=a_l; v_u=a_u; gl_Position=u_m*vec4(p,1.0);
+}`;
+const LIGHT = `
+vec3 shade(vec3 N, vec3 V, vec3 top, vec3 side, float night, float up){
+  vec3 L=normalize(vec3(-0.35,-0.45,0.82));
+  vec3 c=mix(side,top,up)*(0.58+0.5*max(dot(N,L),0.0));
+  vec3 H=normalize(L+V); c+=vec3(1.0)*pow(max(dot(N,H),0.0),56.0)*0.55;
+  c+=vec3(0.45,0.9,1.0)*pow(1.0-max(dot(N,V),0.0),3.0)*(night>0.5?0.55:0.3);
+  return c;
+}`;
+const FS_SOL = `#version 300 es
+precision highp float;
+in vec3 v_nrm; in vec3 v_pos; in float v_l; in float v_u; in float v_top;
+uniform vec3 u_eye; uniform float u_t; uniform float u_from; uniform float u_ghost; uniform float u_night; uniform vec3 u_jam[6];
+out vec4 o;
+${LIGHT}
+void main(){
+  if(v_l<u_from-0.5) discard;
+  vec3 N=normalize(v_nrm); vec3 V=normalize(u_eye-v_pos);
+  vec3 top=vec3(0.16,0.74,1.0); vec3 side=vec3(0.0,0.36,0.7);
+  for(int i=0;i<6;i++){ vec3 j=u_jam[i]; if(j.z>0.0 && v_l>j.x && v_l<j.y){ top=j.z>2.5?vec3(.8,.1,.18):j.z>1.5?vec3(1.,.25,.3):vec3(1.,.66,.18); side=top*0.55; } }
+  float up=smoothstep(0.55,0.9,v_top); vec3 c=shade(N,V,top,side,u_night,up); float u=abs(v_u);
+  float flow=pow(0.5+0.5*sin((v_l-u_t*16.0)*0.2),10.0);
+  float ch=fract((v_l-u_t*4.0)/26.0); float arrow=smoothstep(0.03,0.0,abs(ch-0.22+u*0.3)-0.025)*(1.0-smoothstep(0.55,0.65,u));
+  c+=up*(vec3(0.85,0.98,1.0)*(exp(-u*u*10.0)*0.35+flow*0.35+arrow*0.3)+vec3(0.55,0.95,1.0)*smoothstep(0.8,0.97,u)*0.7);
+  if(u_night>0.5) c*=1.15;
+  o=vec4(c,u_ghost>0.5?0.3:1.0);
+}`;
+const FS_UNDER = `#version 300 es
+precision highp float;
+in vec3 v_nrm; in vec3 v_pos; in float v_l; in float v_u;
+uniform float u_from; uniform float u_hw; uniform float u_night;
+out vec4 o;
+void main(){
+  if(v_l<u_from+1.0) discard;
+  float d=abs(v_u); float sh=(1.0-smoothstep(u_hw-0.3,u_hw+0.8,d))*0.38; float g=exp(-(d-u_hw)*(d-u_hw)*1.6)*(u_night>0.5?0.5:0.3)*step(u_hw,d);
+  o=vec4(mix(vec3(0.0),vec3(0.0,0.8,1.0),step(sh,g)),max(sh,g)*smoothstep(u_from+1.0,u_from+6.0,v_l));
+}`;
+const VS_PUCK = `#version 300 es
+in vec3 a_p; in vec3 a_nrm; in float a_k;
+uniform mat4 u_m; uniform float u_rot; uniform float u_size;
+out vec3 v_nrm; out vec3 v_pos; out float v_k; out vec2 v_xy;
+void main(){
+  float c=cos(u_rot); float s=sin(u_rot); mat2 R=mat2(c,-s,s,c);
+  vec3 p=vec3(R*a_p.xy,a_p.z)*u_size; v_nrm=vec3(R*a_nrm.xy,a_nrm.z); v_pos=p; v_k=a_k; v_xy=a_p.xy;
+  gl_Position=u_m*vec4(p,1.0);
+}`;
+const FS_PUCK = `#version 300 es
+precision highp float;
+in vec3 v_nrm; in vec3 v_pos; in float v_k; in vec2 v_xy;
+uniform vec3 u_eye; uniform float u_night;
+out vec4 o;
+${LIGHT}
+void main(){
+  if(v_k>1.5){ float r=length(v_xy*vec2(1.0,0.85)); o=vec4(0.0,0.08,0.15,(1.0-smoothstep(0.25,1.05,r))*0.45); return; }
+  vec3 N=normalize(v_nrm); vec3 V=normalize(u_eye-v_pos);
+  vec3 c=v_k<0.5?shade(N,V,vec3(0.94,0.98,1.0),vec3(0.94,0.98,1.0),u_night,1.0):shade(N,V,vec3(0.0,0.78,1.0),vec3(0.0,0.62,0.95),u_night,0.0);
+  o=vec4(c,1.0);
+}`;
+
 export class CityGround {
   constructor(city) { this.city = city; this.id = 'city-ground'; this.type = 'custom'; this.renderingMode = '3d'; }
   render(gl, args) { this.city.renderGround(gl, args); }
@@ -210,7 +280,7 @@ export class City3D {
   onAdd(map, gl) {
     this.gl = gl;
     if (!(gl instanceof WebGL2RenderingContext)) return;
-    this.wall = prog(gl, VS_WALL, FS_WALL); this.roof = prog(gl, VS_ROOF, FS_ROOF); this.tree = prog(gl, VS_TREE, FS_TREE); if (this.soft) { this.road = prog(gl, VS_ROAD, FS_ROAD); this.mark = prog(gl, VS_MARK, FS_MARK); this.shq = prog(gl, VS_SHQ, FS_SHQ); this.rib = prog(gl, VS_RIB, FS_RIB); this.dummy = gl.createVertexArray(); } 
+    this.sol = prog(gl, VS_SOL, FS_SOL); this.solU = prog(gl, VS_SOL, FS_UNDER); this.puckP = prog(gl, VS_PUCK, FS_PUCK); this.wall = prog(gl, VS_WALL, FS_WALL); this.roof = prog(gl, VS_ROOF, FS_ROOF); this.tree = prog(gl, VS_TREE, FS_TREE); if (this.soft) { this.road = prog(gl, VS_ROAD, FS_ROAD); this.mark = prog(gl, VS_MARK, FS_MARK); this.shq = prog(gl, VS_SHQ, FS_SHQ); this.rib = prog(gl, VS_RIB, FS_RIB); this.dummy = gl.createVertexArray(); } 
     fetch(`${this.base}index.json`).then((r) => r.json()).then((d) => {
       this.grid = d.grid; this.bld = new Set(d.tiles.map((t) => `${t[0]}_${t[1]}`)); this.index = new Set(this.bld); this.treeIndex = new Set((d.trees || []).map((t) => `${t[0]}_${t[1]}`)); this.roadIndex = new Set((d.roads || []).map((t) => `${t[0]}_${t[1]}`)); this.shIndex = new Set((d.shadows || []).map((t) => `${t[0]}_${t[1]}`));
       for (const k of [...this.treeIndex, ...this.roadIndex, ...this.shIndex]) this.index.add(k);
@@ -483,42 +553,68 @@ export class City3D {
     gl.activeTexture(gl.TEXTURE0);
   }
 
-  /** Trasa jako własna siatka: stała szerokość w metrach, gładkie łuki, widoczna też za budynkami. */
-  /** Tor z snap.js: { pts w metrach Merkatora, along, K }. */
-  setRoute(path) {
-    const gl = this.gl; if (!gl || !this.rib) { this.pendingRoute = path; return; }
-    if (this.ribbon) { gl.deleteBuffer(this.ribbon.b); gl.deleteVertexArray(this.ribbon.v); this.ribbon = null; }
+  /** Tor z snap.js: { pts w metrach Merkatora, along, K }; turns: miejsca skrętów (metry trasy), każdy dostaje grot. */
+  setRoute(path, turns = this.turns || []) {
+    this.turns = turns; this.path = path;
+    const gl = this.gl; if (!gl || !this.sol) { this.pendingRoute = path; return; }
+    for (const m of [this.ribbon, this.under]) if (m) { gl.deleteBuffer(m.b); gl.deleteBuffer(m.ib); gl.deleteVertexArray(m.v); }
+    this.ribbon = null; this.under = null;
     if (!path) return;
-    const { pts, along, K } = path; const org = pts[0];
-    const out = new Float32Array(pts.length * 12);
-    for (let i = 0; i < pts.length; i++) {
-      const a = pts[Math.max(0, i - 1)]; const b = pts[Math.min(pts.length - 1, i + 1)];
-      let nx = -(b[1] - a[1]); let ny = b[0] - a[0]; const n = Math.hypot(nx, ny) || 1; nx /= n; ny /= n;
-      const L = along[i];
-      const x = pts[i][0] - org[0]; const y = pts[i][1] - org[1];
-      out.set([x, y, nx, ny, 1, L, x, y, nx, ny, -1, L], i * 12);
+    const org = path.pts[0]; const mesh = ribbonMesh(path, turns, { style: this.headStyle || 'flat' });
+    const up = (d, idx, p) => {
+      for (let i = 0; i < d.length; i += 12) { d[i] -= org[0]; d[i + 1] -= org[1]; }
+      const v = gl.createVertexArray(); gl.bindVertexArray(v); const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, d, gl.STATIC_DRAW);
+      const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+      for (const [name, size, off] of [['a_c', 2, 0], ['a_n', 2, 8], ['a_off', 2, 16], ['a_nrm', 3, 24], ['a_l', 1, 36], ['a_u', 1, 40], ['a_top', 1, 44]]) {
+        const l = gl.getAttribLocation(p, name); if (l < 0) continue; gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 48, off);
+      }
+      gl.bindVertexArray(null); return { v, b, ib, n: idx.length };
+    };
+    this.ribbon = { ...up(mesh.data, mesh.index, this.sol), org }; this.under = { ...up(mesh.under.data, mesh.under.index, this.solU), org };
+  }
+
+  setHeadStyle(style) { this.headStyle = style; if (this.path) this.setRoute(this.path, this.turns); }
+
+  /** Znacznik auta w świecie: stała wielkość na ekranie, kierunek jazdy. */
+  drawPuck(gl) {
+    if (this.carHd == null || !this.puckP) return;
+    if (!this.puckM) {
+      const d = puckMesh(); const v = gl.createVertexArray(); gl.bindVertexArray(v); const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, d, gl.STATIC_DRAW);
+      for (const [name, size, off] of [['a_p', 3, 0], ['a_nrm', 3, 12], ['a_k', 1, 24]]) { const l = gl.getAttribLocation(this.puckP, name); if (l < 0) continue; gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 28, off); }
+      gl.bindVertexArray(null); this.puckM = { v, n: d.length / 7 };
     }
-    const v = gl.createVertexArray(); gl.bindVertexArray(v); const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, out, gl.STATIC_DRAW);
-    const attr = (name, size, off) => { const l = gl.getAttribLocation(this.rib, name); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 24, off); };
-    attr('a_p', 2, 0); attr('a_n', 2, 8); attr('a_s', 1, 16); attr('a_l', 1, 20);
+    const p = this.puckP; gl.useProgram(p);
+    const size = (this.puckPx || 58) * (W / (512 * 2 ** this.map.getZoom())); // połowa długości grota w pikselach
+    gl.uniformMatrix4fv(gl.getUniformLocation(p, 'u_m'), false, this.tileM(this.eye[0], this.eye[1]));
+    gl.uniform1f(gl.getUniformLocation(p, 'u_rot'), (this.carHd * Math.PI) / 180); gl.uniform1f(gl.getUniformLocation(p, 'u_size'), size);
+    gl.uniform3f(gl.getUniformLocation(p, 'u_eye'), this.cam[0] - this.eye[0], this.cam[1] - this.eye[1], this.camZ); gl.uniform1f(gl.getUniformLocation(p, 'u_night'), this.night ? 1 : 0);
+    gl.bindVertexArray(this.puckM.v);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false); gl.drawArrays(gl.TRIANGLES, this.puckM.n - 6, 6); // cień
+    gl.disable(gl.BLEND); gl.depthMask(true); gl.clear(gl.DEPTH_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES, 0, this.puckM.n - 6); // auto zawsze na wierzchu
     gl.bindVertexArray(null);
-    this.ribbon = { v, b, n: pts.length * 2, org, K };
   }
 
   drawRibbon(gl) {
-    if (!this.ribbon || !this.drive || this.ribbonOff) return;
-    const r = this.ribbon; gl.useProgram(this.rib);
-    gl.uniformMatrix4fv(gl.getUniformLocation(this.rib, 'u_m'), false, this.tileM(r.org[0], r.org[1]));
-    gl.uniform1f(gl.getUniformLocation(this.rib, 'u_t'), performance.now() / 1000);
-    gl.uniform1f(gl.getUniformLocation(this.rib, 'u_from'), this.along || 0);
-    gl.uniform1f(gl.getUniformLocation(this.rib, 'u_wid'), (this.ribbonW || 4.2) * r.K);
-    const jam = new Float32Array(18); (this.jams || []).filter((j) => j.to > (this.along || 0)).slice(0, 6).forEach((j, i) => jam.set([j.from, j.to, j.sev], i * 3));
-    gl.uniform3fv(gl.getUniformLocation(this.rib, 'u_jam'), jam);
-    gl.uniform1f(gl.getUniformLocation(this.rib, 'u_night'), this.night ? 1 : 0);
-    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
-    gl.bindVertexArray(r.v);
-    gl.uniform1f(gl.getUniformLocation(this.rib, 'u_ghost'), 0); gl.depthFunc(gl.LEQUAL); gl.drawArrays(gl.TRIANGLE_STRIP, 0, r.n);
-    gl.uniform1f(gl.getUniformLocation(this.rib, 'u_ghost'), 1); gl.depthFunc(gl.GREATER); gl.drawArrays(gl.TRIANGLE_STRIP, 0, r.n);
-    gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.bindVertexArray(null);
+    if (this.ribbon && this.drive && !this.ribbonOff) {
+      const r = this.ribbon; const M = this.tileM(r.org[0], r.org[1]); const from = this.along || 0;
+      const jam = new Float32Array(18); (this.jams || []).filter((j) => j.to > from).slice(0, 6).forEach((j, i) => jam.set([j.from, j.to, j.sev], i * 3));
+      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+      gl.useProgram(this.solU); // cień i poświata na asfalcie
+      gl.uniformMatrix4fv(gl.getUniformLocation(this.solU, 'u_m'), false, M); gl.uniform1f(gl.getUniformLocation(this.solU, 'u_from'), from);
+      gl.uniform1f(gl.getUniformLocation(this.solU, 'u_hw'), 1.3); gl.uniform1f(gl.getUniformLocation(this.solU, 'u_night'), this.night ? 1 : 0);
+      gl.bindVertexArray(this.under.v); gl.depthFunc(gl.LEQUAL); gl.drawElements(gl.TRIANGLES, this.under.n, gl.UNSIGNED_INT, 0);
+      const p = this.sol; gl.useProgram(p);
+      gl.uniformMatrix4fv(gl.getUniformLocation(p, 'u_m'), false, M); gl.uniform1f(gl.getUniformLocation(p, 'u_from'), from);
+      gl.uniform1f(gl.getUniformLocation(p, 'u_t'), performance.now() / 1000); gl.uniform1f(gl.getUniformLocation(p, 'u_night'), this.night ? 1 : 0);
+      gl.uniform3fv(gl.getUniformLocation(p, 'u_jam'), jam); gl.uniform3f(gl.getUniformLocation(p, 'u_eye'), this.cam[0] - r.org[0], this.cam[1] - r.org[1], this.camZ);
+      gl.bindVertexArray(r.v);
+      gl.uniform1f(gl.getUniformLocation(p, 'u_ghost'), 1); gl.depthFunc(gl.GREATER); gl.drawElements(gl.TRIANGLES, r.n, gl.UNSIGNED_INT, 0); // za budynkiem: przezroczysta
+      gl.disable(gl.BLEND); gl.depthMask(true); gl.depthFunc(gl.LEQUAL);
+      gl.uniform1f(gl.getUniformLocation(p, 'u_ghost'), 0); gl.drawElements(gl.TRIANGLES, r.n, gl.UNSIGNED_INT, 0);
+      gl.bindVertexArray(null);
+    }
+    if (this.drive && this.soft) this.drawPuck(gl);
+    gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND);
   }
+
 }

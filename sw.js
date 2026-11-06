@@ -9,7 +9,8 @@ const SHELL = [
   './js/app.js', './js/config.js', './js/geo.js', './js/routing.js', './js/guidance.js',
   './js/hazards.js', './js/speech-pl.js', './js/speed.js', './js/places.js', './js/limits.js', './js/compass.js', './js/modes.js', './js/hazard-data.js', './js/valhalla.js', './js/provider.js', './js/cockpit.js', './js/camera.js',
   './js/profiles.js',
-  './js/snap.js', './js/facades.js', './js/facade-list.js', './js/orto.js', './js/city3d.js', './js/lanes.js', './js/traffic.js', './js/roadwise.js',
+  './js/snap.js',
+  './js/solid.js', './js/facades.js', './js/facade-list.js', './js/orto.js', './js/city3d.js', './js/lanes.js', './js/traffic.js', './js/roadwise.js',
   './js/fixes.js', './js/fuel.js', './js/trip.js', './js/explain.js', './js/voice.js', './js/sim.js', './js/mapstyle.js', './js/icons.js',
   './icons/favicon-64.png', './icons/city-atlas-day.webp', './icons/city-atlas-night.webp', './icons/city-roofs.webp', './icons/city-trees.webp', './icons/tx-grass.webp', './icons/tx-pave.webp', './icons/tx-asphalt.webp', ...Object.entries({"block": 3, "house": 3, "office": 3, "tenement": 3}).flatMap(([k, n]) => [...Array(n).keys()].flatMap((i) => ['day', 'night'].map((t) => `./icons/fa/${k}-${i}-${t}.webp`))), './icons/sky-day.webp', './icons/sky-night.webp', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
 ];

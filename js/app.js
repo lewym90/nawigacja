@@ -788,7 +788,7 @@ function cityRoute() {
   const path = { ...drivePath(c.map(([x, y]) => toMerc(x, y)), K, S.axes, { lefts, turns }), K };
   cam.path = (s) => pathAt(path, s, fromMerc);
   S.nav.cross = crossings(path, K, S.axes).map((q) => ({ ...q, point: fromMerc(q.x, q.y) }));
-  S.city.setRoute(path);
+  S.city.setRoute(path, turns);
 }
 if (NEW) loadAxes();
 async function loadAxes() {
@@ -950,6 +950,7 @@ function camLoop(now) {
   if (k !== S.closeShown) { S.closeShown = k; placePuckY(); }
   const pv = document.getElementById('puck-svg');
   if (pv) pv.style.transform = `rotate(${p.carOffset.toFixed(1)}deg)`;
+  if (S.city) { S.city.carHd = NEW && S.nav ? p.bearing + p.carOffset : null; $('puck').classList.toggle('solid', S.city.carHd != null); }
   S.nav.cam = { c: [...p.center], hd: p.bearing, zoom: p.zoom };
   fitSky();
   const x = (-p.bearing / 360) * ($('sky').clientHeight * SKY_RATIO); // panorama przesuwa się razem z kierunkiem jazdy

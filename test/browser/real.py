@@ -139,6 +139,13 @@ with sync_playwright() as p:
     if os.environ.get('DUMP'):
         d = page.evaluate("(() => { const N = window.__nav; const st = N.S.nav.route.steps.filter((x) => x.type === 'turn' && x.at > 120)[0]; const out = []; for (let s = 0; s < N.S.nav.route.line.total; s += 5) out.push(N.cam.path(s).point); return { at: st.at, m: st.modifier, p: N.cam.path(st.at).point, raw: N.S.nav.route.coords, out }; })()")
         json.dump(d, open(os.environ['DUMP'], 'w'))
+    if os.environ.get('HEADS'):
+        for o in json.loads(os.environ['HEADS']):
+            r = page.evaluate("""(o) => { const S = window.__nav.S; const st = S.nav.route.steps.filter((x) => x.type === 'turn' && new RegExp(o.turn).test(x.modifier || '') && x.at > 120)[0];
+              S.city.setHeadStyle(o.style); S.sim.setSpeed(o.speed || 5); S.sim.along = st.at - o.car; document.querySelectorAll('#toast').forEach((e) => { e.style.display = 'none'; }); return [st.at, st.name]; }""", o)
+            print('GROT', o['name'], r, flush=True)
+            page.wait_for_timeout(int(os.environ.get('CAMWAIT', '10')) * 1000)
+            page.screenshot(path=f"{OUT}/{THEME}-head-{o['name']}.png")
     if os.environ.get('ARROWS'):
         for o in json.loads(os.environ['ARROWS']):
             r = page.evaluate("""(o) => { const N = window.__nav; const S = N.S; const m = N.map; const cam = N.cam;
