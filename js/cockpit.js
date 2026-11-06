@@ -46,7 +46,7 @@ export function atmosphere(night, date, lat, lng) {
     light: { anchor: 'map', position: [1.2, sun.azimuth, 90 - alt], color: low ? '#ffd3a0' : '#fff6e8', intensity: low ? 0.5 : 0.3 },
     sky: low
       ? { 'sky-color': SKY_CLEAR, 'horizon-color': SKY_CLEAR, 'fog-color': '#F0D2B8', 'fog-ground-blend': 0.5, 'horizon-fog-blend': 0.2, 'sky-horizon-blend': 0, 'atmosphere-blend': 0 }
-      : { 'sky-color': SKY_CLEAR, 'horizon-color': SKY_CLEAR, 'fog-color': '#D7E6F1', 'fog-ground-blend': 0.5, 'horizon-fog-blend': 0.2, 'sky-horizon-blend': 0, 'atmosphere-blend': 0 },
+      : { 'sky-color': SKY_CLEAR, 'horizon-color': SKY_CLEAR, 'fog-color': '#AFC6D8', 'fog-ground-blend': 0.5, 'horizon-fog-blend': 0.2, 'sky-horizon-blend': 0, 'atmosphere-blend': 0 },
   };
 }
 

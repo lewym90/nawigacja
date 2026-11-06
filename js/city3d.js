@@ -20,7 +20,7 @@ void main(){
   float ao=mix(0.62,1.0,smoothstep(0.0,5.0,v_pos.z));
   vec3 col=tex*(u_night>0.5?1.0:(0.62+0.5*d))*ao;
   float fog=smoothstep(600.0,1700.0,distance(v_pos,u_eye));
-  o=vec4(mix(col,u_fog,fog),1.0);
+  o=vec4(mix(col,u_fog,fog*0.72),1.0);
 }`;
 const VS_ROOF = `#version 300 es
 in vec3 a_pos; in float a_kind;
@@ -48,7 +48,7 @@ void main(){
   vec3 col=tex*(0.62+0.55*d);
   if(u_night>0.5) col*=0.15;
   float fog=smoothstep(600.0,1700.0,distance(v_pos,u_eye));
-  o=vec4(mix(col,u_fog,fog),1.0);
+  o=vec4(mix(col,u_fog,fog*0.72),1.0);
 }`;
 const VS_TREE = `#version 300 es
 in vec4 a_tree;
@@ -77,7 +77,7 @@ void main(){
   col*=mix(0.72,1.0,smoothstep(0.0,6.0,v_pos.z));
   if(u_night>0.5) col*=0.2;
   float fog=smoothstep(600.0,1700.0,distance(v_pos,u_eye));
-  o=vec4(mix(col,u_fog,fog),1.0);
+  o=vec4(mix(col,u_fog,fog*0.72),1.0);
 }`;
 
 const W = 40075016.68;
@@ -211,7 +211,7 @@ export class City3D {
     gl.disable(gl.STENCIL_TEST);
     gl.clear(gl.DEPTH_BUFFER_BIT);
     const az = 2.4; const sun = [Math.sin(az) * 0.75, Math.cos(az) * 0.75, 0.66];
-    const fog = this.night ? [0.063, 0.133, 0.243] : [0.84, 0.9, 0.945];
+    const fog = this.night ? [0.063, 0.133, 0.243] : [0.66, 0.76, 0.84]; // dal ma się rozpływać w błękicie, a nie bieleć
     const s = 1 / W; const g = this.grid;
     const use = (p, atlas) => {
       gl.useProgram(p);

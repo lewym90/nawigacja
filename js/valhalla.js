@@ -210,7 +210,7 @@ export const COSTING_OPTIONS = {
  * Zapytanie o trasę. heading (stopnie) podajemy przy ponownym liczeniu w ruchu: trasa zaczyna się
  * wtedy zgodnie z kierunkiem jazdy (bez „zawróć” i objeżdżania bloku, gdy stoisz na wyjeździe).
  */
-import { towardOf, lanesStraight, laneFeatures, parseJunctionLanes, approachOf } from './lanes.js';
+import { towardOf, lanesStraight, laneFeatures, parseJunctionLanes } from './lanes.js';
 
 export function valhallaRequest(points, { costing = 'auto', alternatives = true, heading = null, pref = DEFAULT_PREF, exclude = null } = {}) {
   // radius: Valhalla bierze pod uwagę WSZYSTKIE drogi w tym promieniu, a nie tylko najbliższą. Bez tego
@@ -399,10 +399,7 @@ export async function routeLanes(base, coords, signal) {
       for (const st of leg.steps || []) {
         for (const i of st.intersections || []) {
           const lanes = parseJunctionLanes(i.lanes);
-          if (!lanes) continue;
-          let idx = 0; let best = Infinity;
-          shape.forEach((p, q) => { const d = (p[0] - i.location[0]) ** 2 + (p[1] - i.location[1]) ** 2; if (d < best) { best = d; idx = q; } });
-          junctions.push({ point: i.location, lanes, ...approachOf(edges, idx, lanes.length) });
+          if (lanes) junctions.push({ point: i.location, lanes });
         }
       }
     }

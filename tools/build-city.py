@@ -1,8 +1,9 @@
 """Własna mapa 3D: modele budynków GUGiK (CityGML LoD2) -> lekkie kafle binarne dla silnika js/city3d.js.
-Użycie: python3 tools/build-city.py <powiat_gml.zip> <katalog_wyjściowy>
+Użycie: python3 tools/build-city.py <powiat_gml.zip> <katalog_wyjściowy> [kontekst.pkl]
+Z kontekstem (tools/road-context.py) pomija budynki z modeli, które leżą na dzisiejszej jezdni i nie istnieją już w OSM: modele są z 2017 r.
 Kafel: siatka 400 m w metrach Web Mercator. Plik: u32 liczba_wierzch_ścian, u32 liczba_wierzch_dachów, potem
 ściany [x,y,z,u,v,cell] f32 i dachy [x,y,z,rodzaj] f32. Pozycje względem narożnika kafla, trójkąty bez indeksów."""
-import json, math, os, re, struct, sys, zipfile
+import gzip, json, math, os, re, struct, sys, zipfile
 from collections import defaultdict
 import numpy as np
 import mapbox_earcut as earcut
@@ -10,6 +11,31 @@ from pyproj import Transformer
 
 GRID = 400.0
 SRC, OUT = sys.argv[1], sys.argv[2]
+ROADW = {'motorway': 13, 'trunk': 13, 'primary': 11, 'secondary': 9, 'tertiary': 7}  # połowa jezdni w metrach Mercatora
+road_tree = None
+if len(sys.argv) > 3:
+    import pickle
+    from shapely.geometry import LineString, Polygon, MultiPoint
+    from shapely.strtree import STRtree
+    ctxd = pickle.load(open(sys.argv[3], 'rb'))
+    rl = [(c, LineString(l)) for c, l in ctxd['roads'] if c in ROADW and len(l) > 1]
+    road_tree = STRtree([l.buffer(ROADW[c], cap_style=2) for c, l in rl])
+    ob = []
+    for p in ctxd['buildings']:
+        try:
+            q = Polygon(p).buffer(0)
+            if not q.is_empty: ob.append(q)
+        except Exception: pass
+    bld_tree = STRtree(ob)
+skipped = 0
+def stale(xy):
+    """Bryła wchodzi na jezdnię, a OSM nie zna tam budynku: to budynek wyburzony po 2017 r."""
+    f = MultiPoint([tuple(p) for p in xy]).convex_hull
+    if f.geom_type != 'Polygon' or f.area < 8: return False
+    hits = road_tree.query(f.buffer(-1.5), predicate='intersects')
+    if not len(hits): return False
+    cov = sum(f.intersection(ob[i]).area for i in bld_tree.query(f)) / f.area
+    return cov < 0.3
 to3857 = Transformer.from_crs(2180, 3857, always_xy=True)
 LAT = 51.2; MERC = 1 / math.cos(math.radians(LAT))
 BLD = re.compile(rb'<bldg:Building .*?</bldg:Building>', re.S)
@@ -43,6 +69,12 @@ for info in z.infolist():
                 if len(pts) >= 4 and np.allclose(pts[0], pts[-1]): pts = pts[:-1]
                 if len(pts) >= 3: surfaces.append((kind, pts))
         if not surfaces: continue
+        if road_tree is not None:
+            allp = np.concatenate([p for _, p in surfaces])
+            mx0, my0 = to3857.transform(allp[:, 0], allp[:, 1])
+            if stale(np.stack([mx0, my0], 1)):
+                skipped += 1
+                continue
         allz = np.concatenate([p[:, 2] for _, p in surfaces])
         base, top = allz.min(), allz.max(); h = top - base
         kind_i = 0 if h < 9 else 1 if h < 16 else 2 if h < 34 else 3
@@ -73,7 +105,8 @@ index = []; total = 0
 for t in sorted(set(walls) | set(roofs)):
     w = np.array(walls.get(t, []), dtype=np.float32); r = np.array(roofs.get(t, []), dtype=np.float32)
     with open(f'{OUT}/{t[0]}_{t[1]}.bin', 'wb') as f:
-        f.write(struct.pack('<II', len(w), len(r))); f.write(w.tobytes()); f.write(r.tobytes())
+        f.write(gzip.compress(struct.pack('<II', len(w), len(r)) + w.tobytes() + r.tobytes(), 9))
     index.append(list(t)); total += 8 + w.nbytes + r.nbytes
 json.dump({'grid': GRID, 'tiles': index}, open(f'{OUT}/index.json', 'w'), separators=(',', ':'))
+print('pominięte wyburzone', skipped)
 print('budynków', count, 'kafli', len(index), 'MB', total // 1024 ** 2)

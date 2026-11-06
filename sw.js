@@ -1,8 +1,8 @@
 // Service worker: powłoka aplikacji działa bez sieci. Kafelki i dane tras idą przez sieć.
-const VERSION = 'nav-v0.16.1';
+const VERSION = 'nav-v0.17.0';
 const ORTO = 'nav-orto'; // zdjęcia lotnicze: wspólne dla wersji aplikacji, najstarsze wypadają
 const ORTO_MAX = 900;
-const CITY = 'nav-city-1'; // kafle miasta: stałe między wersjami aplikacji, zmiana nazwy po przebudowie danych
+const CITY = 'nav-city-2'; // kafle miasta: stałe między wersjami aplikacji, zmiana nazwy po przebudowie danych
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
   './vendor/maplibre-gl.js', './vendor/maplibre-gl.css',

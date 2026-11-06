@@ -31,34 +31,6 @@ export function junctionAhead(list, along, win) {
   return j && j.at - along <= win ? j : null;
 }
 
-/**
- * Wstęga na właściwych pasach przed skrzyżowaniem: pod spodem jezdnia zasłaniająca zwykłą wstęgę, na niej pas lub pasy do zajęcia.
- * coords = końcówka dojazdu. Offset dodatni to prawa strona w kierunku jazdy. Na drodze dwukierunkowej nasze pasy leżą w całości po prawej.
- */
-export function laneTarget(j, coords) {
-  const n = j.lanes.length; const W = 3.3;
-  if (coords.length < 2 || n < 2 || j.lanes.every((l) => l.on)) return [];
-  const line = { type: 'LineString', coordinates: coords };
-  const out = [{ type: 'Feature', properties: { kind: 'bg', o: 0, w: (j.both ? 2 * n * W : n * W) + 0.8 }, geometry: line }];
-  j.lanes.forEach((l, i) => {
-    if (!l.on) return;
-    const o = j.both ? (i + 0.5) * W : (i - (n - 1) / 2) * W;
-    out.push({ type: 'Feature', properties: { kind: 'lane', o, w: W - 0.5 }, geometry: line });
-  });
-  return out;
-}
-
-/** Długość dojazdu z tą samą liczbą pasów, licząc wstecz od krawędzi kończącej się przy skrzyżowaniu: tam wolno przesunąć wstęgę. */
-export function approachOf(edges, idx, n) {
-  let k = edges.findIndex((e) => e.end_shape_index >= idx);
-  if (k < 0) return { both: false, back: 60 };
-  if (edges[k].begin_shape_index >= idx && k > 0) k -= 1;
-  const both = edges[k].traversability === 'both';
-  let m = 0;
-  for (let i = k; i >= 0 && (edges[i].lane_count || 1) === n; i--) m += (edges[i].length || 0) * 1000;
-  return { both, back: Math.max(130, Math.min(240, m)) };
-}
-
 /** Czy wskazane pasy prowadzą prosto: wtedy manewr nie jest skrętem ani rozwidleniem, nawet gdy silnik tak go nazywa. */
 export function lanesStraight(list) {
   const on = (list || []).filter((l) => l.active);
@@ -84,27 +56,20 @@ export function laneAdvice(lanes, modifier = '') {
 
 /** Odcinki trasy z liczbą pasów (Valhalla trace_attributes) -> linie podziału pasów i szerokość jezdni. */
 export function laneFeatures(edges, shape) {
-  const LANE = 3.3; const groups = [];
+  const LANE = 3.3; const MIN_M = 70; const groups = [];
   for (const e of edges) {
     const both = e.traversability === 'both'; const n = e.lane_count || 1;
     const last = groups[groups.length - 1];
-    if (last && last.n === n && last.both === both && last.to === e.begin_shape_index) last.to = e.end_shape_index;
-    else groups.push({ n, both, from: e.begin_shape_index, to: e.end_shape_index });
+    if (last && last.n === n && last.both === both && last.to === e.begin_shape_index) { last.to = e.end_shape_index; last.m += (e.length || 0) * 1000; }
+    else groups.push({ n, both, from: e.begin_shape_index, to: e.end_shape_index, m: (e.length || 0) * 1000 });
   }
   const out = [];
-  const add = (coords, kind, o, w = 0) => out.push({ type: 'Feature', properties: { kind, o, w }, geometry: { type: 'LineString', coordinates: coords } });
+  const add = (coords, o) => out.push({ type: 'Feature', properties: { kind: 'div', o }, geometry: { type: 'LineString', coordinates: coords } });
   for (const g of groups) {
     const coords = shape.slice(g.from, g.to + 1);
-    if (coords.length < 2 || (g.n < 2)) continue;
-    const total = (g.both ? 2 : 1) * g.n * LANE;
-    add(coords, 'road', 0, total + 0.6);
-    for (const s of [-1, 1]) add(coords, 'edge', (s * total) / 2, 0);
-    if (g.both) {
-      add(coords, 'mid', 0, 0);
-      for (let k = 1; k < g.n; k++) for (const s of [-1, 1]) add(coords, 'div', s * k * LANE, 0);
-    } else {
-      for (let k = 1; k < g.n; k++) add(coords, 'div', (k - g.n / 2) * LANE, 0);
-    }
+    if (coords.length < 2 || g.n < 2 || g.m < MIN_M) continue; // krótkie kawałki dawały migające linie
+    if (g.both) for (let k = 1; k < g.n; k++) for (const s of [-1, 1]) add(coords, s * k * LANE);
+    else for (let k = 1; k < g.n; k++) add(coords, (k - g.n / 2) * LANE);
   }
   return out;
 }
