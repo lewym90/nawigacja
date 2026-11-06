@@ -2,7 +2,7 @@
 // Tylko geometria (bez WebGL), żeby dało się ją sprawdzić testami.
 // Wierzchołek: środek [x, y], oś boczna [nx, ny], przesunięcie [w bok, w górę], normalna [x, y, z], odległość wzdłuż trasy, położenie w poprzek (-1..1), wierzch (0..1), przesunięcie i normalna przed postawieniem grotu (do animacji podnoszenia).
 
-export const RIB = { hw: 1.3, h: 0.3, r: 0.1, exit: 16, head: 5.5, headW: 2.5, gap: 7, twist: 7 };
+export const RIB = { hw: 1.1, h: 0.3, r: 0.1, exit: 16, head: 5, headW: 2.3, gap: 7, twist: 7 };
 const STRIDE = 17;
 
 function sampler(path) {
@@ -77,7 +77,7 @@ export function ribbonMesh(path, turns, { style = 'flat', o = RIB } = {}) {
   };
   const strip = (r0, r1) => { for (let j = 0; j < 9; j++) I.push(r0 + j, r0 + j + 1, r1 + j + 1, r0 + j, r1 + j + 1, r1 + j); };
   const cap = (r) => { for (let j = 1; j < 9; j++) I.push(r, r + j + 1, r + j); };
-  const under = (s, w) => { const { c, t } = at(s); const n = [-t[1], t[0]]; const W = w + 1.4; const i = U.length / STRIDE; for (const sg of [-1, 1]) U.push(c[0] - org[0], c[1] - org[1], n[0], n[1], sg * W * K, 0.03 * K, 0, 0, 1, s, sg * W, 0, sg * W * K, 0.03 * K, 0, 0, 1); return i; };
+  const under = (s, w) => { const { c, t } = at(s); const n = [-t[1], t[0]]; const W = w + 1.0; const i = U.length / STRIDE; for (const sg of [-1, 1]) U.push(c[0] - org[0], c[1] - org[1], n[0], n[1], sg * W * K, 0.03 * K, 0, 0, 1, s, sg * W, 0, sg * W * K, 0.03 * K, 0, 0, 1); return i; };
   const underStrip = (i0, i1) => UI.push(i0, i0 + 1, i1 + 1, i0, i1 + 1, i1);
 
   const up = style === 'up'; const heads = [];

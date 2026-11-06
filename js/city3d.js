@@ -1,4 +1,4 @@
-import { ribbonMesh, puckMesh } from './solid.js';
+import { ribbonMesh, puckMesh, RIB } from './solid.js';
 // Własny silnik miasta 3D: rysuje prawdziwe bryły budynków (GUGiK LoD2, tools/build-city.py) wewnątrz mapy.
 // Ściany dostają elewacje z atlasu, dachy kolor wg kształtu. Kafle dociągane wokół punktu przed autem.
 
@@ -189,9 +189,9 @@ uniform mat4 u_m; uniform float u_from; uniform float u_heads[4];
 out vec3 v_nrm; out vec3 v_pos; out float v_l; out float v_u; out float v_top;
 void main(){
   v_top=a_top;
-  float sc=smoothstep(u_from-0.5,u_from+4.0,a_l); // spod auta wstęga wyrasta, zamiast zaczynać się ściętym końcem
-  float g=1.0; // grot leży, póki jest daleko, i podnosi się między 120 a 80 m przed skrętem
-  for(int i=0;i<4;i++){ float h=u_heads[i]; if(h>0.0 && a_l>=h-0.01 && a_l<h+40.0) g=smoothstep(120.0,80.0,h-u_from); }
+  float sc=smoothstep(u_from-0.5,u_from+1.5,a_l); // spod auta wstęga wyrasta, zamiast zaczynać się ściętym końcem
+  float g=1.0; // grot podnosi się między 120 a 80 m przed skrętem i kładzie tuż przed nim, bo od tyłu stojący grot to ściana przed autem
+  for(int i=0;i<4;i++){ float h=u_heads[i]; if(h>0.0 && a_l>=h-0.01 && a_l<h+40.0){ float d=h-u_from; g=smoothstep(120.0,80.0,d)*smoothstep(2.0,16.0,d); } }
   vec2 off=mix(a_off0,a_off,g);
   vec3 p=vec3(a_c+a_n*off.x*sc,off.y*sc);
   v_nrm=normalize(mix(a_nrm0,a_nrm,g)); v_pos=p; v_l=a_l; v_u=a_u; gl_Position=u_m*vec4(p,1.0);
@@ -218,7 +218,7 @@ void main(){
   float up=smoothstep(0.55,0.9,v_top); vec3 c=shade(N,V,top,side,u_night,up); float u=abs(v_u);
   float flow=pow(0.5+0.5*sin((v_l-u_t*16.0)*0.2),10.0);
   float ch=fract((v_l-u_t*4.0)/26.0); float arrow=smoothstep(0.03,0.0,abs(ch-0.22+u*0.3)-0.025)*(1.0-smoothstep(0.55,0.65,u));
-  c+=up*(vec3(0.85,0.98,1.0)*(exp(-u*u*10.0)*0.35+flow*0.35+arrow*0.3)+vec3(0.55,0.95,1.0)*smoothstep(0.8,0.97,u)*0.7);
+  c+=up*(vec3(0.85,0.98,1.0)*(exp(-u*u*10.0)*0.18+flow*0.35+arrow*0.3)+vec3(0.55,0.95,1.0)*smoothstep(0.8,0.97,u)*0.7);
   if(u_night>0.5) c*=1.15;
   o=vec4(c,u_ghost>0.5?0.3:1.0);
 }`;
@@ -229,7 +229,7 @@ uniform float u_from; uniform float u_hw; uniform float u_night;
 out vec4 o;
 void main(){
   if(v_l<u_from+1.0) discard;
-  float d=abs(v_u); float sh=(1.0-smoothstep(u_hw-0.3,u_hw+0.8,d))*0.38; float g=exp(-(d-u_hw)*(d-u_hw)*1.6)*(u_night>0.5?0.5:0.3)*step(u_hw,d);
+  float d=abs(v_u); float sh=(1.0-smoothstep(u_hw-0.3,u_hw+0.8,d))*0.38; float g=exp(-(d-u_hw)*(d-u_hw)*3.0)*(u_night>0.5?0.4:0.22)*step(u_hw,d);
   o=vec4(mix(vec3(0.0),vec3(0.0,0.8,1.0),step(sh,g)),max(sh,g)*smoothstep(u_from+1.0,u_from+6.0,v_l));
 }`;
 const VS_PUCK = `#version 300 es
@@ -603,7 +603,7 @@ export class City3D {
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
       gl.useProgram(this.solU); // cień i poświata na asfalcie
       gl.uniformMatrix4fv(gl.getUniformLocation(this.solU, 'u_m'), false, M); gl.uniform1f(gl.getUniformLocation(this.solU, 'u_from'), from);
-      gl.uniform1f(gl.getUniformLocation(this.solU, 'u_hw'), 1.3); gl.uniform1f(gl.getUniformLocation(this.solU, 'u_night'), this.night ? 1 : 0);
+      gl.uniform1f(gl.getUniformLocation(this.solU, 'u_hw'), RIB.hw); gl.uniform1f(gl.getUniformLocation(this.solU, 'u_night'), this.night ? 1 : 0);
       gl.bindVertexArray(this.under.v); gl.depthFunc(gl.LEQUAL); gl.drawElements(gl.TRIANGLES, this.under.n, gl.UNSIGNED_INT, 0);
       const p = this.sol; gl.useProgram(p);
       gl.uniformMatrix4fv(gl.getUniformLocation(p, 'u_m'), false, M); gl.uniform1f(gl.getUniformLocation(p, 'u_from'), from);
