@@ -78,6 +78,7 @@ export class ChaseCam {
     const k = ease(dt, CAM.centerTau);
     this.center[0] += (want[0] - this.center[0]) * k;
     this.center[1] += (want[1] - this.center[1]) * k;
+    this.lag = Math.hypot((want[0] - this.center[0]) * M_PER_DEG * Math.cos(want[1] * Math.PI / 180), (want[1] - this.center[1]) * M_PER_DEG); // o tyle ekranowe auto jest za punktem trasy
     if (tb != null && (this.v > 0.8 || !T.onRoute)) {
       const step = wrap(tb - this.bearing) * ease(dt, this.bearingTau || CAM.bearingTau);
       const lim = CAM.maxTurn * dt;

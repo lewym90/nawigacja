@@ -149,10 +149,10 @@ precision highp float;
 in vec2 v; uniform sampler2D u_s; out vec4 o;
 void main(){ o=vec4(0.07,0.09,0.16,texture(u_s,v).r); }`;
 const VS_RIB = `#version 300 es
-in vec2 a_p; in float a_s; in float a_l;
-uniform mat4 u_m;
+in vec2 a_p; in vec2 a_n; in float a_s; in float a_l;
+uniform mat4 u_m; uniform float u_wid;
 out float v_s; out float v_l;
-void main(){ v_s=a_s; v_l=a_l; gl_Position=u_m*vec4(a_p,0.55,1.0); }`;
+void main(){ v_s=a_s; v_l=a_l; gl_Position=u_m*vec4(a_p+a_n*a_s*u_wid,0.55,1.0); }`;
 const FS_RIB = `#version 300 es
 precision highp float;
 in float v_s; in float v_l;
@@ -316,7 +316,42 @@ export class City3D {
     }
     const wbytes = buf && new Uint8Array(buf, 8, nw * 24); const rbytes = buf && new Uint8Array(buf, 8 + nw * 24, nr * 16);
     const prev = this.tiles.get(key) || {};
-    this.tiles.set(key, { ...prev, w: nw ? vao(this.wall, [['a_pos', 3], ['a_uv', 2], ['a_cell', 1]], wbytes, nw, 24) : null, r: nr ? vao(this.roof, [['a_pos', 3], ['a_kind', 1]], rbytes, nr, 16) : null, t: treeObj, k: key.split('_').map(Number) });
+    this.tiles.set(key, { ...prev, wraw: nw ? new Float32Array(buf, 8, nw * 6) : null, occ: null, w: nw ? vao(this.wall, [['a_pos', 3], ['a_uv', 2], ['a_cell', 1]], wbytes, nw, 24) : null, r: nr ? vao(this.roof, [['a_pos', 3], ['a_kind', 1]], rbytes, nr, 16) : null, t: treeObj, k: key.split('_').map(Number) });
+  }
+
+  /** Wysokości zabudowy w kratkach 8 m, liczone przy pierwszym pytaniu o dany kafel. */
+  occupancy(t) {
+    if (t.occ || !t.wraw) return t.occ;
+    const occ = new Map(); const a = t.wraw;
+    const mark = (x1, y1, z1, x2, y2, z2) => {
+      const z = Math.max(z1, z2); if (z < 3) return;
+      const n = Math.ceil(Math.hypot(x2 - x1, y2 - y1) / 4);
+      for (let i = 0; i <= n; i++) {
+        const u = n ? i / n : 0; const c = Math.floor((x1 + (x2 - x1) * u) / 8) * 4096 + Math.floor((y1 + (y2 - y1) * u) / 8);
+        if (!(occ.get(c) >= z)) occ.set(c, z);
+      }
+    };
+    for (let i = 0; i + 17 < a.length; i += 18) {
+      const [x1, y1, z1, x2, y2, z2, x3, y3, z3] = [a[i], a[i + 1], a[i + 2], a[i + 6], a[i + 7], a[i + 8], a[i + 12], a[i + 13], a[i + 14]];
+      mark(x1, y1, z1, x2, y2, z2); mark(x2, y2, z2, x3, y3, z3); mark(x3, y3, z3, x1, y1, z1);
+    }
+    t.occ = occ; t.wraw = null; return occ;
+  }
+
+  /** Czy budynek przecina linię wzroku z kamery (lng, lat, wysokość) do punktu na drodze. Sama odległość od celu pomija ostatnie metry, bo tam stoi cel. */
+  sightBlocked(from, z, to) {
+    if (!this.grid) return false;
+    const x1 = mercX(from[0]); const y1 = mercY(from[1]); const x2 = mercX(to[0]); const y2 = mercY(to[1]);
+    const d = Math.hypot(x2 - x1, y2 - y1); const n = Math.floor(d / 6); const g = this.grid;
+    for (let i = 1; i < n; i++) {
+      const u = i / n; if (u > 0.96) break;
+      const x = x1 + (x2 - x1) * u; const y = y1 + (y2 - y1) * u; const i0 = Math.floor(x / g); const j0 = Math.floor(y / g);
+      const t = this.tiles.get(`${i0}_${j0}`); if (!t) continue;
+      const occ = this.occupancy(t); if (!occ) continue;
+      const h = occ.get(Math.floor((x - i0 * g) / 8) * 4096 + Math.floor((y - j0 * g) / 8));
+      if (h != null && h > z * (1 - u) + 1) return true;
+    }
+    return false;
   }
 
   drop(key) {
@@ -465,21 +500,21 @@ export class City3D {
     const gl = this.gl; if (!gl || !this.rib) { this.pendingRoute = coords; return; }
     if (this.ribbon) { gl.deleteBuffer(this.ribbon.b); gl.deleteVertexArray(this.ribbon.v); this.ribbon = null; }
     if (!coords || coords.length < 2) return;
-    const K = 1 / Math.cos((coords[0][1] * Math.PI) / 180); const H = (this.ribbonW || 4.2) * K;
+    const K = 1 / Math.cos((coords[0][1] * Math.PI) / 180);
     const { pts, along } = ribbonPath(coords.map(([x, y]) => [mercX(x), mercY(y)]), K); const org = pts[0];
-    const out = new Float32Array(pts.length * 8);
+    const out = new Float32Array(pts.length * 12);
     for (let i = 0; i < pts.length; i++) {
       const a = pts[Math.max(0, i - 1)]; const b = pts[Math.min(pts.length - 1, i + 1)];
       let nx = -(b[1] - a[1]); let ny = b[0] - a[0]; const n = Math.hypot(nx, ny) || 1; nx /= n; ny /= n;
       const L = along[i];
       const x = pts[i][0] - org[0]; const y = pts[i][1] - org[1];
-      out.set([x + nx * H, y + ny * H, 1, L, x - nx * H, y - ny * H, -1, L], i * 8);
+      out.set([x, y, nx, ny, 1, L, x, y, nx, ny, -1, L], i * 12);
     }
     const v = gl.createVertexArray(); gl.bindVertexArray(v); const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, out, gl.STATIC_DRAW);
-    const attr = (name, size, off) => { const l = gl.getAttribLocation(this.rib, name); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 16, off); };
-    attr('a_p', 2, 0); attr('a_s', 1, 8); attr('a_l', 1, 12);
+    const attr = (name, size, off) => { const l = gl.getAttribLocation(this.rib, name); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 24, off); };
+    attr('a_p', 2, 0); attr('a_n', 2, 8); attr('a_s', 1, 16); attr('a_l', 1, 20);
     gl.bindVertexArray(null);
-    this.ribbon = { v, b, n: pts.length * 2, org };
+    this.ribbon = { v, b, n: pts.length * 2, org, K };
   }
 
   drawRibbon(gl) {
@@ -488,6 +523,7 @@ export class City3D {
     gl.uniformMatrix4fv(gl.getUniformLocation(this.rib, 'u_m'), false, this.tileM(r.org[0], r.org[1]));
     gl.uniform1f(gl.getUniformLocation(this.rib, 'u_t'), performance.now() / 1000);
     gl.uniform1f(gl.getUniformLocation(this.rib, 'u_from'), this.along || 0);
+    gl.uniform1f(gl.getUniformLocation(this.rib, 'u_wid'), (this.ribbonW || 4.2) * r.K);
     gl.uniform1f(gl.getUniformLocation(this.rib, 'u_night'), this.night ? 1 : 0);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
     gl.bindVertexArray(r.v);

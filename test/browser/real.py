@@ -152,6 +152,8 @@ with sync_playwright() as p:
             page.wait_for_timeout(9000)
             print('PO', t, page.evaluate(ST), flush=True)
             page.screenshot(path=f'{OUT}/toggle-{t}.png')
+    if os.environ.get('CLOSELOG'):
+        page.evaluate("window.__cl = []; setInterval(() => { const S = window.__nav.S; window.__cl.push([Math.round(S.nav.along), +(S.closeK || 0).toFixed(2), Math.round(S.closeUntil ?? -1)]); }, 1000)")
     page.evaluate(SAMPLE)
     page.wait_for_timeout(SECS * 1000)
     print('orto', len(orto), orto[:6], flush=True)
@@ -167,6 +169,7 @@ with sync_playwright() as p:
     print('BŁĘDY:', errors[:6], flush=True)
     json.dump(d, open(f'{OUT}/{THEME}-cam.json', 'w'))
     page.screenshot(path=f'{OUT}/{THEME}-b.png')
+    if os.environ.get('CLOSELOG'): print('CLOSE', page.evaluate('window.__cl'), flush=True)
     print('stan', page.evaluate("(() => { const S = window.__nav.S; return { mode: S.mode, nav: !!S.nav, sim: !!S.sim, along: S.sim && S.sim.along, dist: S.sim && S.sim.route.distance }; })()"), flush=True)
     page.wait_for_timeout(2500)
     print('pasy', page.evaluate("(() => { const st = window.__nav.S.sim.route.steps; return st.filter(x => x.lanes).map(x => [Math.round(x.at), x.lanes.length, x.toward || '']); })()"), flush=True)

@@ -152,3 +152,14 @@ test('wstęga: ostry narożnik jest zaokrąglony, a końce i długość zostają
   const corner = Math.min(...pts.map(([x, y]) => Math.hypot(x - 100, y)));
   assert.ok(corner > 2 && corner < 8, String(corner));
 });
+
+test('niska kamera: włącza się 100 m przed skrzyżowaniem i schodzi 100 m za nim', async () => {
+  const { closeUntil, zoomForDistance } = await import('../js/profiles.js');
+  assert.equal(closeUntil({ along: 0, kmh: 50, nextAt: 300, blocked: false, until: null }), -1);
+  assert.equal(closeUntil({ along: 210, kmh: 50, nextAt: 300, blocked: false, until: null }), 400);
+  assert.equal(closeUntil({ along: 0, kmh: 120, nextAt: 150, blocked: false, until: null }), 250); // 120 km/h: 5 s to 167 m
+  assert.equal(closeUntil({ along: 500, kmh: 50, nextAt: null, blocked: true, until: null }), 600);
+  assert.equal(closeUntil({ along: 10, kmh: 50, nextAt: null, blocked: false, until: 2000 }), -1); // stary znacznik po nowej trasie
+  const z = zoomForDistance(26, 51.25, 844, 50);
+  assert.ok(z > 20 && z < 21.5, String(z));
+});

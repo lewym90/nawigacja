@@ -8,7 +8,7 @@ import { unpackFuel, candidatesAhead, fuelDetours, bestStation, fmtExtra } from 
 import { explainRoute } from './explain.js';
 import { TripRecorder, TRIP, speedStops, revealStops, replayFrames, drawPoster, fmtTripTime } from './trip.js';
 import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
-import { CAMERA_PROFILES, QUALITY_PROFILES, cameraProfile, qualityProfile } from './profiles.js';
+import { CAMERA_PROFILES, QUALITY_PROFILES, CLOSE_CAM, RIBBON_WIDE, cameraProfile, qualityProfile, lerp, zoomForDistance, closeUntil } from './profiles.js';
 import { Compass } from './compass.js';
 import { buildRoadItems, unpackRoadPoints, RoadWatch, describe as describeRoad } from './roadwise.js';
 import {
@@ -28,7 +28,7 @@ import { routePoints, fetchTraffic, jamsOnLine, jamFeatures, worthSwitch, nextJa
 import { City3D, CityGround } from './city3d.js';
 import { addFacades, loadFacades } from './facades.js';
 import { prefetchOrto } from './orto.js';
-import { corridorBoxesRange, haversine, bearing, sliceLine, project } from './geo.js';
+import { corridorBoxesRange, haversine, bearing, sliceLine, project, pointAt } from './geo.js';
 import { createHazardData, WINDOW_M } from './hazard-data.js';
 import { Voice } from './voice.js';
 import { Simulator } from './sim.js';
@@ -850,6 +850,7 @@ function startNav({ sim = false } = {}) {
   setFov(NAV_FOV);
   drawLanes(S.nav);
   document.body.classList.add('driving');
+  S.closeK = 0; S.closeUntil = null;
   S.mode = 'nav'; roadLabels(); cityRoute(); drawRoutes(); // alternatywy znikają już przy starcie
   cam.s = null; cam.v = 0;
   cam.place({ center: start, bearing: S.heading, zoom: travel().zoom(0), pitch: camPitch() });
@@ -863,6 +864,38 @@ function startNav({ sim = false } = {}) {
 const NAV_FOV = 50; const MAP_FOV = 36.87;
 const setFov = (d) => { try { if (map.setVerticalFieldOfView) map.setVerticalFieldOfView(d); } catch { /* starsza mapa: zwykła perspektywa */ } };
 const cam = new ChaseCam();
+const CLOSE_PITCH = 90 - (Math.atan2(CLOSE_CAM.height, CLOSE_CAM.back) * 180) / Math.PI;
+
+/** Niska kamera: stała, gdy tak wybrano, a w innych widokach sama przed skrzyżowaniem i za budynkiem, z powrotem 100 m dalej. */
+function closeTick(dt, p) {
+  if (!NEW || !settings.tilt || travel().costing !== 'auto' || !S.nav) { S.closeK = 0; return; }
+  const prof = cameraProfile(settings.cameraProfile); const along = cam.s || 0;
+  let target = 1;
+  if (!prof.close) {
+    S.closeCheck = (S.closeCheck || 0) - dt;
+    if (S.closeCheck <= 0) {
+      S.closeCheck = 0.3;
+      const g = S.nav.lastG; const nextAt = g && wantsArrow(g.next) ? g.next.at : null;
+      S.closeUntil = closeUntil({ along, kmh: (cam.v || 0) * 3.6, nextAt, blocked: viewBlocked(p, along), until: S.closeUntil });
+    }
+    target = along < (S.closeUntil ?? -1) ? 1 : 0;
+  }
+  const k = S.closeK || 0; const nk = k + (target - k) * (1 - Math.exp(-dt / CLOSE_CAM.tau));
+  S.closeK = Math.abs(nk - target) < 0.002 ? target : nk;
+  cam.bearingTau = lerp(prof.bearingTau, 0.5, S.closeK); // nisko kamera musi szybciej wchodzić w zakręt, inaczej ląduje w ścianie
+  if (S.city) S.city.ribbonW = lerp(RIBBON_WIDE, CLOSE_CAM.ribbon, S.closeK);
+}
+
+/** Czy z wysokiej kamery budynek zasłania auto albo drogę tuż przed nim. Liczone zawsze dla wysokiej, bo inaczej niska kamera sama by się odwoływała. */
+function viewBlocked(p, along) {
+  if (!S.city || !S.city.sightBlocked) return false;
+  const line = S.nav.route.line; const f = window.innerHeight / 2 / Math.tan((NAV_FOV * Math.PI) / 360);
+  const dist = (f / (512 * 2 ** p.zoom)) * 40075016.68 * Math.cos((p.center[1] * Math.PI) / 180);
+  const pr = (p.pitch * Math.PI) / 180; const back = dist * Math.sin(pr); const br = (p.bearing * Math.PI) / 180;
+  const from = [p.center[0] - (back * Math.sin(br)) / (111320 * Math.cos((p.center[1] * Math.PI) / 180)), p.center[1] - (back * Math.cos(br)) / 110540];
+  const z = dist * Math.cos(pr);
+  return S.city.sightBlocked(from, z, p.center) || S.city.sightBlocked(from, z, pointAt(line, Math.min(line.total, along + 40)).point);
+}
 const SKY_RATIO = 2048 / 683; // proporcje obrazów nieba
 let camLast = 0; let skyX = null;
 function camLoop(now) {
@@ -873,8 +906,13 @@ function camLoop(now) {
   if (map.isEasing()) { const c = map.getCenter(); cam.place({ center: [c.lng, c.lat], bearing: map.getBearing(), zoom: map.getZoom(), pitch: map.getPitch() }); return; }
   const p = cam.tick(dt);
   if (!p) return;
-  if (S.city) S.city.along = cam.s;
-  map.jumpTo({ center: p.center, bearing: p.bearing, zoom: p.zoom, pitch: p.pitch, padding: camPadding() });
+  if (S.city) S.city.along = cam.s - (cam.lag || 0) - 1;
+  closeTick(dt, p);
+  const k = S.closeK || 0;
+  const zoom = k ? lerp(p.zoom, zoomForDistance(Math.hypot(CLOSE_CAM.height, CLOSE_CAM.back), p.center[1], window.innerHeight, NAV_FOV), k) : p.zoom;
+  const pitch = k ? lerp(p.pitch, CLOSE_PITCH, k) : p.pitch;
+  map.jumpTo({ center: p.center, bearing: p.bearing, zoom, pitch, padding: camPadding() });
+  if (k !== S.closeShown) { S.closeShown = k; placePuckY(); }
   const pv = document.getElementById('puck-svg');
   if (pv) pv.style.transform = `rotate(${p.carOffset.toFixed(1)}deg)`;
   S.nav.cam = { c: [...p.center], hd: p.bearing, zoom: p.zoom };
@@ -901,15 +939,18 @@ function camPitch() {
 
 function camPadding() {
   const h = window.innerHeight;
-  return { top: Math.round(h * 0.46), bottom: 40, left: 0, right: 0 };
+  const k = S.closeK || 0; // niska kamera: auto niżej na ekranie, więcej widać przed nim
+  return { top: Math.round(h * lerp(0.46, 2 * CLOSE_CAM.carY - 1, k)), bottom: Math.round(40 * (1 - k)), left: 0, right: 0 };
+}
+
+function placePuckY() {
+  const h = window.innerHeight; const p = camPadding();
+  $('puck').style.top = `${p.top + (h - p.top - p.bottom) / 2}px`;
 }
 
 function placePuck() {
-  const h = window.innerHeight;
-  const p = camPadding();
-  const y = p.top + (h - p.top - p.bottom) / 2;
+  placePuckY();
   const puck = $('puck');
-  puck.style.top = `${y}px`;
   puck.innerHTML = `<svg viewBox="0 0 64 64" id="puck-svg" aria-hidden="true"><path d="M32 8 L47 50 L32 42 L17 50Z" fill="#F5FAFF" stroke="#00D9FF" stroke-width="3" stroke-linejoin="round"/></svg>`;
 }
 window.addEventListener('resize', () => { if (S.mode === 'nav') placePuck(); });
@@ -1030,6 +1071,7 @@ function navTick(fix) {
 
   maybeExtendHazards(N, g.along);
   updateRoadArrow(N, g);
+  N.lastG = g;
   if (N.paintedAlong == null || g.along - N.paintedAlong > 120) { N.paintedAlong = g.along; paintRoute(g.along); }
   if (N.aheadAlong == null || g.along - N.aheadAlong > 35 || g.along < N.aheadAlong) { N.aheadAlong = g.along; drawAhead(N, g.along); }
   if (settings.ortho !== false && CONFIG.ortoUrl && (N.ortoAlong == null || Math.abs(g.along - N.ortoAlong) > 300)) { N.ortoAlong = g.along; prefetchOrto(N.route.line, g.along); }
@@ -1641,6 +1683,8 @@ document.querySelectorAll('[data-seg=engine]').forEach((el) => {
 });
 // Kamera i jakość mają sens tylko w nowym wyglądzie.
 function applyProfiles() {
+  if (settings.cameraProfile === 'cinematic') settings.cameraProfile = 'close';
+  S.closeUntil = null;
   cam.bearingTau = NEW ? cameraProfile(settings.cameraProfile).bearingTau : 0;
   if (!NEW) return;
   const q = qualityProfile(settings.quality);

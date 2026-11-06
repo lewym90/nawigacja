@@ -1,4 +1,4 @@
-# KONTYNUACJA: nawigacja (lewym90/nawigacja), stan na 2026-11-04, wersja 0.20.0
+# KONTYNUACJA: nawigacja (lewym90/nawigacja), stan na 2026-11-04, wersja 0.21.0
 
 Ten plik jest kompletnym przekazaniem pracy. Ma wystarczyć, żeby nowa sesja Claude (inne konto, bez dostępu do poprzedniej rozmowy i do Projektu „APLIKACJE”) mogła kontynuować bez zadawania pytań, które już padły. Czytaj całość, zanim cokolwiek zmienisz.
 
@@ -106,6 +106,7 @@ test/            – testy Node (`node --test`), test/browser/run.py (pełny tes
 - **0.18.0:** próbka nowego wyglądu za przełącznikiem `newLook` (`?nowy=1`, ustawienia): teren z BDOT10k (`tools/build-bdot.py`, `city/nowy/ground.json`), budynki z funkcją BDOT i nowsze budynki (`build-city.py` z 4. argumentem), drzewa z danych (`build-trees-real.py`), płaskie cienie w `city3d.js`, smukła wstęga, bez napisów na jezdni w jeździe. BDOT powiatu: `https://opendata.geoportal.gov.pl/bdot10k/schemat2021/06/0663_GML.zip`. Porównania: `test/browser/shot.py`.
 - **0.19.0 (przełącznik newLook):** własny render: `tools/build-roads.py` (BDOT SKJZ/SKRP: `.r.bin`, jezdnie, krawężniki, chodniki, linie), `tools/build-shadows.py` (`.s.webp`, gotowe cienie), `CityGround` + wstęga-siatka w `city3d.js` (`setRoute`, ghost przez GREATER, przepływ w shaderze), korytarz kamery `cut()` usuwa zasłaniające fragmenty, `fitSky` trzyma niebo na horyzoncie. Czeka: atlasy po grafikach właściciela (drzewa, elewacje wg funkcji), modele ważnych obiektów, własne kafle poza Lublinem.
 - **0.20.0:** `js/profiles.js`: kamera Klasyczna/Dynamiczna/Filmowa i jakość Ultra/Wysoka/Eko w szybkich ustawieniach, tylko w nowym wyglądzie; działają bez przeładowania. `real.py` przyjmuje env SETTINGS (JSON) i QUICK.
+- **0.21.0:** kamera „Z bliska” (`CLOSE_CAM` w `profiles.js`: 10 m wysoko, 24 m za autem) zamiast Filmowej; można ją wybrać na stałe, a w Klasycznej i Dynamicznej włącza się sama 100 m przed manewrem (albo 5 s przy dużej prędkości) i gdy `City3D.sightBlocked` wykryje budynek na linii wzroku, wraca 100 m dalej (`closeUntil`, `closeTick`). Szerokość wstęgi jest uniformem `u_wid`, wstęga zaczyna się przy pucku (`cam.lag`).
 - **Własna mapa, szczegóły:** własny silnik miasta `js/city3d.js` (warstwa WebGL2 w MapLibre) + `tools/build-city.py` z modeli GUGiK LoD2 (Lublin: TERYT 0663, `https://integracja.gugik.gov.pl/Budynki3D/pobierz.php?plik=powiaty/0663_gml.zip`, 35 602 budynki, 76 MB kafli), atlas `tools/build-atlas.py`. Kamera zoom 18,6–17,6, pochylenie 73°, zdjęcia lotnicze domyślnie wyłączone (rozmazane i wolne). Do zrobienia: test płynności na iPhonie, kolejne powiaty (LoD2 tam gdzie jest, LoD1 reszta), drogi i ziemia na własnych kaflach.
 
 ### Kluczowe szczegóły działania (żeby nie odkrywać na nowo)
