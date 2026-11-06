@@ -57,7 +57,7 @@ with sync_playwright() as p:
     orto = []
     page.on('response', lambda r: orto.append(r.status) if 'ORTO' in r.url else None)
     page.add_init_script("localStorage.setItem('nav.settings', JSON.stringify({theme: '%s'}))" % THEME)
-    page.goto(f'http://127.0.0.1:{PORT}/index.html')
+    page.goto(f'http://127.0.0.1:{PORT}/index.html' + ('?nowy=1' if os.environ.get('NOWY') else ''))
     page.wait_for_function("window.__nav && window.__nav.map && window.__nav.map.getLayer('sel-line')", timeout=30000)
     page.wait_for_timeout(1500)
     page.click('#btn-menu')

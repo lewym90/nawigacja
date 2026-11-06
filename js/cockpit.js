@@ -211,3 +211,19 @@ export function speedRing(kmh, limit) {
 }
 
 export { angleDiff };
+
+/** Wygładzenie linii tylko do rysowania (Chaikin): wstęga bez kantów na załamaniach trasy. */
+export function smoothLine(coords, passes = 2) {
+  if (coords.length < 3 || coords.length > 20000) return coords;
+  let c = coords;
+  for (let k = 0; k < passes; k++) {
+    const o = [c[0]];
+    for (let i = 0; i < c.length - 1; i++) {
+      const [a, b] = [c[i], c[i + 1]];
+      o.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25], [a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+    }
+    o.push(c[c.length - 1]);
+    c = o;
+  }
+  return c;
+}

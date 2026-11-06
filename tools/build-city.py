@@ -11,6 +11,7 @@ from pyproj import Transformer
 
 GRID = 400.0
 SRC, OUT = sys.argv[1], sys.argv[2]
+to3857 = Transformer.from_crs(2180, 3857, always_xy=True)
 ROADW = {'motorway': 13, 'trunk': 13, 'primary': 11, 'secondary': 9, 'tertiary': 7}  # połowa jezdni w metrach Mercatora
 road_tree = None
 if len(sys.argv) > 3:
@@ -27,6 +28,18 @@ if len(sys.argv) > 3:
             if not q.is_empty: ob.append(q)
         except Exception: pass
     bld_tree = STRtree(ob)
+bd = None
+if len(sys.argv) > 4:  # BDOT10k: funkcja budynku do doboru elewacji i budynki nowsze niż modele 3D
+    bd = pickle.load(open(sys.argv[4], 'rb'))['bld']
+    bpoly = []; binfo = []
+    for pts, fn, lv in bd:
+        a = np.array(pts); mx, my = to3857.transform(a[:, 0], a[:, 1])
+        try:
+            q = Polygon(list(zip(mx, my))).buffer(0)
+            if q.geom_type == 'Polygon' and q.area > 40: bpoly.append(q); binfo.append((fn, lv))
+        except Exception: pass
+    btree = STRtree(bpoly); bused = set()
+COMM = ('handlowo', 'biurowe', 'przemysłowe', 'magazynowe', 'transportu', 'oświaty')
 skipped = 0
 def stale(xy):
     """Bryła wchodzi na jezdnię, a OSM nie zna tam budynku: to budynek wyburzony po 2017 r."""
@@ -36,7 +49,6 @@ def stale(xy):
     if not len(hits): return False
     cov = sum(f.intersection(ob[i]).area for i in bld_tree.query(f)) / f.area
     return cov < 0.3
-to3857 = Transformer.from_crs(2180, 3857, always_xy=True)
 LAT = 51.2; MERC = 1 / math.cos(math.radians(LAT))
 BLD = re.compile(rb'<bldg:Building .*?</bldg:Building>', re.S)
 SURF = re.compile(rb'<bldg:(RoofSurface|WallSurface)\b.*?</bldg:\1>', re.S)
@@ -79,6 +91,15 @@ for info in z.infolist():
         base, top = allz.min(), allz.max(); h = top - base
         kind_i = 0 if h < 9 else 1 if h < 16 else 2 if h < 34 else 3
         idn = abs(hash(body[:90])) % 3
+        fx0 = None
+        if bd is not None:
+            allp = np.concatenate([p for _, p in surfaces]); mx0, my0 = to3857.transform(allp[:, 0], allp[:, 1])
+            fx0 = MultiPoint(list(zip(mx0, my0))).convex_hull
+            if fx0.geom_type == 'Polygon':
+                for i in btree.query(fx0):
+                    ov = bpoly[i].intersection(fx0).area
+                    if ov > 0.3 * bpoly[i].area: bused.add(int(i))
+                    if ov > 0.4 * fx0.area and any(c in binfo[i][0] for c in COMM): kind_i = 3
         cell = kind_i * 3 + idn
         c = np.concatenate([p for _, p in surfaces])[:, :2].mean(0)
         cx, cy = to3857.transform(c[0], c[1])
@@ -100,6 +121,27 @@ for info in z.infolist():
                 if nn and abs(n[2]) / nn < 0.97: pitched = 1.0
                 for i in idx: roofs[tile].append((P[i, 0], P[i, 1], P[i, 2], float(hash(body[:80]) % 3) + 3 * (abs(n[2]) / (nn or 1) < 0.97)))
         count += 1
+added = 0
+if bd is not None:
+    for i, (q, (fn, lv)) in enumerate(zip(bpoly, binfo)):
+        if i in bused or lv < 1: continue
+        if road_tree is not None and len(road_tree.query(q.buffer(-1.5), predicate='intersects')): continue
+        h = lv * 3.1 + 0.8
+        kind_i = 3 if any(c in fn for c in COMM) else 0 if h < 9 else 1 if h < 16 else 2 if h < 34 else 3
+        cell = kind_i * 3 + i % 3
+        c = q.centroid; tile = (int(c.x // GRID), int(c.y // GRID)); ox, oy = tile[0] * GRID, tile[1] * GRID
+        P = np.array(q.exterior.coords[:-1]); P = P - [ox, oy]
+        zt = h * MERC
+        u0 = 0.0
+        for a in range(len(P)):
+            A = P[a]; B = P[(a + 1) % len(P)]; L = np.hypot(*(B - A)) / MERC / WIDTH[kind_i]; v = h / WIDTH[kind_i]
+            for (x_, y_, z_, u_, v_) in ((A[0], A[1], 0, u0, 0), (B[0], B[1], 0, u0 + L, 0), (B[0], B[1], zt, u0 + L, v), (A[0], A[1], 0, u0, 0), (B[0], B[1], zt, u0 + L, v), (A[0], A[1], zt, u0, v)):
+                walls[tile].append((x_, y_, z_, u_, v_, cell))
+            u0 += L
+        idx = earcut.triangulate_float64(P.astype(np.float64), np.array([len(P)], dtype=np.uint32))
+        for k in idx: roofs[tile].append((P[k, 0], P[k, 1], zt, float(i % 3)))
+        added += 1
+    print('dodane nowsze budynki z BDOT', added)
 os.makedirs(OUT, exist_ok=True)
 index = []; total = 0
 for t in sorted(set(walls) | set(roofs)):

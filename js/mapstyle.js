@@ -56,6 +56,22 @@ const pick = (kind) => ['concat', `fa-${kind}-`, ['to-string', ['%', ['coalesce'
 const facadeExpr = () => ['case', ['<', H, 9], pick('house'), ['<', H, 16], pick('tenement'), ['<', H, 32], pick('block'), pick('office')];
 const NAME = ['coalesce', ['get', 'name:pl'], ['get', 'name']];
 
+// Nowy wygląd: prawdziwe użytkowanie terenu z BDOT10k. Miasto jest miastem, a trawa tylko tam, gdzie naprawdę rośnie.
+function groundNew(mode) {
+  const n = mode === 'night';
+  const col = n
+    ? { bg: '#111A29', house: '#141D2A', estate: '#161E2B', paved: '#1B2331', bare: '#161D29', field: '#131C24', wood: '#0F1D20', water: '#0B2C52' }
+    : { bg: '#C6C5BC', house: '#BBC0A8', estate: '#CACAC0', paved: '#D2D0C8', bare: '#C0BAA8', field: '#BFB98F', wood: '#566F4F', water: '#6FA9D6' };
+  const fill = (k, paint) => ({ id: `g-${k}`, type: 'fill', source: 'ground', minzoom: 11, filter: ['==', ['get', 'k'], k], paint });
+  return [
+    { id: 'ground-land', type: 'background', minzoom: 12, paint: { 'background-color': col.bg, 'background-opacity': ['interpolate', ['linear'], ['zoom'], 12, 0, 13.5, 1] } },
+    ...['field', 'bare', 'house', 'estate', 'paved'].map((k) => fill(k, { 'fill-color': col[k] })),
+    fill('grass', { 'fill-pattern': 'tx-grass', 'fill-opacity': n ? 0.8 : 0.85 }),
+    fill('wood', { 'fill-color': col.wood }),
+    fill('water', { 'fill-color': col.water }),
+  ];
+}
+
 /** travel: auto | pedestrian | bicycle. Pieszo wyraźnie rysujemy ścieżki i schody, rowerem drogi rowerowe. */
 export function buildStyle(mode, cfg, travel = 'auto') {
   const c = PALETTE[mode] || PALETTE.night;
@@ -70,7 +86,7 @@ export function buildStyle(mode, cfg, travel = 'auto') {
     version: 8,
     name: `nav-${mode}`,
     glyphs: cfg.glyphsUrl,
-    sources: { omt: { type: 'vector', url: cfg.tilesUrl } },
+    sources: { omt: { type: 'vector', url: cfg.tilesUrl }, ...(cfg.newLook ? { ground: { type: 'geojson', data: `${cfg.cityBaseNew}ground.json`, tolerance: 0.2, buffer: 8 } } : {}) },
     layers: [
       { id: 'bg', type: 'background', paint: { 'background-color': c.bg } },
       { id: 'landcover-wood', type: 'fill', source: 'omt', 'source-layer': 'landcover', filter: ['in', ['get', 'class'], ['literal', ['wood', 'forest']]], paint: { 'fill-color': c.wood } },
@@ -80,8 +96,10 @@ export function buildStyle(mode, cfg, travel = 'auto') {
       { id: 'landuse-school', type: 'fill', source: 'omt', 'source-layer': 'landuse', filter: ['in', ['get', 'class'], ['literal', ['school', 'university', 'kindergarten']]], paint: { 'fill-color': c.school } },
       { id: 'landuse-hosp', type: 'fill', source: 'omt', 'source-layer': 'landuse', filter: ['==', ['get', 'class'], 'hospital'], paint: { 'fill-color': c.hospital } },
       { id: 'park', type: 'fill', source: 'omt', 'source-layer': 'park', paint: { 'fill-color': c.park } },
-      { id: 'ground-land', type: 'background', minzoom: 14, paint: { 'background-pattern': 'tx-grass' } },
-      { id: 'ground-paved', type: 'fill', source: 'omt', 'source-layer': 'landuse', minzoom: 14, filter: ['in', ['get', 'class'], ['literal', ['industrial', 'commercial', 'retail', 'school', 'university', 'hospital']]], paint: { 'fill-pattern': 'tx-pave' } },
+      ...(cfg.newLook ? groundNew(mode) : [
+        { id: 'ground-land', type: 'background', minzoom: 14, paint: { 'background-pattern': 'tx-grass' } },
+        { id: 'ground-paved', type: 'fill', source: 'omt', 'source-layer': 'landuse', minzoom: 14, filter: ['in', ['get', 'class'], ['literal', ['industrial', 'commercial', 'retail', 'school', 'university', 'hospital']]], paint: { 'fill-pattern': 'tx-pave' } },
+      ]),
       { id: 'water', type: 'fill', source: 'omt', 'source-layer': 'water', paint: { 'fill-color': c.water } },
       { id: 'waterway', type: 'line', source: 'omt', 'source-layer': 'waterway', paint: { 'line-color': c.waterLine, 'line-width': lerpWidth(0.4, 1.2, 4) } },
       { id: 'rail', type: 'line', source: 'omt', 'source-layer': 'transportation', minzoom: 10, filter: ['==', ['get', 'class'], 'rail'], paint: { 'line-color': c.rail, 'line-width': lerpWidth(0.4, 0.8, 2), 'line-dasharray': [3, 2] } },
@@ -95,11 +113,15 @@ export function buildStyle(mode, cfg, travel = 'auto') {
       road('main', ['primary'], c.roadMain, meters(0.8, 3.2, 12)),
       road('major-case', ['motorway', 'trunk'], c.roadMajorCase, meters(1.4, 5.2, 20)),
       road('major', ['motorway', 'trunk'], c.roadMajor, meters(1.1, 3.8, 18)),
-      { ...road('sidewalk', ['minor', 'tertiary', 'secondary', 'primary'], c.roadMinorCase, meters(0.3, 2.4, 13), { 'line-pattern': 'tx-pave' }), minzoom: 15 },
-      { ...road('road-edge-minor', ['minor', 'service'], c.roadEdge, meters(0.3, 2.4, 7)), minzoom: 15 },
-      { ...road('road-edge-mid', ['tertiary', 'secondary'], c.roadEdge, meters(0.5, 3.2, 10.2)), minzoom: 15 },
-      { ...road('road-edge-main', ['primary'], c.roadEdge, meters(1, 4, 13.2)), minzoom: 15 },
-      { ...road('road-edge-major', ['motorway', 'trunk'], c.roadEdge, meters(1.3, 4.6, 19.2)), minzoom: 15 },
+      ...(cfg.newLook ? [
+        { ...road('sidewalk', ['minor'], c.roadMinorCase, meters(0.3, 2.4, 11), { 'line-pattern': 'tx-pave' }), minzoom: 15 },
+        { ...road('sidewalk-mid', ['tertiary', 'secondary'], c.roadMinorCase, meters(0.3, 2.4, 15), { 'line-pattern': 'tx-pave' }), minzoom: 15 },
+        { ...road('sidewalk-main', ['primary'], c.roadMinorCase, meters(0.3, 2.4, 18), { 'line-pattern': 'tx-pave' }), minzoom: 15 },
+      ] : [{ ...road('sidewalk', ['minor', 'tertiary', 'secondary', 'primary'], c.roadMinorCase, meters(0.3, 2.4, 13), { 'line-pattern': 'tx-pave' }), minzoom: 15 }]),
+      { ...road('road-edge-minor', ['minor', 'service'], c.roadEdge, meters(0.3, 2.4, cfg.newLook ? 6.5 : 7)), minzoom: 15 },
+      { ...road('road-edge-mid', ['tertiary', 'secondary'], c.roadEdge, meters(0.5, 3.2, cfg.newLook ? 9.6 : 10.2)), minzoom: 15 },
+      { ...road('road-edge-main', ['primary'], c.roadEdge, meters(1, 4, cfg.newLook ? 12.6 : 13.2)), minzoom: 15 },
+      { ...road('road-edge-major', ['motorway', 'trunk'], c.roadEdge, meters(1.3, 4.6, cfg.newLook ? 18.6 : 19.2)), minzoom: 15 },
       { ...road('asphalt-minor', ['minor', 'service'], c.roadMinor, meters(0.2, 1.6, 6), { 'line-pattern': 'tx-asphalt' }), minzoom: 15 },
       { ...road('asphalt-mid', ['tertiary', 'secondary'], c.roadMid, meters(0.4, 2.6, 9), { 'line-pattern': 'tx-asphalt' }), minzoom: 15 },
       { ...road('asphalt-main', ['primary'], c.roadMain, meters(0.8, 3.2, 12), { 'line-pattern': 'tx-asphalt' }), minzoom: 15 },

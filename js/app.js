@@ -11,7 +11,7 @@ import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
 import { Compass } from './compass.js';
 import { buildRoadItems, unpackRoadPoints, RoadWatch, describe as describeRoad } from './roadwise.js';
 import {
-  atmosphere, routeGradient, gradientExpr, ROUTE_PLAIN, maneuverArrow, wantsArrow, speedRing,
+  atmosphere, smoothLine, routeGradient, gradientExpr, ROUTE_PLAIN, maneuverArrow, wantsArrow, speedRing,
 } from './cockpit.js';
 import { fmtDist, fmtDuration, limitAt } from './routing.js';
 import { Guidance } from './guidance.js';
@@ -97,6 +97,10 @@ function show(id, on) { $(id).hidden = !on; }
 let night = isNight(settings.theme);
 document.body.classList.toggle('day', !night);
 
+if (new URLSearchParams(location.search).has('nowy')) { settings.newLook = true; saveSettings(settings); }
+const NEW = !!settings.newLook;
+CONFIG.newLook = NEW;
+if (NEW) CONFIG.cityBase = CONFIG.cityBaseNew;
 await loadFacades(); // tekstury muszą być gotowe, zanim mapa zbuduje kafelki
 const map = new maplibregl.Map({
   container: 'map',
@@ -134,6 +138,7 @@ function installLayers() {
     map.addLayer({ id: 'orto', type: 'raster', source: 'orto', minzoom: 12.5, layout: { visibility: vis }, paint: { 'raster-opacity': ['interpolate', ['linear'], ['zoom'], 12.5, 0, 14, 1], 'raster-brightness-max': night ? 0.3 : 1, 'raster-saturation': night ? -0.5 : 0.08, 'raster-fade-duration': 250 } }, under);
   }
   if (!map.getSource('secs')) map.addSource('secs', { type: 'geojson', data: emptyFC() });
+  const rib = (m, lo) => ['interpolate', ['exponential', 2], ['zoom'], 8, lo, 14, +(lo * 2.2).toFixed(1), 20, Math.round(m / 0.047)];
   // Trasa leży POD budynkami 3D, żeby bloki ją zasłaniały jak w rzeczywistości.
   const before = map.getLayer('building-3d') ? 'building-3d' : (map.getLayer('road-label') ? 'road-label' : undefined);
   addFacades(map, night);
@@ -144,17 +149,24 @@ function installLayers() {
   add({ id: 'alt-line', type: 'line', source: 'alt', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': night ? '#8FA8C4' : '#5F7690', 'line-width': 7, 'line-opacity': 0.95 } });
   add({ id: 'alt-hit', type: 'line', source: 'alt', paint: { 'line-color': '#000', 'line-opacity': 0.01, 'line-width': 30 } });
   const grad = ['interpolate', ['linear'], ['line-progress'], 0, route, 1, route];
+  if (NEW) { // smukła wstęga: delikatna poświata, półprzezroczysta powierzchnia, jasny rdzeń
+    add({ id: 'sel-glow', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': rib(5.2, 7), 'line-blur': rib(3, 5), 'line-opacity': night ? 0.5 : 0.34 } });
+    add({ id: 'sel-case', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, routeCase, 1, routeCase], 'line-width': rib(2.5, 5), 'line-opacity': 0.9 } });
+    add({ id: 'sel-line', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': rib(2.2, 4), 'line-opacity': 0.85 } });
+    add({ id: 'sel-core', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, '#E6FCFF', 1, '#E6FCFF'], 'line-width': rib(0.55, 1.4), 'line-opacity': 0.95 } });
+  } else {
   add({ id: 'sel-glow', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 9, 14, 19.8, 20, 170], 'line-blur': ['interpolate', ['exponential', 2], ['zoom'], 8, 6, 14, 12, 20, 110], 'line-opacity': night ? 0.7 : 0.45 } });
   add({ id: 'sel-case', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, routeCase, 1, routeCase], 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 6.5, 14, 14.3, 20, 89] } });
   add({ id: 'sel-line', type: 'line', source: 'sel', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': grad, 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 4.5, 14, 9.9, 20, 77], 'line-opacity': 0.92 } });
   add({ id: 'lane-div', type: 'line', source: 'lanes', minzoom: 15.5, filter: ['==', ['get', 'kind'], 'div'], layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#F5FAFF', 'line-opacity': 0.8, 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 15.5, 0.5, 20, 2.6], 'line-offset': ['interpolate', ['exponential', 2], ['zoom'], 15, ['/', ['get', 'o'], 1.495], 20, ['/', ['get', 'o'], 0.0467]], 'line-dasharray': [5, 7] } });
+  }
   add({ id: 'sec-line', type: 'line', source: 'secs', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#ffcf3a', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.5, 16, 6], 'line-dasharray': [2, 1.3] } });
   if (!map.getSource('jam')) map.addSource('jam', { type: 'geojson', data: emptyFC() });
   add({ id: 'jam-line', type: 'line', source: 'jam', layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': ['match', ['get', 'sev'], 1, '#FFB547', 2, '#FF5364', '#A3122A'], 'line-width': ['interpolate', ['exponential', 2], ['zoom'], 8, 4.5, 14, 9.9, 20, 77] } });
   // szewrony na wstędze: stałe, leżą na jezdni i pokazują kierunek przed autem (bez animacji w czasie jazdy)
   if (!map.getSource('ahead')) map.addSource('ahead', { type: 'geojson', data: emptyFC() });
   if (!map.hasImage('chevron')) map.addImage('chevron', chevronImage());
-  add({ id: 'sel-chevron', type: 'symbol', source: 'ahead', layout: { 'symbol-placement': 'line', 'symbol-spacing': 64, 'icon-image': 'chevron', 'icon-size': ['interpolate', ['exponential', 2], ['zoom'], 14, 0.018, 20, 1.15], 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-keep-upright': false }, paint: { 'icon-opacity': 0.85 } });
+  add({ id: 'sel-chevron', type: 'symbol', source: 'ahead', layout: { 'symbol-placement': 'line', 'symbol-spacing': NEW ? 110 : 64, 'icon-image': 'chevron', 'icon-size': ['interpolate', ['exponential', 2], ['zoom'], 14, NEW ? 0.012 : 0.018, 20, NEW ? 0.62 : 1.15], 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map', 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-keep-upright': false }, paint: { 'icon-opacity': NEW ? 0.6 : 0.85 } });
   // strzałka skrętu „namalowana” na jezdni (leży na ziemi, więc w widoku 3D jest w perspektywie)
   if (!map.getSource('arrow')) map.addSource('arrow', { type: 'geojson', data: emptyFC() });
   const aw = ['interpolate', ['linear'], ['zoom'], 14, 3, 17, 9, 19, 24];
@@ -169,8 +181,9 @@ function installLayers() {
   if (!map.getSource('fixes')) map.addSource('fixes', { type: 'geojson', data: emptyFC() });
   if (!map.getLayer('fixes-dot')) map.addLayer({ id: 'fixes-dot', type: 'circle', source: 'fixes', minzoom: 11, paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 5, 17, 11], 'circle-color': ['match', ['get', 'kind'], 'avoid', '#ff5a4d', '#3ddc84'], 'circle-stroke-width': 2.5, 'circle-stroke-color': '#ffffff', 'circle-opacity': 0.95 } });
   if (CONFIG.cityBase && !map.getLayer('city3d')) {
-    map.addLayer(new City3D(map, { base: CONFIG.cityBase, night, onCover: (on) => { for (const id of ['building', 'building-3d', 'building-roof']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'none' : 'visible'); } }), map.getLayer('boundary') ? 'boundary' : undefined);
+    map.addLayer(new City3D(map, { base: CONFIG.cityBase, night, soft: NEW, onCover: (on) => { for (const id of ['building', 'building-3d', 'building-roof']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'none' : 'visible'); } }), map.getLayer('boundary') ? 'boundary' : undefined);
   }
+  roadLabels();
   drawRoutes();
   drawJams(S.nav ? S.nav.route : S.routes[S.sel], S.nav ? S.nav.jams : null);
   { const src = map.getSource('lanes'); if (src && S.nav && S.nav.laneF) src.setData({ type: 'FeatureCollection', features: S.nav.laneF }); }
@@ -199,6 +212,7 @@ function paintRoute(consumed = 0) {
   const expr = gradientExpr(stops);
   map.setPaintProperty('sel-line', 'line-gradient', expr);
   map.setPaintProperty('sel-glow', 'line-gradient', expr);
+  if (map.getLayer('sel-core')) map.setPaintProperty('sel-core', 'line-gradient', gradientExpr(routeGradient(r || { distance: 1 }, { plain: '#E6FCFF', colorByLimit: false, consumed: r && S.nav ? consumed : 0 })));
   // obwódka też „znika” z przejechanym fragmentem
   const caseCol = '#74CFFF';
   map.setPaintProperty('sel-case', 'line-gradient', gradientExpr(routeGradient(r || { distance: 1 }, { plain: caseCol, colorByLimit: false, consumed: r && S.nav ? consumed : 0 })));
@@ -218,7 +232,7 @@ setInterval(applyAtmosphere, 300000);
 function drawRoutes() {
   if (!map.getSource('sel')) return;
   const sel = S.routes[S.sel];
-  map.getSource('sel').setData(sel ? { type: 'Feature', geometry: { type: 'LineString', coordinates: sel.coords } } : emptyFC());
+  map.getSource('sel').setData(sel ? { type: 'Feature', geometry: { type: 'LineString', coordinates: NEW ? smoothLine(sel.coords) : sel.coords } } : emptyFC());
   paintRoute();
   const alts = S.routes.map((r, i) => ({ r, i })).filter((x) => x.i !== S.sel);
   map.getSource('alt').setData(
@@ -741,6 +755,7 @@ function renderHazardMarkers(route) {
 }
 
 // ---------- Tryby ekranu ----------
+function roadLabels() { if (NEW && map.getLayer('road-label')) map.setLayoutProperty('road-label', 'visibility', S.mode === 'nav' ? 'none' : 'visible'); }
 function setMode(m) {
   S.mode = m;
   show('search', m !== 'nav');
@@ -817,6 +832,7 @@ function startNav({ sim = false } = {}) {
   setFov(NAV_FOV);
   drawLanes(S.nav);
   document.body.classList.add('driving');
+  S.mode = 'nav'; roadLabels();
   cam.s = null; cam.v = 0;
   cam.place({ center: start, bearing: S.heading, zoom: travel().zoom(0), pitch: camPitch() });
   map.easeTo({ center: start, zoom: travel().zoom(0), pitch: camPitch(), bearing: S.heading, duration: 900, padding: camPadding() });
@@ -1246,6 +1262,7 @@ function endNav() {
   setMode('idle');
   setFov(MAP_FOV);
   document.body.classList.remove('driving');
+  S.mode = 'idle'; roadLabels();
   map.easeTo({ pitch: 0, bearing: 0, padding: { top: 0, bottom: 0, left: 0, right: 0 }, zoom: 14, duration: 700 });
   if (S.pos) { meMarker = new maplibregl.Marker({ element: meEl() }).setLngLat([S.pos.lng, S.pos.lat]).addTo(map); }
   if (memento) { saveLastTrip(memento); setTimeout(() => showTrip(memento), 900); }
@@ -1575,6 +1592,7 @@ const SWITCHES = {
   hazardsVoice: (v) => { settings.hazardsVoice = v; },
   tilt: (v) => { settings.tilt = v; },
   roadAlerts: (v) => { settings.roadAlerts = v; if (!v) $('banner').hidden = true; },
+  newLook: (v) => { settings.newLook = v; saveSettings(settings); setTimeout(() => location.replace(location.pathname), 150); },
   ortho: (v) => { settings.ortho = v; for (const id of ['orto', 'orto-base']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v ? 'visible' : 'none'); },
   routeColor: (v) => { settings.routeColor = v; paintRoute(S.nav ? S.nav.paintedAlong || 0 : 0); },
 };

@@ -9,7 +9,7 @@ void main(){ v_uv=a_uv; v_cell=a_cell; v_pos=a_pos; gl_Position=u_m*vec4(a_pos,1
 const FS_WALL = `#version 300 es
 precision highp float;
 in vec2 v_uv; in vec3 v_pos; flat in float v_cell;
-uniform sampler2D u_atlas; uniform vec3 u_sun; uniform vec3 u_fog; uniform vec3 u_eye; uniform float u_night;
+uniform sampler2D u_atlas; uniform vec3 u_sun; uniform vec3 u_fog; uniform vec3 u_eye; uniform float u_night; uniform float u_soft;
 out vec4 o;
 void main(){
   float c=v_cell; vec2 cell=vec2(mod(c,3.0),floor(c/3.0));
@@ -18,7 +18,8 @@ void main(){
   vec3 n=normalize(cross(dFdx(v_pos),dFdy(v_pos)));
   float d=max(dot(n,u_sun),0.0);
   float ao=mix(0.62,1.0,smoothstep(0.0,5.0,v_pos.z));
-  vec3 col=tex*(u_night>0.5?1.0:(0.62+0.5*d))*ao;
+  if(u_soft>0.5){ ao=mix(0.5,1.0,smoothstep(0.0,9.0,v_pos.z)); tex=mix(tex,vec3(dot(tex,vec3(.3,.55,.15))),0.22); }
+  vec3 col=tex*(u_night>0.5?1.0:(u_soft>0.5?(0.7+0.38*d):(0.62+0.5*d)))*ao;
   float fog=smoothstep(600.0,1700.0,distance(v_pos,u_eye));
   o=vec4(mix(col,u_fog,fog*0.72),1.0);
 }`;
@@ -30,7 +31,7 @@ void main(){ v_kind=a_kind; v_pos=a_pos; gl_Position=u_m*vec4(a_pos,1.0); }`;
 const FS_ROOF = `#version 300 es
 precision highp float;
 in vec3 v_pos; flat in float v_kind;
-uniform sampler2D u_roofs; uniform vec3 u_sun; uniform vec3 u_fog; uniform vec3 u_eye; uniform float u_night;
+uniform sampler2D u_roofs; uniform vec3 u_sun; uniform vec3 u_fog; uniform vec3 u_eye; uniform float u_night; uniform float u_soft;
 out vec4 o;
 void main(){
   int k=int(v_kind); bool p=k>=3;
@@ -45,6 +46,7 @@ void main(){
   if(p){ if(k==4) tex=vec3(dot(tex,vec3(.3,.5,.2)))*vec3(.62,.66,.74); else if(k==5) tex*=vec3(.74,.62,.56); }
   else tex*=(k==1?1.15:k==2?0.9:1.0);
   float d=max(dot(n,u_sun),0.0);
+  if(u_soft>0.5) tex=mix(tex,vec3(dot(tex,vec3(.3,.55,.15))),0.35)*0.92;
   vec3 col=tex*(0.62+0.55*d);
   if(u_night>0.5) col*=0.15;
   float fog=smoothstep(600.0,1700.0,distance(v_pos,u_eye));
@@ -52,13 +54,13 @@ void main(){
 }`;
 const VS_TREE = `#version 300 es
 in vec4 a_tree;
-uniform mat4 u_m; uniform vec2 u_right;
+uniform mat4 u_m; uniform vec2 u_right; uniform float u_scale;
 out vec2 v_uv; out float v_tint; out vec3 v_pos;
 const vec2 C[6]=vec2[6](vec2(-.5,0.),vec2(.5,0.),vec2(.5,1.),vec2(-.5,0.),vec2(.5,1.),vec2(-.5,1.));
 void main(){
   vec2 c=C[gl_VertexID];
   float kind=floor(a_tree.w); float f=fract(a_tree.w);
-  float h=a_tree.z*1.6; float w=h*(kind<0.5?0.62:0.92);
+  float h=a_tree.z*u_scale; float w=h*(kind<0.5?0.62:0.92);
   float side=f>0.45?1.0:-1.0;
   vec3 p=vec3(a_tree.xy+u_right*c.x*w,c.y*h);
   v_uv=vec2((kind+0.5+c.x*side*0.98)*0.5,1.0-c.y*0.99-0.005);
@@ -80,10 +82,29 @@ void main(){
   o=vec4(mix(col,u_fog,fog*0.72),1.0);
 }`;
 
+const VS_SHADOW = `#version 300 es
+in vec3 a_pos;
+uniform mat4 u_m; uniform vec2 u_dir;
+void main(){ gl_Position=u_m*vec4(a_pos.xy+u_dir*a_pos.z,0.3,1.0); }`;
+const FS_SHADOW = `#version 300 es
+precision highp float;
+out vec4 o;
+void main(){ o=vec4(0.05,0.07,0.13,0.3); }`;
+const VS_TSHADOW = `#version 300 es
+in vec4 a_tree;
+uniform mat4 u_m; uniform vec2 u_dir;
+out vec2 v;
+const vec2 C[6]=vec2[6](vec2(-1.,-1.),vec2(1.,-1.),vec2(1.,1.),vec2(-1.,-1.),vec2(1.,1.),vec2(-1.,1.));
+void main(){ vec2 c=C[gl_VertexID]; v=c; float r=a_tree.z*0.42; gl_Position=u_m*vec4(a_tree.xy+u_dir*a_tree.z*0.55+c*r,0.3,1.0); }`;
+const FS_TSHADOW = `#version 300 es
+precision highp float;
+in vec2 v; out vec4 o;
+void main(){ float d=length(v); if(d>1.0) discard; o=vec4(0.05,0.08,0.1,0.34*smoothstep(1.0,0.35,d)); }`;
+
 const W = 40075016.68;
 function prog(gl, vs, fs) {
   const mk = (t, src) => { const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
-  const p = gl.createProgram(); gl.attachShader(p, mk(gl.VERTEX_SHADER, vs)); gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  const p = gl.createProgram(); gl.attachShader(p, mk(gl.VERTEX_SHADER, vs)); gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fs)); gl.bindAttribLocation(p, 0, 'a_pos'); gl.linkProgram(p);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
   return p;
 }
@@ -92,8 +113,8 @@ const mercX = (lng) => (lng * W) / 360;
 const mercY = (lat) => (Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) * W) / (2 * Math.PI);
 
 export class City3D {
-  constructor(map, { base, night, onCover }) {
-    this.map = map; this.base = base; this.night = night; this.onCover = onCover;
+  constructor(map, { base, night, onCover, soft = false }) {
+    this.soft = soft; this.map = map; this.base = base; this.night = night; this.onCover = onCover;
     this.id = 'city3d'; this.type = 'custom'; this.renderingMode = '3d';
     this.tiles = new Map(); this.loading = 0; this.ready = false; this.t = 0; this.cover = null;
   }
@@ -101,7 +122,7 @@ export class City3D {
   onAdd(map, gl) {
     this.gl = gl;
     if (!(gl instanceof WebGL2RenderingContext)) return;
-    this.wall = prog(gl, VS_WALL, FS_WALL); this.roof = prog(gl, VS_ROOF, FS_ROOF); this.tree = prog(gl, VS_TREE, FS_TREE); 
+    this.wall = prog(gl, VS_WALL, FS_WALL); this.roof = prog(gl, VS_ROOF, FS_ROOF); this.tree = prog(gl, VS_TREE, FS_TREE); this.shadow = prog(gl, VS_SHADOW, FS_SHADOW); this.tshadow = prog(gl, VS_TSHADOW, FS_TSHADOW); 
     fetch(`${this.base}index.json`).then((r) => r.json()).then((d) => {
       this.grid = d.grid; this.bld = new Set(d.tiles.map((t) => `${t[0]}_${t[1]}`)); this.index = new Set(this.bld); this.treeIndex = new Set((d.trees || []).map((t) => `${t[0]}_${t[1]}`));
       for (const k of this.treeIndex) this.index.add(k);
@@ -136,7 +157,7 @@ export class City3D {
     const gl = this.gl;
     for (const k of [...this.tiles.keys()]) this.drop(k);
     for (const t of [this.tex, this.roofTex, this.treeTex]) if (t) gl.deleteTexture(t);
-    for (const p of [this.wall, this.roof, this.tree]) if (p) gl.deleteProgram(p);
+    for (const p of [this.wall, this.roof, this.tree, this.shadow, this.tshadow]) if (p) gl.deleteProgram(p);
   }
 
   /** Kafle leżą spakowane gzipem: rozpakowuje przeglądarka. */
@@ -161,8 +182,10 @@ export class City3D {
       const v = gl.createVertexArray(); gl.bindVertexArray(v);
       const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, t, gl.STATIC_DRAW);
       const l = gl.getAttribLocation(this.tree, 'a_tree'); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 4, gl.FLOAT, false, 16, 0); gl.vertexAttribDivisor(l, 1);
+      const sv = gl.createVertexArray(); gl.bindVertexArray(sv); gl.bindBuffer(gl.ARRAY_BUFFER, b);
+      const l2 = gl.getAttribLocation(this.tshadow, 'a_tree'); gl.enableVertexAttribArray(l2); gl.vertexAttribPointer(l2, 4, gl.FLOAT, false, 16, 0); gl.vertexAttribDivisor(l2, 1);
       gl.bindVertexArray(null);
-      treeObj = { v, b, n: t.byteLength / 16 };
+      treeObj = { v, b, s: sv, n: t.byteLength / 16 };
     }
     const wbytes = buf && new Uint8Array(buf, 8, nw * 24); const rbytes = buf && new Uint8Array(buf, 8 + nw * 24, nr * 16);
     this.tiles.set(key, { w: nw ? vao(this.wall, [['a_pos', 3], ['a_uv', 2], ['a_cell', 1]], wbytes, nw, 24) : null, r: nr ? vao(this.roof, [['a_pos', 3], ['a_kind', 1]], rbytes, nr, 16) : null, t: treeObj, k: key.split('_').map(Number) });
@@ -170,7 +193,7 @@ export class City3D {
 
   drop(key) {
     const t = this.tiles.get(key); const gl = this.gl;
-    for (const o of [t.w, t.r, t.t]) if (o) { gl.deleteBuffer(o.b); gl.deleteVertexArray(o.v); }
+    for (const o of [t.w, t.r, t.t]) if (o) { gl.deleteBuffer(o.b); gl.deleteVertexArray(o.v); if (o.s) gl.deleteVertexArray(o.s); }
     this.tiles.delete(key);
   }
 
@@ -218,9 +241,28 @@ export class City3D {
       gl.uniform3fv(gl.getUniformLocation(p, 'u_sun'), sun);
       gl.uniform3fv(gl.getUniformLocation(p, 'u_fog'), fog);
       gl.uniform1f(gl.getUniformLocation(p, 'u_night'), this.night ? 1 : 0);
+      gl.uniform1f(gl.getUniformLocation(p, 'u_soft'), this.soft ? 1 : 0);
+      gl.uniform1f(gl.getUniformLocation(p, 'u_scale'), this.soft ? 1.25 : 1.6);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, atlas);
       gl.uniform1i(gl.getUniformLocation(p, p === this.wall ? 'u_atlas' : p === this.roof ? 'u_roofs' : 'u_trees'), 0);
     };
+    if (this.soft && !this.night) { // cienie na ziemi: bryły spłaszczone wzdłuż słońca, każdy piksel przyciemniony tylko raz
+      const dir = [(-sun[0] / sun[2]) * 0.85, (-sun[1] / sun[2]) * 0.85];
+      const each = (p, fn) => {
+        gl.useProgram(p); const um = gl.getUniformLocation(p, 'u_m'); gl.uniform2fv(gl.getUniformLocation(p, 'u_dir'), dir);
+        for (const t of this.tiles.values()) {
+          const ox = t.k[0] * g; const oy = t.k[1] * g;
+          if (Math.hypot(ox + g / 2 - this.eye[0], oy + g / 2 - this.eye[1]) > 1500) continue;
+          gl.uniformMatrix4fv(um, false, new Float32Array(mul(M, [s, 0, 0, 0, 0, -s, 0, 0, 0, 0, s, 0, (ox + W / 2) * s, (W / 2 - oy) * s, 0, 1])));
+          fn(t);
+        }
+      };
+      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthFunc(gl.LESS);
+      each(this.shadow, (t) => { for (const o of [t.w, t.r]) if (o) { gl.bindVertexArray(o.v); gl.drawArrays(gl.TRIANGLES, 0, o.n); } });
+      gl.bindVertexArray(null); gl.clear(gl.DEPTH_BUFFER_BIT); gl.disable(gl.DEPTH_TEST);
+      each(this.tshadow, (t) => { if (t.t) { gl.bindVertexArray(t.t.s); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, t.t.n); } });
+      gl.bindVertexArray(null); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.disable(gl.BLEND);
+    }
     const br = (this.map.getBearing() * Math.PI) / 180; const right = [Math.cos(br), -Math.sin(br)];
     for (const [p, key, atlas] of [[this.wall, 'w', this.tex], [this.roof, 'r', this.roofTex], [this.tree, 't', this.treeTex]]) {
       use(p, atlas);
