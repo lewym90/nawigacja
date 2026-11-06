@@ -1,8 +1,8 @@
 // Service worker: powłoka aplikacji działa bez sieci. Kafelki i dane tras idą przez sieć.
-const VERSION = 'nav-v0.18.1';
+const VERSION = 'nav-v0.19.0';
 const ORTO = 'nav-orto'; // zdjęcia lotnicze: wspólne dla wersji aplikacji, najstarsze wypadają
 const ORTO_MAX = 900;
-const CITY = 'nav-city-2'; // kafle miasta: stałe między wersjami aplikacji, zmiana nazwy po przebudowie danych
+const CITY = 'nav-city-3'; // kafle miasta: stałe między wersjami aplikacji, zmiana nazwy po przebudowie danych
 const SHELL = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
   './vendor/maplibre-gl.js', './vendor/maplibre-gl.css',
@@ -35,7 +35,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
   if (url.origin !== location.origin) return; // usługi zewnętrzne: zawsze sieć
-  if (/\/city\/.+\.bin$/.test(url.pathname)) {
+  if (/\/city\/.+\.(bin|webp)$/.test(url.pathname)) {
     e.respondWith(caches.open(CITY).then((c) => c.match(req).then((hit) => hit || fetch(req).then((r) => { if (r.ok) c.put(req, r.clone()); return r; }))));
     return;
   }

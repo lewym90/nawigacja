@@ -24,7 +24,7 @@ import { ChaseCam } from './camera.js';
 import { lanesHtml, laneAdvice, junctionAhead } from './lanes.js';
 import { routeLanes } from './valhalla.js';
 import { routePoints, fetchTraffic, jamsOnLine, jamFeatures, worthSwitch, nextJam, departAt } from './traffic.js';
-import { City3D } from './city3d.js';
+import { City3D, CityGround } from './city3d.js';
 import { addFacades, loadFacades } from './facades.js';
 import { prefetchOrto } from './orto.js';
 import { corridorBoxesRange, haversine, bearing, sliceLine, project } from './geo.js';
@@ -145,6 +145,12 @@ function installLayers() {
   const route = '#00D9FF';
   const routeCase = '#74CFFF';
   const add = (def) => { if (!map.getLayer(def.id)) map.addLayer(def, before); };
+  if (CONFIG.cityBase && !map.getLayer('city3d')) {
+    S.city = new City3D(map, { base: CONFIG.cityBase, night, soft: NEW, onCover: (on) => { S.cityCover = on; for (const id of ['building', 'building-3d', 'building-roof']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'none' : 'visible'); roadLabels(); } });
+    map.addLayer(S.city, map.getLayer('boundary') ? 'boundary' : undefined);
+    if (NEW) map.addLayer(new CityGround(S.city), before);
+    if (S.nav) { S.city.drive = true; S.city.pendingRoute = smoothLine(S.nav.route.coords); }
+  }
   if (!map.getSource('lanes')) map.addSource('lanes', { type: 'geojson', data: emptyFC() });
   add({ id: 'alt-line', type: 'line', source: 'alt', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': night ? '#8FA8C4' : '#5F7690', 'line-width': 7, 'line-opacity': 0.95 } });
   add({ id: 'alt-hit', type: 'line', source: 'alt', paint: { 'line-color': '#000', 'line-opacity': 0.01, 'line-width': 30 } });
@@ -180,9 +186,6 @@ function installLayers() {
   add({ id: 'trip-line', type: 'line', source: 'trip', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-gradient': tripGrad, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3.5, 16, 10] } });
   if (!map.getSource('fixes')) map.addSource('fixes', { type: 'geojson', data: emptyFC() });
   if (!map.getLayer('fixes-dot')) map.addLayer({ id: 'fixes-dot', type: 'circle', source: 'fixes', minzoom: 11, paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 5, 17, 11], 'circle-color': ['match', ['get', 'kind'], 'avoid', '#ff5a4d', '#3ddc84'], 'circle-stroke-width': 2.5, 'circle-stroke-color': '#ffffff', 'circle-opacity': 0.95 } });
-  if (CONFIG.cityBase && !map.getLayer('city3d')) {
-    map.addLayer(new City3D(map, { base: CONFIG.cityBase, night, soft: NEW, onCover: (on) => { for (const id of ['building', 'building-3d', 'building-roof']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'none' : 'visible'); } }), map.getLayer('boundary') ? 'boundary' : undefined);
-  }
   roadLabels();
   drawRoutes();
   drawJams(S.nav ? S.nav.route : S.routes[S.sel], S.nav ? S.nav.jams : null);
@@ -190,6 +193,7 @@ function installLayers() {
   drawSections(S.routes[S.sel]);
   drawTrip();
   applyAtmosphere();
+  if (S.city && S.city.pendingRoute && S.city.gl) { S.city.setRoute(S.city.pendingRoute); S.city.pendingRoute = null; }
   if (S.nav) { S.nav.arrowIdx = null; S.nav.paintedAlong = null; S.nav.aheadAlong = null; }
 }
 function chevronImage() {
@@ -755,7 +759,19 @@ function renderHazardMarkers(route) {
 }
 
 // ---------- Tryby ekranu ----------
-function roadLabels() { if (NEW && map.getLayer('road-label')) map.setLayoutProperty('road-label', 'visibility', S.mode === 'nav' ? 'none' : 'visible'); }
+// W jeździe po Lublinie rysuje własny silnik: drogi z BDOT10k i wstęga. Podgląd i reszta Polski zostają na mapie.
+const OMT_ROADS = ['minor-case', 'minor', 'mid-case', 'mid', 'main-case', 'main', 'major-case', 'major', 'sidewalk', 'sidewalk-mid', 'sidewalk-main', 'road-edge-minor', 'road-edge-mid', 'road-edge-main', 'road-edge-major', 'asphalt-minor', 'asphalt-mid', 'asphalt-main', 'asphalt-major', 'lane-line', 'lane-div'];
+function roadLabels() {
+  if (!NEW) return;
+  const drive = S.mode === 'nav';
+  const own = drive && S.cityCover === true;
+  if (S.city) S.city.drive = own;
+  const vis = (ids, on) => { for (const id of ids) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none'); };
+  vis(['road-label'], !drive);
+  vis(OMT_ROADS, !own);
+  vis(['sel-glow', 'sel-case', 'sel-line', 'sel-core', 'sel-chevron'], !own);
+}
+function cityRoute() { if (NEW && S.city) S.city.setRoute(S.nav ? smoothLine(S.nav.route.coords) : null); }
 function setMode(m) {
   S.mode = m;
   show('search', m !== 'nav');
@@ -832,7 +848,7 @@ function startNav({ sim = false } = {}) {
   setFov(NAV_FOV);
   drawLanes(S.nav);
   document.body.classList.add('driving');
-  S.mode = 'nav'; roadLabels();
+  S.mode = 'nav'; roadLabels(); cityRoute();
   cam.s = null; cam.v = 0;
   cam.place({ center: start, bearing: S.heading, zoom: travel().zoom(0), pitch: camPitch() });
   map.easeTo({ center: start, zoom: travel().zoom(0), pitch: camPitch(), bearing: S.heading, duration: 900, padding: camPadding() });
@@ -855,6 +871,7 @@ function camLoop(now) {
   if (map.isEasing()) { const c = map.getCenter(); cam.place({ center: [c.lng, c.lat], bearing: map.getBearing(), zoom: map.getZoom(), pitch: map.getPitch() }); return; }
   const p = cam.tick(dt);
   if (!p) return;
+  if (S.city) S.city.along = cam.s;
   map.jumpTo({ center: p.center, bearing: p.bearing, zoom: p.zoom, pitch: p.pitch, padding: camPadding() });
   const pv = document.getElementById('puck-svg');
   if (pv) pv.style.transform = `rotate(${p.carOffset.toFixed(1)}deg)`;
@@ -866,6 +883,7 @@ requestAnimationFrame(camLoop);
 
 function camPitch() {
   if (!settings.tilt) return 0;
+  if (NEW && travel().costing === 'auto') return 68; // trochę wyżej: widać zakręty ponad zabudową
   const t = travel();
   return t.camPitch && S.nav ? t.camPitch(S.nav.kmh || 0) : t.pitch;
 }
@@ -1158,7 +1176,7 @@ function applyNewRoute(N, route) {
   S.sel = 0;
   setupRoad(N);
   N.trafficK = null; N.trafficT = 0; N.jams = []; drawJams(null);
-  N.laneF = []; N.junctions = []; drawLanes(N);
+  N.laneF = []; N.junctions = []; drawLanes(N); cityRoute();
   drawRoutes();
   renderHazardMarkers(route);
 }
@@ -1262,7 +1280,7 @@ function endNav() {
   setMode('idle');
   setFov(MAP_FOV);
   document.body.classList.remove('driving');
-  S.mode = 'idle'; roadLabels();
+  S.mode = 'idle'; roadLabels(); cityRoute();
   map.easeTo({ pitch: 0, bearing: 0, padding: { top: 0, bottom: 0, left: 0, right: 0 }, zoom: 14, duration: 700 });
   if (S.pos) { meMarker = new maplibregl.Marker({ element: meEl() }).setLngLat([S.pos.lng, S.pos.lat]).addTo(map); }
   if (memento) { saveLastTrip(memento); setTimeout(() => showTrip(memento), 900); }
