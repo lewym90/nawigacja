@@ -89,7 +89,7 @@ void main(){ gl_Position=u_m*vec4(a_pos.xy+u_dir*a_pos.z,0.3,1.0); }`;
 const FS_SHADOW = `#version 300 es
 precision highp float;
 out vec4 o;
-void main(){ o=vec4(0.05,0.07,0.13,0.3); }`;
+void main(){ o=vec4(0.05,0.07,0.13,0.32); }`;
 const VS_TSHADOW = `#version 300 es
 in vec4 a_tree;
 uniform mat4 u_m; uniform vec2 u_dir;

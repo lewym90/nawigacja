@@ -18,7 +18,7 @@ const PALETTE = {
     bg: '#D5E0C8', land: '#DCE5CE', park: '#A9CF95', wood: '#8FBE7E', water: '#6FB1E3', waterLine: '#5BA3D9',
     building: '#E8DCC8', buildingTop: '#CFC4B2', roofA: '#B8735C', roofB: '#9BA0A8', roofC: '#C08A70', industrial: '#DADBD4', hospital: '#EBDDE0', school: '#E6E4CC',
     roadMinor: '#6E7681', roadMinorCase: '#C9CDC6', roadMid: '#646C78', roadMidCase: '#C2C6BF',
-    roadMain: '#5B636F', roadMainCase: '#BFC3BC', roadMajor: '#525A66', roadMajorCase: '#B8BCB5', roadLine: '#F5FAFF', roadEdge: '#DDE3E6', roadEdge: '#DDE3E6',
+    roadMain: '#5B636F', roadMainCase: '#BFC3BC', roadMajor: '#525A66', roadMajorCase: '#B8BCB5', roadLine: '#F5FAFF', roadEdge: '#C8CCCD', roadEdge: '#DDE3E6',
     rail: '#8F96A0', path: '#C9CDC6', pathPed: '#6F7C94', steps: '#C47A1E', cycle: '#1E9E73', boundary: '#9AA6B5',
     label: '#2A3648', labelMajor: '#111B28', halo: '#F5FAFF', placeCity: '#0B1F38', placeTown: '#26364E',
   },
@@ -61,7 +61,7 @@ function groundNew(mode) {
   const n = mode === 'night';
   const col = n
     ? { bg: '#111A29', house: '#141D2A', estate: '#161E2B', paved: '#1B2331', bare: '#161D29', field: '#131C24', wood: '#0F1D20', water: '#0B2C52' }
-    : { bg: '#C6C5BC', house: '#BBC0A8', estate: '#CACAC0', paved: '#D2D0C8', bare: '#C0BAA8', field: '#BFB98F', wood: '#566F4F', water: '#6FA9D6' };
+    : { bg: '#A9AAA2', house: '#A3AB93', estate: '#ABACA3', paved: '#ACABA5', bare: '#A8A392', field: '#A9A47E', wood: '#4F6849', water: '#5F9BCB' };
   const fill = (k, paint) => ({ id: `g-${k}`, type: 'fill', source: 'ground', minzoom: 11, filter: ['==', ['get', 'k'], k], paint });
   return [
     { id: 'ground-land', type: 'background', minzoom: 12, paint: { 'background-color': col.bg, 'background-opacity': ['interpolate', ['linear'], ['zoom'], 12, 0, 13.5, 1] } },
