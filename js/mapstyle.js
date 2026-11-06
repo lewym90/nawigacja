@@ -61,7 +61,7 @@ function groundNew(mode) {
   const n = mode === 'night';
   const col = n
     ? { bg: '#111A29', house: '#141D2A', estate: '#161E2B', paved: '#1B2331', bare: '#161D29', field: '#131C24', wood: '#0F1D20', water: '#0B2C52' }
-    : { bg: '#A9AAA2', house: '#A3AB93', estate: '#ABACA3', paved: '#ACABA5', bare: '#A8A392', field: '#A9A47E', wood: '#4F6849', water: '#5F9BCB' };
+    : { bg: '#A9AAA2', house: '#94A081', estate: '#9CA291', paved: '#A09E96', bare: '#A39E8C', field: '#A9A47E', wood: '#4F6849', water: '#5F9BCB' };
   const fill = (k, paint) => ({ id: `g-${k}`, type: 'fill', source: 'ground', minzoom: 11, filter: ['==', ['get', 'k'], k], paint });
   return [
     { id: 'ground-land', type: 'background', minzoom: 12, paint: { 'background-color': col.bg, 'background-opacity': ['interpolate', ['linear'], ['zoom'], 12, 0, 13.5, 1] } },

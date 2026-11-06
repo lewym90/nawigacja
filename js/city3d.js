@@ -14,8 +14,7 @@ void cut(vec3 p){
   vec2 ab=u_car-u_camp; float l=dot(ab,ab); if(l<1.0) return;
   float t=clamp(dot(p.xy-u_camp,ab)/l,0.0,1.0); float d=length(p.xy-(u_camp+ab*t));
   if(p.z<mix(u_camz,2.0,t)-4.0) return;
-  float f=smoothstep(16.0,30.0,d);
-  if(f<1.0 && f<fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(0.06711056,0.00583715))))) discard;
+  if(d<21.0) discard;
 }
 uniform sampler2D u_atlas; uniform vec3 u_sun; uniform vec3 u_fog; uniform vec3 u_eye; uniform float u_night; uniform float u_soft;
 out vec4 o;
@@ -45,8 +44,7 @@ void cut(vec3 p){
   vec2 ab=u_car-u_camp; float l=dot(ab,ab); if(l<1.0) return;
   float t=clamp(dot(p.xy-u_camp,ab)/l,0.0,1.0); float d=length(p.xy-(u_camp+ab*t));
   if(p.z<mix(u_camz,2.0,t)-4.0) return;
-  float f=smoothstep(16.0,30.0,d);
-  if(f<1.0 && f<fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(0.06711056,0.00583715))))) discard;
+  if(d<21.0) discard;
 }
 uniform sampler2D u_roofs; uniform vec3 u_sun; uniform vec3 u_fog; uniform vec3 u_eye; uniform float u_night; uniform float u_soft;
 out vec4 o;
@@ -167,7 +165,7 @@ void main(){
   float glow=exp(-d*d*0.42);
   float flow=pow(0.5+0.5*sin((v_l-u_t*16.0)*0.2),10.0);
   float ch=fract((v_l-u_t*4.0)/26.0); float w=abs(v_s)*R*0.5;
-  float arrow=smoothstep(0.03,0.0,abs(ch-0.22-w*0.45)-0.022)*(1.0-smoothstep(0.42,0.5,w));
+  float arrow=smoothstep(0.03,0.0,abs(ch-0.22+w*0.45)-0.03)*(1.0-smoothstep(0.52,0.6,w));
   vec3 cy=vec3(0.0,0.82,1.0); vec3 hi=vec3(0.86,0.99,1.0);
   vec3 c=mix(cy,hi,clamp(core+0.55*rim+0.6*flow*body+0.75*arrow*body,0.0,1.0));
   float a=max(glow*(u_night>0.5?0.34:0.26), body*0.66);
@@ -183,6 +181,23 @@ export class CityGround {
 }
 
 const W = 40075016.68;
+
+/** Oś wstęgi: równe odcinki i uśrednione narożniki, bo ostry zakręt składał pas na pół. Długość zostaje z trasy, więc zjadanie wstęgi trzyma się auta. */
+export function ribbonPath(raw, K = 1, step = 2.5, reach = 5) {
+  const p = []; const along = []; let s = 0; let next = 0;
+  for (let i = 1; i < raw.length; i++) {
+    const [ax, ay] = raw[i - 1]; const [bx, by] = raw[i]; const d = Math.hypot(bx - ax, by - ay) / K;
+    while (d > 0 && next <= s + d) { const u = (next - s) / d; p.push([ax + (bx - ax) * u, ay + (by - ay) * u]); along.push(next); next += step; }
+    s += d;
+  }
+  const last = raw[raw.length - 1]; p.push([...last]); along.push(s);
+  const pts = p.map((q, i) => {
+    const r = Math.min(reach, i, p.length - 1 - i); let x = 0; let y = 0; // przy końcach okno się zwęża: początek i cel zostają na miejscu
+    for (let j = i - r; j <= i + r; j++) { x += p[j][0]; y += p[j][1]; }
+    return [x / (2 * r + 1), y / (2 * r + 1)];
+  });
+  return { pts, along };
+}
 function prog(gl, vs, fs) {
   const mk = (t, src) => { const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
   const p = gl.createProgram(); gl.attachShader(p, mk(gl.VERTEX_SHADER, vs)); gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fs)); gl.bindAttribLocation(p, 0, 'a_pos'); gl.linkProgram(p);
@@ -446,13 +461,13 @@ export class City3D {
     const gl = this.gl; if (!gl || !this.rib) { this.pendingRoute = coords; return; }
     if (this.ribbon) { gl.deleteBuffer(this.ribbon.b); gl.deleteVertexArray(this.ribbon.v); this.ribbon = null; }
     if (!coords || coords.length < 2) return;
-    const pts = coords.map(([x, y]) => [mercX(x), mercY(y)]); const org = pts[0];
     const K = 1 / Math.cos((coords[0][1] * Math.PI) / 180); const H = 4.2 * K;
-    const out = new Float32Array(pts.length * 8); let L = 0;
+    const { pts, along } = ribbonPath(coords.map(([x, y]) => [mercX(x), mercY(y)]), K); const org = pts[0];
+    const out = new Float32Array(pts.length * 8);
     for (let i = 0; i < pts.length; i++) {
       const a = pts[Math.max(0, i - 1)]; const b = pts[Math.min(pts.length - 1, i + 1)];
       let nx = -(b[1] - a[1]); let ny = b[0] - a[0]; const n = Math.hypot(nx, ny) || 1; nx /= n; ny /= n;
-      if (i) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]) / K;
+      const L = along[i];
       const x = pts[i][0] - org[0]; const y = pts[i][1] - org[1];
       out.set([x + nx * H, y + ny * H, 1, L, x - nx * H, y - ny * H, -1, L], i * 8);
     }

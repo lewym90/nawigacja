@@ -109,6 +109,7 @@ const map = new maplibregl.Map({
   center: CONFIG.center,
   zoom: CONFIG.zoom,
   maxPitch: 85,
+  canvasContextAttributes: { antialias: NEW }, // bez tego krawędzie dróg i dachów są poszarpane
   pixelRatio: Math.min(window.devicePixelRatio || 1, NEW ? qualityProfile(settings.quality).pixelRatio : 2), // ostrość telefonu kosztuje płynność: 2× wystarcza w aucie
   attributionControl: false,
   dragRotate: true,
@@ -1068,7 +1069,7 @@ function updateRoadArrow(N, g) {
   const src = map.getSource('arrow');
   if (!src) return;
   const nx = g.next;
-  const want = wantsArrow(nx) && g.distToNext < 220 && g.distToNext > 6;
+  const want = !NEW && wantsArrow(nx) && g.distToNext < 220 && g.distToNext > 6; // w nowym wyglądzie zakręt pokazuje sama wstęga
   const key = want ? g.nextIdx : null;
   if (key === N.arrowIdx) return;
   N.arrowIdx = key;

@@ -142,3 +142,13 @@ test('profile: nieznana wartość z ustawień wraca do domyślnej', async () => 
   assert.equal(qualityProfile(undefined), QUALITY_PROFILES.high);
   for (const q of Object.values(QUALITY_PROFILES)) assert.ok(q.drop > q.radius);
 });
+
+test('wstęga: ostry narożnik jest zaokrąglony, a końce i długość zostają', async () => {
+  globalThis.WebGL2RenderingContext ??= class {};
+  const { ribbonPath } = await import('../js/city3d.js');
+  const { pts, along } = ribbonPath([[0, 0], [100, 0], [100, 100]]);
+  assert.deepEqual(pts[0], [0, 0]); assert.deepEqual(pts.at(-1), [100, 100]);
+  assert.equal(along.at(-1), 200);
+  const corner = Math.min(...pts.map(([x, y]) => Math.hypot(x - 100, y)));
+  assert.ok(corner > 2 && corner < 8, String(corner));
+});
