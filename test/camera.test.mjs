@@ -217,7 +217,7 @@ test('wstęga 3D: grot na każdym skręcie, kolejny odcinek za skrzyżowaniem, g
 test('tor zawsze na jezdni: punkt obok drogi wraca 1,6 m od krawężnika', async () => {
   const { contain, AxisIndex } = await import('../js/snap.js');
   const axes = new AxisIndex([{ pts: [[0, 0], [100, 0]], w: 7, two: true, name: 'A' }]);
-  const [a, b, c] = contain([[50, 6], [50, 1], [50, 40]], 1, axes);
+  const [a] = contain([[48, 6], [50, 6], [52, 6]], 1, axes).slice(1); const [b] = contain([[48, 1], [50, 1], [52, 1]], 1, axes).slice(1); const [c] = contain([[48, 40], [50, 40], [52, 40]], 1, axes).slice(1);
   assert.ok(Math.abs(a[1] - 1.9) < 1e-6, String(a)); // 3,5 m pół jezdni minus 1,6 m
   assert.deepEqual(b, [50, 1]); // na jezdni: bez zmian
   assert.deepEqual(c, [50, 40]); // daleko od danych: bez zmian

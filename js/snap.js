@@ -190,13 +190,15 @@ function nearestRoad(p, K, axes, f = null) {
   return best;
 }
 
-export function contain(pts, K, axes, margin = EDGE) {
+export function contain(pts, K, axes, margin = EDGE, weight = null) {
   return pts.map((p, i) => {
+    const wgt = weight ? weight[i] : 1; if (wgt <= 0) return p;
     const best = nearestRoad(p, K, axes, unit(pts[Math.max(0, i - 3)], pts[Math.min(pts.length - 1, i + 3)]));
     // dalej niż 4 m za krawędzią to już inna ulica: trasa jedzie drogą, której nie ma w BDOT, i dostaje własny kawałek jezdni (roadFill)
     if (!best || best.v > 4 || best.v <= -margin + 0.05) return p;
     const lim = Math.max(0, best.w / 2 - margin); const f = best.d ? lim / best.d : 0;
-    return [best.qx + (p[0] - best.qx) * f, best.qy + (p[1] - best.qy) * f];
+    const q = [best.qx + (p[0] - best.qx) * f, best.qy + (p[1] - best.qy) * f];
+    return [p[0] + (q[0] - p[0]) * wgt, p[1] + (q[1] - p[1]) * wgt];
   });
 }
 
@@ -365,7 +367,9 @@ function straighten(pts, rp) {
 export function drivePath(raw, K = 1, axes = null, { lefts = [], turns = [], legacy = false } = {}) {
   if (axes && !legacy) {
     const m = matchPath(raw, K, axes); const rp = resample(raw, K).p;
-    return { pts: contain(straighten(blendGaps(smooth(m.pts, 1), rp, m.onRoad), rp), K, axes), along: m.along, raw: rp };
+    // dociąganie do jezdni tylko tam, gdzie tor jedzie po jezdni z BDOT, i wygaszane na ok. 20 m przy przejściu na drogę spoza BDOT (łącznica)
+    const R = 8; const on = m.onRoad.map((v) => (v ? 1 : 0)); const wgt = on.map((_, i) => { let a = 0; let c = 0; for (let j = Math.max(0, i - R); j <= Math.min(on.length - 1, i + R); j++) { a += on[j]; c++; } return Math.max(0, (a / c - 0.5) * 2); });
+    return { pts: contain(straighten(blendGaps(smooth(m.pts, 1), rp, m.onRoad), rp), K, axes, EDGE, wgt), along: m.along, raw: rp };
   }
   const { p, along } = resample(raw, K); const n = p.length; let pts = p;
   if (axes) {
