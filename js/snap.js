@@ -173,6 +173,23 @@ function followAxes(T, a, b, K, axes, left) {
   return true;
 }
 
+/** Ostatnie słowo: każdy punkt toru musi leżeć na jezdni, co najmniej metr od krawężnika. Gdy wypada poza najbliższą jezdnię, przesuwamy go w jej stronę.
+ *  Jezdnie na mapie są zbudowane z tych samych osi i szerokości, więc auto nie może już jechać po trawniku. Miejsca bez danych (dalej niż 20 m od osi) zostają bez zmian. */
+export function contain(pts, K, axes, margin = 1) {
+  return pts.map((p) => {
+    let best = null; let bv = Infinity;
+    for (const s of axes.near(p[0], p[1])) {
+      const ex = s.bx - s.ax; const ey = s.by - s.ay; const l2 = ex * ex + ey * ey; if (!l2) continue;
+      const t = Math.max(0, Math.min(1, ((p[0] - s.ax) * ex + (p[1] - s.ay) * ey) / l2));
+      const qx = s.ax + ex * t; const qy = s.ay + ey * t; const d = Math.hypot(p[0] - qx, p[1] - qy) / K; const v = d - s.w / 2;
+      if (v < bv) { bv = v; best = { qx, qy, d, w: s.w }; }
+    }
+    if (!best || best.d > 20 || bv <= -margin + 0.05) return p;
+    const lim = Math.max(0, best.w / 2 - margin); const f = best.d ? lim / best.d : 0;
+    return [best.qx + (p[0] - best.qx) * f, best.qy + (p[1] - best.qy) * f];
+  });
+}
+
 /** Zwraca tor: punkty w metrach Merkatora i odległość wzdłuż trasy dla każdego z nich. Długości zostają z trasy, więc postęp i dystanse się nie rozjeżdżają.
  *  lefts: miejsca (metry trasy) skrętów w lewo, przed którymi tor przechodzi na lewy pas. */
 export function drivePath(raw, K = 1, axes = null, { lefts = [], turns = [] } = {}) {
@@ -194,6 +211,7 @@ export function drivePath(raw, K = 1, axes = null, { lefts = [], turns = [] } = 
       for (let j = i; j <= e; j++) T[j] = run[j - i];
       i = e + 1;
     }
+    // na początku i końcu trasy trzymamy przesunięcie z najbliższej jezdni
     const LONG = 40; // ponad 100 m bez jezdni: to nie skrzyżowanie, tylko miejsce bez danych, więc wracamy na trasę
     let last = -1;
     for (let i = 0; i <= n; i++) {
@@ -202,8 +220,8 @@ export function drivePath(raw, K = 1, axes = null, { lefts = [], turns = [] } = 
       if (gap > 1) {
         if (last >= 0 && i < n && gap <= LONG) arc(T, last, i);
         else {
-          const a = last >= 0 ? [T[last][0] - p[last][0], T[last][1] - p[last][1]] : [0, 0]; const b = i < n ? [T[i][0] - p[i][0], T[i][1] - p[i][1]] : [0, 0];
-          for (let j = last + 1; j < i; j++) { const u = (j - last) / gap; const f = Math.max(0, 1 - Math.min(j - last, i - j) / 20); const g = gap > LONG || last < 0 || i >= n ? f : 1; T[j] = [p[j][0] + (a[0] + (b[0] - a[0]) * u) * g, p[j][1] + (a[1] + (b[1] - a[1]) * u) * g]; }
+          const a = last >= 0 ? [T[last][0] - p[last][0], T[last][1] - p[last][1]] : i < n ? [T[i][0] - p[i][0], T[i][1] - p[i][1]] : [0, 0]; const b = i < n ? [T[i][0] - p[i][0], T[i][1] - p[i][1]] : a;
+          for (let j = last + 1; j < i; j++) { const u = (j - last) / gap; const f = Math.max(0, 1 - Math.min(j - last, i - j) / 20); const g = gap > LONG && last >= 0 && i < n ? f : 1; T[j] = [p[j][0] + (a[0] + (b[0] - a[0]) * u) * g, p[j][1] + (a[1] + (b[1] - a[1]) * u) * g]; }
         }
       }
       last = i;
@@ -215,7 +233,8 @@ export function drivePath(raw, K = 1, axes = null, { lefts = [], turns = [] } = 
     }
     pts = T;
   }
-  return { pts: smooth(smooth(pts, axes ? 2 : 5), 2), along };
+  if (!axes) return { pts: smooth(pts, 5), along };
+  return { pts: contain(smooth(contain(pts, K, axes), 2), K, axes), along };
 }
 
 /** Przecznice na torze: po jednej na ulicę, z nazwą z BDOT. */

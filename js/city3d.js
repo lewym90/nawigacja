@@ -189,7 +189,7 @@ uniform mat4 u_m; uniform float u_from; uniform float u_heads[4];
 out vec3 v_nrm; out vec3 v_pos; out float v_l; out float v_u; out float v_top;
 void main(){
   v_top=a_top;
-  float sc=smoothstep(u_from-0.5,u_from+1.5,a_l); // spod auta wstęga wyrasta, zamiast zaczynać się ściętym końcem
+  float sc=1.0;
   float g=1.0; // grot podnosi się między 120 a 80 m przed skrętem i kładzie tuż przed nim, bo od tyłu stojący grot to ściana przed autem
   for(int i=0;i<4;i++){ float h=u_heads[i]; if(h>0.0 && a_l>=h-0.01 && a_l<h+40.0){ float d=h-u_from; g=smoothstep(120.0,80.0,d)*smoothstep(2.0,16.0,d); } }
   vec2 off=mix(a_off0,a_off,g);
@@ -211,7 +211,7 @@ uniform vec3 u_eye; uniform float u_t; uniform float u_from; uniform float u_gho
 out vec4 o;
 ${LIGHT}
 void main(){
-  if(v_l<u_from-0.5) discard;
+  if(v_l<u_from) discard; // równe cięcie pod autem, zakryte denkiem rysowanym w każdej klatce
   vec3 N=normalize(v_nrm); vec3 V=normalize(u_eye-v_pos);
   vec3 top=vec3(0.16,0.74,1.0); vec3 side=vec3(0.0,0.36,0.7);
   for(int i=0;i<6;i++){ vec3 j=u_jam[i]; if(j.z>0.0 && v_l>j.x && v_l<j.y){ top=j.z>2.5?vec3(.8,.1,.18):j.z>1.5?vec3(1.,.25,.3):vec3(1.,.66,.18); side=top*0.55; } }
@@ -228,9 +228,9 @@ in vec3 v_nrm; in vec3 v_pos; in float v_l; in float v_u;
 uniform float u_from; uniform float u_hw; uniform float u_night;
 out vec4 o;
 void main(){
-  if(v_l<u_from+1.0) discard;
+  if(v_l<u_from) discard;
   float d=abs(v_u); float sh=(1.0-smoothstep(u_hw-0.3,u_hw+0.8,d))*0.38; float g=exp(-(d-u_hw)*(d-u_hw)*3.0)*(u_night>0.5?0.4:0.22)*step(u_hw,d);
-  o=vec4(mix(vec3(0.0),vec3(0.0,0.8,1.0),step(sh,g)),max(sh,g)*smoothstep(u_from+1.0,u_from+6.0,v_l));
+  o=vec4(mix(vec3(0.0),vec3(0.0,0.8,1.0),step(sh,g)),max(sh,g));
 }`;
 const VS_PUCK = `#version 300 es
 in vec3 a_p; in vec3 a_nrm; in float a_k;
@@ -560,8 +560,8 @@ export class City3D {
   setRoute(path, turns = this.turns || []) {
     this.turns = turns; this.path = path;
     const gl = this.gl; if (!gl || !this.sol) { this.pendingRoute = path; return; }
-    for (const m of [this.ribbon, this.under]) if (m) { gl.deleteBuffer(m.b); gl.deleteBuffer(m.ib); gl.deleteVertexArray(m.v); }
-    this.ribbon = null; this.under = null;
+    for (const m of [this.ribbon, this.under, this.cap]) if (m) { gl.deleteBuffer(m.b); gl.deleteBuffer(m.ib); gl.deleteVertexArray(m.v); }
+    this.ribbon = null; this.under = null; this.cap = null;
     if (!path) return;
     const org = path.pts[0]; const mesh = ribbonMesh(path, turns, { style: this.headStyle || 'flat' });
     const up = (d, idx, p) => {
@@ -572,7 +572,9 @@ export class City3D {
       }
       gl.bindVertexArray(null); return { v, b, ib, n: idx.length };
     };
-    this.ribbon = { ...up(mesh.data, mesh.index, this.sol), org, heads: mesh.heads }; this.under = { ...up(mesh.under.data, mesh.under.index, this.solU), org };
+    this.ribbon = { ...up(mesh.data, mesh.index, this.sol), org, heads: mesh.heads, capAt: mesh.capAt };
+    const fan = []; for (let j = 1; j < 9; j++) fan.push(0, j + 1, j);
+    this.cap = up(new Float32Array(170), new Uint32Array(fan), this.sol); this.under = { ...up(mesh.under.data, mesh.under.index, this.solU), org };
   }
 
   setHeadStyle(style) { this.headStyle = style; if (this.path) this.setRoute(this.path, this.turns); }
@@ -614,6 +616,8 @@ export class City3D {
       gl.uniform1f(gl.getUniformLocation(p, 'u_ghost'), 1); gl.depthFunc(gl.GREATER); gl.drawElements(gl.TRIANGLES, r.n, gl.UNSIGNED_INT, 0); // za budynkiem: przezroczysta
       gl.disable(gl.BLEND); gl.depthMask(true); gl.depthFunc(gl.LEQUAL);
       gl.uniform1f(gl.getUniformLocation(p, 'u_ghost'), 0); gl.drawElements(gl.TRIANGLES, r.n, gl.UNSIGNED_INT, 0);
+      const cd = r.capAt(from + 0.01);
+      if (cd) { gl.bindVertexArray(this.cap.v); gl.bindBuffer(gl.ARRAY_BUFFER, this.cap.b); gl.bufferSubData(gl.ARRAY_BUFFER, 0, cd); gl.drawElements(gl.TRIANGLES, this.cap.n, gl.UNSIGNED_INT, 0); }
       gl.bindVertexArray(null);
     }
     if (this.drive && this.soft) this.drawPuck(gl);

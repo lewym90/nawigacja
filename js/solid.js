@@ -82,7 +82,8 @@ export function ribbonMesh(path, turns, { style = 'flat', o = RIB } = {}) {
 
   const up = style === 'up'; const heads = [];
   const theta = (s, shaftEnd) => (up ? (Math.PI / 2) * Math.max(0, Math.min(1, (s - (shaftEnd - o.twist)) / (o.twist - 1))) : 0);
-  for (const sg of segments(total, turns, o)) {
+  const segs = segments(total, turns, o);
+  for (const sg of segs) {
     const shaftEnd = sg.head ? Math.max(sg.a, sg.b - o.head) : sg.b;
     const ds = new Set([sg.a, shaftEnd]);
     for (const s of path.along) if (s > sg.a && s < shaftEnd) ds.add(s);
@@ -104,7 +105,14 @@ export function ribbonMesh(path, turns, { style = 'flat', o = RIB } = {}) {
     if (!up) { const u0 = under(shaftEnd, o.headW); const u1 = under(sg.b, 0.05); underStrip(u0, u1); }
   }
   heads.sort((x, y) => x - y);
-  return { org, heads, data: new Float32Array(V), index: new Uint32Array(I), under: { data: new Float32Array(U), index: new Uint32Array(UI) } };
+  const out = { org, heads, data: new Float32Array(V), index: new Uint32Array(I), under: { data: new Float32Array(U), index: new Uint32Array(UI) } };
+  V.length = 0;
+  /** Denko w miejscu cięcia pod autem: pełny przekrój zwrócony do tyłu, liczony w każdej klatce. Poza prostym odcinkiem (przerwa, grot) nie ma czego zamykać. */
+  out.capAt = (s) => {
+    const sg = segs.find((g) => s > g.a + 4 && s < (g.head ? g.b - o.head - o.twist : g.b)); if (!sg) return null;
+    V.length = 0; ring(s, o.hw, 0, 'back'); const d = new Float32Array(V); V.length = 0; return d;
+  };
+  return out;
 }
 
 /** Znacznik auta: grot z grzbietem i fazowanymi bokami, w metrach na rozmiar 1. [x, y, z, nx, ny, nz, rodzaj] (0 góra, 1 bok, 2 cień). */

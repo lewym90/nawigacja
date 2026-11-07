@@ -212,3 +212,21 @@ test('wstęga 3D: grot na każdym skręcie, kolejny odcinek za skrzyżowaniem, g
   assert.ok(m.index.every((i) => i < m.data.length / 17));
   assert.deepEqual(m.heads, [216 - RIB.head - RIB.twist]);
 });
+
+test('tor zawsze na jezdni: punkt obok drogi wraca metr od krawężnika', async () => {
+  const { contain, AxisIndex } = await import('../js/snap.js');
+  const axes = new AxisIndex([{ pts: [[0, 0], [100, 0]], w: 7, two: true, name: 'A' }]);
+  const [a, b, c] = contain([[50, 6], [50, 1], [50, 40]], 1, axes);
+  assert.ok(Math.abs(a[1] - 2.5) < 1e-6, String(a)); // 3,5 m pół jezdni minus metr
+  assert.deepEqual(b, [50, 1]); // na jezdni: bez zmian
+  assert.deepEqual(c, [50, 40]); // daleko od danych: bez zmian
+});
+
+test('wstęga: denko pod autem tylko na prostym odcinku', async () => {
+  const { ribbonMesh } = await import('../js/solid.js');
+  const pts = []; const along = []; for (let i = 0; i <= 200; i++) { pts.push([i * 2.5, 0]); along.push(i * 2.5); }
+  const m = ribbonMesh({ pts, along, K: 1 }, [200], { style: 'up' });
+  assert.equal(m.capAt(100).length, 170);
+  assert.equal(m.capAt(212), null); // grot
+  assert.equal(m.capAt(219), null); // przerwa za skrętem
+});
