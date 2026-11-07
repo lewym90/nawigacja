@@ -193,7 +193,9 @@ function nearestRoad(p, K, axes, f = null) {
 export function contain(pts, K, axes, margin = EDGE, weight = null) {
   return pts.map((p, i) => {
     const wgt = weight ? weight[i] : 1; if (wgt <= 0) return p;
-    const best = nearestRoad(p, K, axes, unit(pts[Math.max(0, i - 3)], pts[Math.min(pts.length - 1, i + 3)]));
+    let best = nearestRoad(p, K, axes, unit(pts[Math.max(0, i - 3)], pts[Math.min(pts.length - 1, i + 3)]));
+    // w łuku żadna jezdnia nie biegnie w kierunku jazdy; wtedy tylko odsuwamy od najbliższego krawężnika, jeśli ten jest tuż obok (nie ciągniemy do przecznic)
+    if (!best || best.v > -margin + 0.05) { const any = nearestRoad(p, K, axes); if (any && any.v <= 1 && (!best || any.v < best.v)) best = any; }
     // dalej niż 4 m za krawędzią to już inna ulica: trasa jedzie drogą, której nie ma w BDOT, i dostaje własny kawałek jezdni (roadFill)
     if (!best || best.v > 4 || best.v <= -margin + 0.05) return p;
     const lim = Math.max(0, best.w / 2 - margin); const f = best.d ? lim / best.d : 0;
@@ -370,7 +372,9 @@ export function drivePath(raw, K = 1, axes = null, { lefts = [], turns = [], leg
   if (axes && !legacy) {
     const m = matchPath(raw, K, axes); const rp = resample(raw, K).p;
     // dociąganie do jezdni tylko tam, gdzie tor jedzie po jezdni z BDOT, i wygaszane na ok. 20 m przy przejściu na drogę spoza BDOT (łącznica)
-    const R = 8; const on = m.onRoad.map((v) => (v ? 1 : 0)); const wgt = on.map((_, i) => { let a = 0; let c = 0; for (let j = Math.max(0, i - R); j <= Math.min(on.length - 1, i + R); j++) { a += on[j]; c++; } return Math.max(0, (a / c - 0.5) * 2); });
+    // waga 1 tam, gdzie tor albo sama trasa leży na jezdni BDOT
+    const R = 8; const on = m.onRoad.map((v, i) => { if (v) return 1; const r = nearestRoad(rp[i], K, axes); return r && r.v <= 0.5 ? 1 : 0; });
+    const wgt = on.map((_, i) => { let a = 0; let c = 0; for (let j = Math.max(0, i - R); j <= Math.min(on.length - 1, i + R); j++) { a += on[j]; c++; } return Math.max(0, (a / c - 0.5) * 2); });
     return { pts: contain(straighten(blendGaps(smooth(m.pts, 1), rp, m.onRoad), rp), K, axes, EDGE, wgt), along: m.along, raw: rp };
   }
   const { p, along } = resample(raw, K); const n = p.length; let pts = p;
