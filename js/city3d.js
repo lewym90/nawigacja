@@ -185,13 +185,13 @@ void main(){
 // Wstęga i znacznik jako bryły: światło słońca, odblask, świecące krawędzie.
 const VS_SOL = `#version 300 es
 in vec2 a_c; in vec2 a_n; in vec2 a_off; in vec3 a_nrm; in float a_l; in float a_u; in float a_top; in vec2 a_off0; in vec3 a_nrm0;
-uniform mat4 u_m; uniform float u_from; uniform float u_heads[4];
+uniform mat4 u_m; uniform float u_from; uniform float u_heads[4]; uniform float u_leads[4];
 out vec3 v_nrm; out vec3 v_pos; out float v_l; out float v_u; out float v_top;
 void main(){
   v_top=a_top;
   float sc=1.0;
   float g=1.0; // grot podnosi się między 120 a 80 m przed skrętem i kładzie tuż przed nim, bo od tyłu stojący grot to ściana przed autem
-  for(int i=0;i<4;i++){ float h=u_heads[i]; if(h>0.0 && a_l>=h-0.01 && a_l<h+40.0){ float d=h-u_from; g=smoothstep(120.0,80.0,d)*smoothstep(2.0,16.0,d); } }
+  for(int i=0;i<4;i++){ float h=u_heads[i]; if(h>0.0 && a_l>=h-0.01 && a_l<h+40.0){ float d=h-u_from; g=smoothstep(120.0,80.0,d-u_leads[i])*smoothstep(2.0,16.0,d); } } // przy kilku skrętach grot wstaje już przed pierwszym
   vec2 off=mix(a_off0,a_off,g);
   vec3 p=vec3(a_c+a_n*off.x*sc,off.y*sc);
   v_nrm=normalize(mix(a_nrm0,a_nrm,g)); v_pos=p; v_l=a_l; v_u=a_u; gl_Position=u_m*vec4(p,1.0);
@@ -580,7 +580,7 @@ export class City3D {
       }
       gl.bindVertexArray(null); return { v, b, ib, n: idx.length };
     };
-    this.ribbon = { ...up(mesh.data, mesh.index, this.sol), org, heads: mesh.heads, capAt: mesh.capAt };
+    this.ribbon = { ...up(mesh.data, mesh.index, this.sol), org, heads: mesh.heads, leads: mesh.leads, capAt: mesh.capAt };
     const fan = []; for (let j = 1; j < 9; j++) fan.push(0, j + 1, j);
     this.cap = up(new Float32Array(170), new Uint32Array(fan), this.sol); this.under = { ...up(mesh.under.data, mesh.under.index, this.solU), org };
   }
@@ -638,7 +638,7 @@ export class City3D {
       gl.bindVertexArray(this.under.v); gl.depthFunc(gl.LEQUAL); gl.drawElements(gl.TRIANGLES, this.under.n, gl.UNSIGNED_INT, 0);
       const p = this.sol; gl.useProgram(p);
       gl.uniformMatrix4fv(gl.getUniformLocation(p, 'u_m'), false, M); gl.uniform1f(gl.getUniformLocation(p, 'u_from'), from);
-      const hs = new Float32Array(4); r.heads.filter((h) => h + 12 > from).slice(0, 4).forEach((h, i) => { hs[i] = h; }); gl.uniform1fv(gl.getUniformLocation(p, 'u_heads[0]'), hs);
+      const hs = new Float32Array(4); const ls = new Float32Array(4); let k = 0; r.heads.forEach((h, j) => { if (h + 12 > from && k < 4) { hs[k] = h; ls[k] = r.leads[j]; k++; } }); gl.uniform1fv(gl.getUniformLocation(p, 'u_heads[0]'), hs); gl.uniform1fv(gl.getUniformLocation(p, 'u_leads[0]'), ls);
       gl.uniform1f(gl.getUniformLocation(p, 'u_t'), performance.now() / 1000); gl.uniform1f(gl.getUniformLocation(p, 'u_night'), this.night ? 1 : 0);
       gl.uniform3fv(gl.getUniformLocation(p, 'u_jam'), jam); gl.uniform3f(gl.getUniformLocation(p, 'u_eye'), this.cam[0] - r.org[0], this.cam[1] - r.org[1], this.camZ);
       gl.bindVertexArray(r.v);

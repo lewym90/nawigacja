@@ -145,9 +145,9 @@ with sync_playwright() as p:
         page.wait_for_timeout(2500); page.screenshot(path=f'{OUT}/{THEME}-rot.png')
     if os.environ.get('HEADS'):
         for o in json.loads(os.environ['HEADS']):
-            r = page.evaluate("""(o) => { const S = window.__nav.S; const st = S.nav.route.steps.filter((x) => x.type === 'turn' && new RegExp(o.turn).test(x.modifier || '') && x.at > 120)[0];
+            r = page.evaluate("""(o) => { const S = window.__nav.S; const st = S.nav.route.steps.filter((x) => x.type === 'turn' && new RegExp(o.turn).test(x.modifier || '') && x.at > (o.min ?? 120))[0];
               S.city.setHeadStyle(o.style); S.sim.setSpeed(o.speed || 5); S.sim.along = st.at - o.car; document.querySelectorAll('#toast').forEach((e) => { e.style.display = 'none'; }); return [st.at, st.name]; }""", o)
-            print('GROT', o['name'], r, flush=True)
+            print('GROT', o['name'], r, page.evaluate("window.__nav.S.nav.route.steps.slice(0,6).map(x => [Math.round(x.at), x.type, x.modifier])"), flush=True)
             page.wait_for_timeout(int(os.environ.get('CAMWAIT', '10')) * 1000)
             page.screenshot(path=f"{OUT}/{THEME}-head-{o['name']}.png")
             print('KIER', page.evaluate("(() => { const N = window.__nav; return [N.S.city.carHd, N.map.getBearing(), N.cam.path(N.cam.s).bearing, N.cam.s, N.S.nav.along]; })()"), flush=True)

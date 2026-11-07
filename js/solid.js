@@ -2,7 +2,7 @@
 // Tylko geometria (bez WebGL), żeby dało się ją sprawdzić testami.
 // Wierzchołek: środek [x, y], oś boczna [nx, ny], przesunięcie [w bok, w górę], normalna [x, y, z], odległość wzdłuż trasy, położenie w poprzek (-1..1), wierzch (0..1), przesunięcie i normalna przed postawieniem grotu (do animacji podnoszenia).
 
-export const RIB = { hw: 1.1, h: 0.3, r: 0.1, exit: 16, head: 5, headW: 2.3, gap: 7, twist: 7 };
+export const RIB = { hw: 1.1, h: 0.3, r: 0.1, exit: 16, head: 5, headW: 2.3, gap: 7, twist: 7, merge: 80 };
 const STRIDE = 17;
 
 function sampler(path) {
@@ -27,11 +27,14 @@ function profile(w, h, r) {
 
 /** Odcinki wstęgi: każdy kończy się grotem tuż za skrętem, następny zaczyna się chwilę dalej. */
 export function segments(total, turns, o = RIB) {
-  const out = []; let start = 0;
-  for (const at of [...turns].sort((a, b) => a - b)) {
-    const end = at + o.exit; if (end <= start + 1 || end > total) continue;
-    out.push({ a: start, b: end, head: true }); start = end + o.gap;
-  }
+  const out = []; let start = 0; let first = null; const list = [...turns].sort((a, b) => a - b);
+  list.forEach((at, i) => {
+    if (first == null) first = at;
+    // skręty bliżej niż o.merge łączą się w jedną strzałkę: grot dopiero za ostatnim z serii
+    if (i + 1 < list.length && list[i + 1] - at < o.merge && list[i + 1] + o.exit <= total) return;
+    const end = at + o.exit; const f = first; first = null; if (end <= start + 1 || end > total) return;
+    out.push({ a: start, b: end, head: true, first: f }); start = end + o.gap;
+  });
   if (start < total - 1) out.push({ a: start, b: total, head: false });
   return out;
 }
@@ -80,7 +83,7 @@ export function ribbonMesh(path, turns, { style = 'flat', o = RIB } = {}) {
   const under = (s, w) => { const { c, t } = at(s); const n = [-t[1], t[0]]; const W = w + 1.0; const i = U.length / STRIDE; for (const sg of [-1, 1]) U.push(c[0] - org[0], c[1] - org[1], n[0], n[1], sg * W * K, 0.03 * K, 0, 0, 1, s, sg * W, 0, sg * W * K, 0.03 * K, 0, 0, 1); return i; };
   const underStrip = (i0, i1) => UI.push(i0, i0 + 1, i1 + 1, i0, i1 + 1, i1);
 
-  const up = style === 'up'; const heads = [];
+  const up = style === 'up'; const heads = []; const leads = [];
   const theta = (s, shaftEnd) => (up ? (Math.PI / 2) * Math.max(0, Math.min(1, (s - (shaftEnd - o.twist)) / (o.twist - 1))) : 0);
   const segs = segments(total, turns, o);
   for (const sg of segs) {
@@ -97,15 +100,14 @@ export function ribbonMesh(path, turns, { style = 'flat', o = RIB } = {}) {
       if (theta(s, shaftEnd) < 0.3) { const u = under(s, o.hw); underStrip(pu, u); pu = u; }
     }
     if (!sg.head) { cap(ring(shaftEnd, o.hw, 0, 'back')); continue; }
-    heads.push(shaftEnd - o.twist);
+    heads.push(shaftEnd - o.twist); leads.push(shaftEnd - o.twist - (sg.first + o.exit - o.head - o.twist)); // o ile grot leży za pierwszym skrętem serii
     const th = up ? Math.PI / 2 : 0;
     const b0 = ring(shaftEnd, o.hw, th, 'back'); const b1 = ring(shaftEnd, o.headW, th, 'back'); strip(b0, b1); // ramiona grotu
     const taper = o.headW / o.head;
     const h0 = ring(shaftEnd, o.headW, th, 'side', taper); const tip = ring(sg.b, 0.04, th, 'side', taper); strip(h0, tip);
     if (!up) { const u0 = under(shaftEnd, o.headW); const u1 = under(sg.b, 0.05); underStrip(u0, u1); }
   }
-  heads.sort((x, y) => x - y);
-  const out = { org, heads, data: new Float32Array(V), index: new Uint32Array(I), under: { data: new Float32Array(U), index: new Uint32Array(UI) } };
+  const out = { org, heads, leads, data: new Float32Array(V), index: new Uint32Array(I), under: { data: new Float32Array(U), index: new Uint32Array(UI) } };
   V.length = 0;
   /** Denko w miejscu cięcia pod autem: pełny przekrój zwrócony do tyłu, liczony w każdej klatce. Poza prostym odcinkiem (przerwa, grot) nie ma czego zamykać. */
   out.capAt = (s) => {

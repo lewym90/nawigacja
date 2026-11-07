@@ -206,6 +206,7 @@ test('wstęga 3D: grot na każdym skręcie, kolejny odcinek za skrzyżowaniem, g
   const { ribbonMesh, segments, RIB } = await import('../js/solid.js');
   const pts = []; const along = []; for (let i = 0; i <= 200; i++) { pts.push([i * 2.5, 0]); along.push(i * 2.5); }
   assert.deepEqual(segments(500, [200, 300]).map((s) => [s.a, s.b, s.head]), [[0, 216, true], [223, 316, true], [323, 500, false]]);
+  assert.deepEqual(segments(500, [200, 240]).map((s) => [s.a, s.b, s.head, s.first]), [[0, 256, true, 200], [263, 500, false, undefined]]); // dwa skręty blisko: jedna strzałka
   const m = ribbonMesh({ pts, along, K: 1 }, [200], { style: 'up' });
   let top = 0; for (let i = 0; i < m.data.length; i += 17) top = Math.max(top, m.data[i + 5]);
   assert.ok(top > 3.5 && top < 7, String(top)); // grot stoi, ok. 5 m nad drogą
