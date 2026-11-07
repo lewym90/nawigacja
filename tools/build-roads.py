@@ -56,7 +56,11 @@ for i, (L, w, c) in enumerate(axes):
         p = L.intersection(axes[j][0])
         for g in getattr(p, 'geoms', [p]):
             if g.geom_type == 'Point': nodes.append(g.buffer((max(w, axes[j][1]) * 0.75 + 3) * M))
-J = unary_union(nodes + [a for a in []]); print('węzły', len(nodes), flush=True)
+ntree = STRtree(nodes); print('węzły', len(nodes), flush=True)
+def cutJ(g):
+    """Linia bez kawałków na skrzyżowaniach: odejmujemy tylko pobliskie węzły (całość naraz była bardzo wolna)."""
+    near = ntree.query(g)
+    return g.difference(unary_union([nodes[i] for i in near])) if len(near) else g
 marks = defaultdict(list)
 def addline(g, kind):
     for l in getattr(g, 'geoms', [g]):
@@ -73,7 +77,7 @@ for L, w, c in axes:
     L2 = L.simplify(0.3)
     H = (w / 2 - 0.25) * M
     for sgn in () if local else (-1, 1):
-        try: addline(L2.parallel_offset(H, 'left' if sgn < 0 else 'right', join_style=1).difference(J), 0)
+        try: addline(cutJ(L2.parallel_offset(H, 'left' if sgn < 0 else 'right', join_style=1)), 0)
         except Exception: pass
     lanes = 2 if local else max(2, round(w / LANE))
     for k in range(1, lanes):
@@ -82,7 +86,7 @@ for L, w, c in axes:
         else:
             try: g = L2.parallel_offset(abs(o), 'left' if o < 0 else 'right', join_style=1)
             except Exception: continue
-        addline(g.difference(J), 1)
+        addline(cutJ(g), 1)
 def quad(c, d, n, hl, hw):
     """Prostokąt: środek c, kierunek d (jednostkowy), normalna n, pół długości hl wzdłuż d i pół szerokości hw wzdłuż n."""
     p = [c + d * hl + n * hw, c + d * hl - n * hw, c - d * hl - n * hw, c - d * hl + n * hw]
