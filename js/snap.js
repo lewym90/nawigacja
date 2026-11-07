@@ -12,7 +12,7 @@ export class AxisIndex {
       let prev = null;
       for (const q of l.pts) { const n = this.node(q); if (prev && prev !== n) { const d = Math.hypot(n.x - prev.x, n.y - prev.y); prev.out.push({ to: n, d, w: l.w, two: l.two }); n.out.push({ to: prev, d, w: l.w, two: l.two }); } prev = n; }
       for (let i = 1; i < l.pts.length; i++) {
-        const [ax, ay] = l.pts[i - 1]; const [bx, by] = l.pts[i]; const seg = { ax, ay, bx, by, w: l.w, two: l.two, name: l.name, id };
+        const [ax, ay] = l.pts[i - 1]; const [bx, by] = l.pts[i]; const seg = { ax, ay, bx, by, w: l.w, two: l.two, name: l.name, id, na: this.node(l.pts[i - 1]), nb: this.node(l.pts[i]) };
         const n = Math.ceil(Math.hypot(bx - ax, by - ay) / (CELL / 2));
         const seen = new Set();
         for (let k = 0; k <= n; k++) {
@@ -203,21 +203,134 @@ export function contain(pts, K, axes, margin = EDGE) {
 export function roadFill(path, K, axes, margin = EDGE) {
   if (!axes) return [];
   const { pts, along } = path; const runs = [];
+  const raw = path.raw || pts; // asfalt tylko tam, gdzie samej trasy nie ma na jezdni BDOT; błąd toru ma wyjść w teście, nie zostać zamalowany
+  const missing = (i) => { const r = nearestRoad(raw[Math.min(raw.length - 1, i)], K, axes); return !r || r.v > 0.5; };
   // 0,1 m zapasu: obrys jezdni na mapie jest uproszczony inaczej niż osie
   const ok = (p) => { const r = nearestRoad(p, K, axes); return r && r.v <= -margin - 0.1; };
   for (let i = 0; i < pts.length; i++) {
     // sprawdzamy też drogę do następnego punktu: przeskok między jezdniami potrafi przeciąć pas trawy
     const q = pts[Math.min(pts.length - 1, i + 1)]; const p = pts[i];
     if ([0, 0.25, 0.5, 0.75].every((u) => ok([p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u]))) continue;
+    if (!missing(i) && !missing(i + 1) && !missing(i - 1 < 0 ? 0 : i - 1)) continue;
     const a = along[i] - 6; const e = along[i] + 6; const last = runs[runs.length - 1];
     if (last && a <= last[1]) last[1] = e; else runs.push([a, e]);
   }
   return runs;
 }
 
+const ANCHOR = 20; // m: co tyle punkt trasy przypinamy do jezdni
+
+/** Najbliższy odcinek osi zgodny z kierunkiem jazdy. */
+function snapSeg(p, f, K, axes) {
+  let best = null; let bs = Infinity;
+  for (const s of axes.near(p[0], p[1])) {
+    const ex = s.bx - s.ax; const ey = s.by - s.ay; const l2 = ex * ex + ey * ey; if (!l2) continue;
+    const c = Math.abs(ex * f[0] + ey * f[1]) / Math.sqrt(l2); if (c < 0.7) continue;
+    const t = Math.max(0, Math.min(1, ((p[0] - s.ax) * ex + (p[1] - s.ay) * ey) / l2));
+    const q = [s.ax + ex * t, s.ay + ey * t]; const d = Math.hypot(q[0] - p[0], q[1] - p[1]) / K;
+    if (d > s.w / 2 + 6) continue;
+    const score = d + 8 * (1 - c);
+    if (score < bs) { bs = score; best = { s, q }; }
+  }
+  return best;
+}
+
+/** Droga po osiach od punktu na odcinku A do punktu na odcinku B (najkrótsza, po grafie jezdni). */
+function between(A, B, limit) {
+  if (A.s === B.s) return [A.q, B.q];
+  const dist = new Map(); const from = new Map(); const open = new Set();
+  const start = (n, q) => { const d = Math.hypot(n.x - q[0], n.y - q[1]); if (d < (dist.get(n) ?? Infinity)) { dist.set(n, d); open.add(n); } };
+  start(A.s.na, A.q); start(A.s.nb, A.q);
+  const goal = new Map([[B.s.na, Math.hypot(B.s.na.x - B.q[0], B.s.na.y - B.q[1])], [B.s.nb, Math.hypot(B.s.nb.x - B.q[0], B.s.nb.y - B.q[1])]]);
+  let best = null; let bc = Infinity;
+  while (open.size) {
+    let n = null; let d = Infinity; for (const q of open) if (dist.get(q) < d) { d = dist.get(q); n = q; }
+    open.delete(n); if (d > limit || d >= bc) break;
+    if (goal.has(n) && d + goal.get(n) < bc) { bc = d + goal.get(n); best = n; }
+    for (const e of n.out) { const v = d + e.d; if (v < (dist.get(e.to) ?? Infinity)) { dist.set(e.to, v); from.set(e.to, n); open.add(e.to); } }
+  }
+  if (!best) return null;
+  const chain = []; for (let n = best; n; n = from.get(n)) chain.unshift([n.x, n.y]);
+  return [A.q, ...chain, B.q];
+}
+
+const plen = (l) => { let s = 0; for (let i = 1; i < l.length; i++) s += Math.hypot(l[i][0] - l[i - 1][0], l[i][1] - l[i - 1][1]); return s; };
+
+/** Zaokrąglenie narożników łamanej łukiem o promieniu do r (metry Merkatora), bez ścinania dalej niż r od wierzchołka. */
+function fillet(l, r) {
+  const out = [l[0]];
+  for (let i = 1; i < l.length - 1; i++) {
+    const a = l[i - 1]; const b = l[i]; const c = l[i + 1];
+    const u = unit(a, b); const v = unit(b, c); const cos = u[0] * v[0] + u[1] * v[1];
+    if (cos > 0.97) { out.push(b); continue; }
+    const k = Math.min(r, Math.hypot(b[0] - a[0], b[1] - a[1]) * 0.45, Math.hypot(c[0] - b[0], c[1] - b[1]) * 0.45);
+    const P = [b[0] - u[0] * k, b[1] - u[1] * k]; const Q = [b[0] + v[0] * k, b[1] + v[1] * k];
+    for (let j = 0; j <= 6; j++) { const t = j / 6; const w = 1 - t; out.push([w * w * P[0] + 2 * t * w * b[0] + t * t * Q[0], w * w * P[1] + 2 * t * w * b[1] + t * t * Q[1]]); }
+  }
+  out.push(l[l.length - 1]);
+  return out;
+}
+
+/** Przesunięcie łamanej w prawo (jazda prawostronna) o off(i) metrów Merkatora. */
+function offsetRight(l, off) {
+  return l.map((p, i) => {
+    const a = l[Math.max(0, i - 1)]; const b = l[Math.min(l.length - 1, i + 1)]; const f = unit(a, b); const o = off[i];
+    return [p[0] + f[1] * o, p[1] - f[0] * o];
+  });
+}
+
+/** Tor dopasowany do sieci jezdni BDOT: od kotwicy do kotwicy (co ANCHOR m) najkrótszą drogą po osiach, prawym pasem.
+ *  Gdzie trasa jedzie drogą, której w BDOT nie ma, zostaje linia trasy (i dostaje własny asfalt). Długości z trasy zostają. */
+export function matchPath(raw, K, axes) {
+  const { p, along } = resample(raw, K); const n = p.length; const total = along[n - 1];
+  const step = Math.max(1, Math.round(ANCHOR / STEP)); const idx = [];
+  for (let i = 0; i < n; i += step) idx.push(i);
+  if (idx[idx.length - 1] !== n - 1) idx.push(n - 1);
+  const anchors = idx.map((i) => { const f = unit(p[Math.max(0, i - 4)], p[Math.min(n - 1, i + 4)]); return { i, s: along[i], m: snapSeg(p[i], f, K, axes) }; });
+  // łamana z wagą: punkty, szerokości, czy dwukierunkowa, i dla kotwic ich odległość wzdłuż trasy
+  const line = []; const lw = []; const tags = []; const onRoad = new Array(n).fill(false);
+  const push = (q, w, two) => { line.push(q); lw.push([w, two]); };
+  for (let k = 0; k < anchors.length - 1; k++) {
+    const A = anchors[k]; const B = anchors[k + 1]; const rl = B.s - A.s;
+    let piece = null;
+    if (A.m && B.m) {
+      const c = between(A.m, B.m, (rl * 2 + 30) * K);
+      if (c && plen(c) / K <= rl * 1.6 + 12) piece = c;
+    }
+    tags.push([line.length, A.s]);
+    if (piece) {
+      for (let j = A.i; j < B.i; j++) onRoad[j] = true;
+      const w = Math.min(A.m.s.w, B.m.s.w); const two = A.m.s.two && B.m.s.two;
+      for (const q of piece.slice(0, -1)) push(q, w, two);
+    } else for (let j = A.i; j < B.i; j++) push(p[j], 0, false);
+  }
+  tags.push([line.length, total]); push(anchors[anchors.length - 1].m ? anchors[anchors.length - 1].m.q : p[n - 1], 0, false);
+  // usuwamy powtórzone punkty (koniec jednego kawałka to początek następnego)
+  const L = []; const W = []; const map = new Map();
+  for (let i = 0; i < line.length; i++) {
+    if (L.length && Math.hypot(line[i][0] - L[L.length - 1][0], line[i][1] - L[L.length - 1][1]) < 0.05 * K) { map.set(i, L.length - 1); continue; }
+    map.set(i, L.length); L.push(line[i]); W.push(lw[i]);
+  }
+  map.set(line.length, L.length - 1);
+  const off = W.map(([w, two]) => laneOffset(w, two, false) * K);
+  const sh = offsetRight(L, off);
+  // tor przez kotwice: długości trasy przypisane do kotwic, między nimi proporcjonalnie do długości toru
+  const cum = [0]; for (let i = 1; i < sh.length; i++) cum.push(cum[i - 1] + Math.hypot(sh[i][0] - sh[i - 1][0], sh[i][1] - sh[i - 1][1]));
+  const knots = tags.map(([li, s]) => [cum[map.get(li)], s]).filter((k, i, a) => i === 0 || k[0] > a[i - 1][0]);
+  const R = fillet(sh, 7 * K); const cr = [0]; for (let i = 1; i < R.length; i++) cr.push(cr[i - 1] + Math.hypot(R[i][0] - R[i - 1][0], R[i][1] - R[i - 1][1]));
+  const scale = cr[cr.length - 1] / (cum[cum.length - 1] || 1);
+  const arcFor = (s) => { let k = 1; while (k < knots.length - 1 && knots[k][1] < s) k++; const [a0, s0] = knots[k - 1]; const [a1, s1] = knots[k]; return (a0 + (a1 - a0) * Math.max(0, Math.min(1, (s - s0) / ((s1 - s0) || 1)))) * scale; };
+  const at = (d) => { let lo = 0; let hi = R.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cr[m] <= d) lo = m; else hi = m; } const u = (d - cr[lo]) / ((cr[hi] - cr[lo]) || 1); return [R[lo][0] + (R[hi][0] - R[lo][0]) * u, R[lo][1] + (R[hi][1] - R[lo][1]) * u]; };
+  return { pts: along.map((s) => at(arcFor(s))), along, onRoad };
+}
+
 /** Zwraca tor: punkty w metrach Merkatora i odległość wzdłuż trasy dla każdego z nich. Długości zostają z trasy, więc postęp i dystanse się nie rozjeżdżają.
  *  lefts: miejsca (metry trasy) skrętów w lewo, przed którymi tor przechodzi na lewy pas. */
-export function drivePath(raw, K = 1, axes = null, { lefts = [], turns = [] } = {}) {
+export function drivePath(raw, K = 1, axes = null, { lefts = [], turns = [], legacy = false } = {}) {
+  if (axes && !legacy) {
+    const m = matchPath(raw, K, axes);
+    return { pts: contain(smooth(m.pts, 1), K, axes), along: m.along, raw: resample(raw, K).p };
+  }
   const { p, along } = resample(raw, K); const n = p.length; let pts = p;
   if (axes) {
     const prev = { id: -1 }; const T = new Array(n).fill(null);

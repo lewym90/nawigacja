@@ -37,6 +37,14 @@ for i in range(1, len(xy) - 1):
     if any(a - 1 <= i <= b + 1 for a, b in d.get('fill') or []): r = [True] * 3  # własny asfalt pod torem
     known += 1
     if not all(r): bad.append((i, ''.join('X' if not v else '.' for v in r)))
+# drugi test: tor nie może odjechać od trasy (ścięcie kwartału, inna ulica). Dopuszczamy 12 m: pas ruchu i różnice OSM/BDOT.
+rw = np.array([(q[0] * W / 360, math.log(math.tan(math.pi / 4 + q[1] * math.pi / 360)) * W / (2 * math.pi)) for q in d['raw']])
+A = rw[:-1]; E = rw[1:] - rw[:-1]; l2 = np.maximum((E ** 2).sum(1), 1e-9); far = []
+for i in range(0, len(xy), 2):
+    x, y = xy[i]; t = np.clip(((x - A[:, 0]) * E[:, 0] + (y - A[:, 1]) * E[:, 1]) / l2, 0, 1)
+    dd = (np.hypot(A[:, 0] + E[:, 0] * t - x, A[:, 1] + E[:, 1] * t - y)).min() / K
+    if dd > 12: far.append(i)
+print(f'odjazd od trasy (>12 m): {len(far)} punktów', far[:20])
 skip = int(sys.argv[2]) if len(sys.argv) > 2 else 15
 core = [b for b in bad if skip <= b[0] <= len(xy) - 1 - skip]
 print(f'metrów {known}, poza jezdnią {len(core)} (+{len(bad) - len(core)} przy samym starcie/celu)')
@@ -46,4 +54,4 @@ for i, s in core:
     else: runs.append([i, i])
 print('odcinki [m]:', [(a, b) for a, b in runs][:40])
 json.dump(runs, open(sys.argv[1] + '.bad', 'w'))
-sys.exit(1 if core else 0)
+sys.exit(1 if core or far else 0)
