@@ -99,8 +99,8 @@ if len(sys.argv) > 3 and os.path.exists(sys.argv[3]):
         if e.get('tags', {}).get('crossing') in ('unmarked', 'informal', 'no'): continue
         x, y = to4326(e['lon'], e['lat'])
         P = Point(x, y)
-        if not R.buffer(0.5 * M).contains(P): continue
         j = at.nearest(P); L, w = allAxes[j][0], allAxes[j][1]
+        if L.distance(P) > (w / 2 + 0.5) * M: continue  # przejście poza jezdnią BDOT
         s0 = L.project(P); a = L.interpolate(max(0, s0 - 2)); b = L.interpolate(min(L.length, s0 + 2))
         d = np.array([b.x - a.x, b.y - a.y]); d /= (np.hypot(*d) or 1); n = np.array([-d[1], d[0]])
         q = L.interpolate(s0); c0 = np.array([q.x, q.y]); half = (w / 2 - 0.4) * M
