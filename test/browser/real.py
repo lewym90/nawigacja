@@ -112,6 +112,9 @@ with sync_playwright() as p:
     for _i in range(6):
         t0 = _t.time(); r = page.evaluate("(() => { const n = window.__nav.S.nav; return [(n.laneF||[]).length, (n.junctions||[]).length, Math.round(n.along||0)]; })()"); print('puls', round(_t.time()-t0,1), r, flush=True); page.wait_for_timeout(1500)
     page.wait_for_timeout(int(os.environ.get('PRELOAD', '0')) * 1000)
+    if os.environ.get('NEAR'):
+        os.environ['FIRST'] = str(page.evaluate("(n) => { const st = window.__nav.S.sim.route.steps.find((x) => (x.name || '').includes(n)); return st ? Math.round(st.at - %s) : 1500; }" % os.environ.get('BEFORE', '260'), os.environ['NEAR']))
+        print('NEAR', os.environ['FIRST'], flush=True)
     page.evaluate("window.__nav.S.sim.along = %s; window.__nav.S.sim.setSpeed(45)" % os.environ.get('FIRST', '1500'))
     page.wait_for_timeout(int(os.environ.get('SETTLE', '0')) * 1000)
     page.wait_for_timeout(7000)
