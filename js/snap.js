@@ -178,10 +178,11 @@ function followAxes(T, a, b, K, axes, left) {
 export const EDGE = 1.6; // metry od krawężnika do środka toru: pół wstęgi (1,1 m) i zapas
 
 /** Jak daleko za krawędzią najbliższej jezdni leży punkt (ujemne: na jezdni) i która to jezdnia. */
-function nearestRoad(p, K, axes) {
+function nearestRoad(p, K, axes, f = null) {
   let best = null; let bv = Infinity;
   for (const s of axes.near(p[0], p[1])) {
     const ex = s.bx - s.ax; const ey = s.by - s.ay; const l2 = ex * ex + ey * ey; if (!l2) continue;
+    if (f && Math.abs(ex * f[0] + ey * f[1]) / Math.sqrt(l2) < 0.85) continue; // tylko jezdnia w kierunku jazdy, nie przecznica
     const t = Math.max(0, Math.min(1, ((p[0] - s.ax) * ex + (p[1] - s.ay) * ey) / l2));
     const qx = s.ax + ex * t; const qy = s.ay + ey * t; const d = Math.hypot(p[0] - qx, p[1] - qy) / K; const v = d - s.w / 2;
     if (v < bv) { bv = v; best = { qx, qy, d, w: s.w, v }; }
@@ -190,8 +191,8 @@ function nearestRoad(p, K, axes) {
 }
 
 export function contain(pts, K, axes, margin = EDGE) {
-  return pts.map((p) => {
-    const best = nearestRoad(p, K, axes);
+  return pts.map((p, i) => {
+    const best = nearestRoad(p, K, axes, unit(pts[Math.max(0, i - 3)], pts[Math.min(pts.length - 1, i + 3)]));
     // dalej niż 4 m za krawędzią to już inna ulica: trasa jedzie drogą, której nie ma w BDOT, i dostaje własny kawałek jezdni (roadFill)
     if (!best || best.v > 4 || best.v <= -margin + 0.05) return p;
     const lim = Math.max(0, best.w / 2 - margin); const f = best.d ? lim / best.d : 0;
@@ -225,7 +226,7 @@ function snapSeg(p, f, K, axes) {
   let best = null; let bs = Infinity;
   for (const s of axes.near(p[0], p[1])) {
     const ex = s.bx - s.ax; const ey = s.by - s.ay; const l2 = ex * ex + ey * ey; if (!l2) continue;
-    const c = Math.abs(ex * f[0] + ey * f[1]) / Math.sqrt(l2); if (c < 0.85) continue; // przecznica to nie nasza jezdnia
+    const c = Math.abs(ex * f[0] + ey * f[1]) / Math.sqrt(l2); if (c < 0.94) continue; // przecznica to nie nasza jezdnia (do ok. 20° od kierunku trasy)
     const t = Math.max(0, Math.min(1, ((p[0] - s.ax) * ex + (p[1] - s.ay) * ey) / l2));
     const q = [s.ax + ex * t, s.ay + ey * t]; const d = Math.hypot(q[0] - p[0], q[1] - p[1]) / K;
     if (d > s.w / 2 + 6) continue;
@@ -289,6 +290,10 @@ export function matchPath(raw, K, axes) {
   for (let i = 0; i < n; i += step) idx.push(i);
   if (idx[idx.length - 1] !== n - 1) idx.push(n - 1);
   const anchors = idx.map((i) => { const f = unit(p[Math.max(0, i - 4)], p[Math.min(n - 1, i + 4)]); return { i, s: along[i], m: snapSeg(p[i], f, K, axes) }; });
+  // pojedyncza kotwica na jezdni między dwiema bez jezdni to przecznica, którą trasa tylko przecina
+  const keep = anchors.map((a, k) => !a.m || (k > 0 && anchors[k - 1].m) || (k < anchors.length - 1 && anchors[k + 1].m));
+  anchors.forEach((a, k) => { if (!keep[k]) a.m = null; });
+  if (globalThis.__dbg) for (const a of anchors) globalThis.__dbg.push({ s: Math.round(a.s), m: !!a.m, name: a.m && a.m.s.name, w: a.m && a.m.s.w, two: a.m && a.m.s.two });
   // łamana z wagą: punkty, szerokości, czy dwukierunkowa, i dla kotwic ich odległość wzdłuż trasy
   const line = []; const lw = []; const tags = []; const onRoad = new Array(n).fill(false);
   const push = (q, w, two) => { line.push(q); lw.push([w, two]); };
@@ -328,12 +333,39 @@ export function matchPath(raw, K, axes) {
   return { pts: along.map((s) => at(arcFor(s))), along, onRoad };
 }
 
+/** Przejście między jezdnią z BDOT a odcinkiem, którego BDOT nie zna (np. łącznica): przesunięcie toru zmienia się płynnie na ok. 20 m, zamiast skoku. */
+function blendGaps(pts, rp, onRoad) {
+  const n = pts.length; const R = 12; const out = pts.slice(); const edge = [];
+  for (let i = 1; i < n; i++) if (onRoad[i] !== onRoad[i - 1]) edge.push(i);
+  for (const e of edge) {
+    for (let i = Math.max(0, e - R); i < Math.min(n, e + R); i++) {
+      let dx = 0; let dy = 0; let c = 0;
+      for (let j = Math.max(0, i - R); j <= Math.min(n - 1, i + R); j++) { dx += pts[j][0] - rp[j][0]; dy += pts[j][1] - rp[j][1]; c++; }
+      out[i] = [rp[i][0] + dx / c, rp[i][1] + dy / c];
+    }
+  }
+  return out;
+}
+
+/** Tam, gdzie trasa jedzie prosto (±25 m), tor wygładzamy mocniej: rozwidlenia jezdni i zjazdy dawały kilkumetrowe załamania. Na zakrętach tor zostaje dokładny. */
+function straighten(pts, rp) {
+  const n = pts.length; const R = 10; const out = pts.slice();
+  for (let i = R; i < n - R; i++) {
+    const a = rp[Math.max(0, i - R)]; const b = rp[i]; const c = rp[Math.min(rp.length - 1, i + R)];
+    const u = unit(a, b); const v = unit(b, c); const cos = u[0] * v[0] + u[1] * v[1];
+    const k = Math.max(0, Math.min(1, (cos - 0.985) / 0.01)); if (!k) continue; // ok. 10° na 50 m i mniej: prosto
+    let x = 0; let y = 0; for (let j = i - R; j <= i + R; j++) { x += pts[j][0]; y += pts[j][1]; }
+    out[i] = [pts[i][0] + (x / (2 * R + 1) - pts[i][0]) * k, pts[i][1] + (y / (2 * R + 1) - pts[i][1]) * k];
+  }
+  return out;
+}
+
 /** Zwraca tor: punkty w metrach Merkatora i odległość wzdłuż trasy dla każdego z nich. Długości zostają z trasy, więc postęp i dystanse się nie rozjeżdżają.
  *  lefts: miejsca (metry trasy) skrętów w lewo, przed którymi tor przechodzi na lewy pas. */
 export function drivePath(raw, K = 1, axes = null, { lefts = [], turns = [], legacy = false } = {}) {
   if (axes && !legacy) {
-    const m = matchPath(raw, K, axes);
-    return { pts: contain(smooth(m.pts, 1), K, axes), along: m.along, raw: resample(raw, K).p };
+    const m = matchPath(raw, K, axes); const rp = resample(raw, K).p;
+    return { pts: contain(straighten(blendGaps(smooth(m.pts, 1), rp, m.onRoad), rp), K, axes), along: m.along, raw: rp };
   }
   const { p, along } = resample(raw, K); const n = p.length; let pts = p;
   if (axes) {
