@@ -8,7 +8,7 @@ import { unpackFuel, candidatesAhead, fuelDetours, bestStation, fmtExtra } from 
 import { explainRoute } from './explain.js';
 import { TripRecorder, TRIP, speedStops, revealStops, replayFrames, drawPoster, fmtTripTime } from './trip.js';
 import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
-import { drivePath, parseAxes, pathAt, crossings } from './snap.js';
+import { drivePath, parseAxes, pathAt, crossings, roadFill } from './snap.js';
 import { CAMERA_PROFILES, QUALITY_PROFILES, CLOSE_CAM, RIBBON_WIDE, cameraProfile, qualityProfile, lerp, zoomForDistance, closeUntil } from './profiles.js';
 import { Compass } from './compass.js';
 import { buildRoadItems, unpackRoadPoints, RoadWatch, describe as describeRoad } from './roadwise.js';
@@ -786,6 +786,7 @@ function cityRoute() {
   const lefts = steps.filter((st) => st.type === 'turn' && /left/.test(st.modifier || '')).map((st) => st.at);
   const turns = steps.filter((st) => wantsArrow(st) && st.at > 0).map((st) => st.at);
   const path = { ...drivePath(c.map(([x, y]) => toMerc(x, y)), K, S.axes, { lefts, turns }), K };
+  path.fill = roadFill(path, K, S.axes);
   cam.path = (s) => pathAt(path, s, fromMerc);
   S.nav.cross = crossings(path, K, S.axes).map((q) => ({ ...q, point: fromMerc(q.x, q.y) }));
   S.city.setRoute(path, turns);

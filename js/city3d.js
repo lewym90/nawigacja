@@ -545,6 +545,12 @@ export class City3D {
       }
     };
     each(this.road, (t) => { if (t.road) { gl.bindVertexArray(t.road.v); gl.drawArrays(gl.TRIANGLES, 0, t.road.n); } });
+    if (this.fill) {
+      const f = this.fill; gl.uniformMatrix4fv(gl.getUniformLocation(this.road, 'u_m'), false, this.tileM(f.org[0], f.org[1]));
+      const ue = gl.getUniformLocation(this.road, 'u_eye'); if (ue) gl.uniform3f(ue, this.eye[0] - f.org[0], this.eye[1] - f.org[1], 0);
+      const uo = gl.getUniformLocation(this.road, 'u_org'); if (uo) gl.uniform2f(uo, f.org[0] % 4000, f.org[1] % 4000);
+      gl.bindVertexArray(f.v); gl.drawArrays(gl.TRIANGLES, 0, f.n);
+    }
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.useProgram(this.mark); gl.uniform1f(gl.getUniformLocation(this.mark, 'u_night'), this.night ? 1 : 0);
     each(this.mark, (t) => { if (t.markv) { gl.bindVertexArray(t.markv.v); gl.drawArrays(gl.TRIANGLES, 0, t.markv.n); } });
@@ -562,7 +568,9 @@ export class City3D {
     const gl = this.gl; if (!gl || !this.sol) { this.pendingRoute = path; return; }
     for (const m of [this.ribbon, this.under, this.cap]) if (m) { gl.deleteBuffer(m.b); gl.deleteBuffer(m.ib); gl.deleteVertexArray(m.v); }
     this.ribbon = null; this.under = null; this.cap = null;
+    if (this.fill) { gl.deleteBuffer(this.fill.b); gl.deleteVertexArray(this.fill.v); this.fill = null; }
     if (!path) return;
+    this.fill = this.fillMesh(path);
     const org = path.pts[0]; const mesh = ribbonMesh(path, turns, { style: this.headStyle || 'flat' });
     const up = (d, idx, p) => {
       const v = gl.createVertexArray(); gl.bindVertexArray(v); const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, d, gl.STATIC_DRAW);
@@ -575,6 +583,27 @@ export class City3D {
     this.ribbon = { ...up(mesh.data, mesh.index, this.sol), org, heads: mesh.heads, capAt: mesh.capAt };
     const fan = []; for (let j = 1; j < 9; j++) fan.push(0, j + 1, j);
     this.cap = up(new Float32Array(170), new Uint32Array(fan), this.sol); this.under = { ...up(mesh.under.data, mesh.under.index, this.solU), org };
+  }
+
+  /** Asfalt pod torem tam, gdzie BDOT nie ma jezdni (path.fill: odcinki w metrach trasy). 3 m w każdą stronę od toru. */
+  fillMesh(path) {
+    const runs = path.fill || []; if (!runs.length) return null;
+    const gl = this.gl; const { pts, along, K } = path; const org = pts[0]; const v = [];
+    const at = (s) => { let i = along.findIndex((x) => x >= s); if (i < 0) i = along.length - 1; return Math.max(1, Math.min(pts.length - 2, i)); };
+    for (const [a, b] of runs) {
+      let prev = null;
+      for (let i = at(a); i <= at(b); i++) {
+        const p = pts[i]; const q0 = pts[i - 1]; const q1 = pts[i + 1]; const l = Math.hypot(q1[0] - q0[0], q1[1] - q0[1]) || 1;
+        const nx = (-(q1[1] - q0[1]) / l) * 3 * K; const ny = ((q1[0] - q0[0]) / l) * 3 * K;
+        const L = [p[0] + nx - org[0], p[1] + ny - org[1]]; const R = [p[0] - nx - org[0], p[1] - ny - org[1]];
+        if (prev) v.push(...prev[0], 6, ...prev[1], 6, ...R, 6, ...prev[0], 6, ...R, 6, ...L, 6);
+        prev = [L, R];
+      }
+    }
+    if (!v.length) return null;
+    const vao = gl.createVertexArray(); gl.bindVertexArray(vao); const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 12, 0); gl.bindVertexArray(null);
+    return { v: vao, b, n: v.length / 3, org };
   }
 
   setHeadStyle(style) { this.headStyle = style; if (this.path) this.setRoute(this.path, this.turns); }

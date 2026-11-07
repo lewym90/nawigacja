@@ -213,11 +213,11 @@ test('wstęga 3D: grot na każdym skręcie, kolejny odcinek za skrzyżowaniem, g
   assert.deepEqual(m.heads, [216 - RIB.head - RIB.twist]);
 });
 
-test('tor zawsze na jezdni: punkt obok drogi wraca metr od krawężnika', async () => {
+test('tor zawsze na jezdni: punkt obok drogi wraca 1,6 m od krawężnika', async () => {
   const { contain, AxisIndex } = await import('../js/snap.js');
   const axes = new AxisIndex([{ pts: [[0, 0], [100, 0]], w: 7, two: true, name: 'A' }]);
   const [a, b, c] = contain([[50, 6], [50, 1], [50, 40]], 1, axes);
-  assert.ok(Math.abs(a[1] - 2.5) < 1e-6, String(a)); // 3,5 m pół jezdni minus metr
+  assert.ok(Math.abs(a[1] - 1.9) < 1e-6, String(a)); // 3,5 m pół jezdni minus 1,6 m
   assert.deepEqual(b, [50, 1]); // na jezdni: bez zmian
   assert.deepEqual(c, [50, 40]); // daleko od danych: bez zmian
 });

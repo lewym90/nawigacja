@@ -175,19 +175,44 @@ function followAxes(T, a, b, K, axes, left) {
 
 /** Ostatnie słowo: każdy punkt toru musi leżeć na jezdni, co najmniej metr od krawężnika. Gdy wypada poza najbliższą jezdnię, przesuwamy go w jej stronę.
  *  Jezdnie na mapie są zbudowane z tych samych osi i szerokości, więc auto nie może już jechać po trawniku. Miejsca bez danych (dalej niż 20 m od osi) zostają bez zmian. */
-export function contain(pts, K, axes, margin = 1) {
+export const EDGE = 1.6; // metry od krawężnika do środka toru: pół wstęgi (1,1 m) i zapas
+
+/** Jak daleko za krawędzią najbliższej jezdni leży punkt (ujemne: na jezdni) i która to jezdnia. */
+function nearestRoad(p, K, axes) {
+  let best = null; let bv = Infinity;
+  for (const s of axes.near(p[0], p[1])) {
+    const ex = s.bx - s.ax; const ey = s.by - s.ay; const l2 = ex * ex + ey * ey; if (!l2) continue;
+    const t = Math.max(0, Math.min(1, ((p[0] - s.ax) * ex + (p[1] - s.ay) * ey) / l2));
+    const qx = s.ax + ex * t; const qy = s.ay + ey * t; const d = Math.hypot(p[0] - qx, p[1] - qy) / K; const v = d - s.w / 2;
+    if (v < bv) { bv = v; best = { qx, qy, d, w: s.w, v }; }
+  }
+  return best;
+}
+
+export function contain(pts, K, axes, margin = EDGE) {
   return pts.map((p) => {
-    let best = null; let bv = Infinity;
-    for (const s of axes.near(p[0], p[1])) {
-      const ex = s.bx - s.ax; const ey = s.by - s.ay; const l2 = ex * ex + ey * ey; if (!l2) continue;
-      const t = Math.max(0, Math.min(1, ((p[0] - s.ax) * ex + (p[1] - s.ay) * ey) / l2));
-      const qx = s.ax + ex * t; const qy = s.ay + ey * t; const d = Math.hypot(p[0] - qx, p[1] - qy) / K; const v = d - s.w / 2;
-      if (v < bv) { bv = v; best = { qx, qy, d, w: s.w }; }
-    }
-    if (!best || best.d > 20 || bv <= -margin + 0.05) return p;
+    const best = nearestRoad(p, K, axes);
+    // dalej niż 4 m za krawędzią to już inna ulica: trasa jedzie drogą, której nie ma w BDOT, i dostaje własny kawałek jezdni (roadFill)
+    if (!best || best.v > 4 || best.v <= -margin + 0.05) return p;
     const lim = Math.max(0, best.w / 2 - margin); const f = best.d ? lim / best.d : 0;
     return [best.qx + (p[0] - best.qx) * f, best.qy + (p[1] - best.qy) * f];
   });
+}
+
+/** Odcinki toru (w metrach trasy), pod którymi nie ma narysowanej jezdni: tam silnik kładzie własny asfalt, żeby auto nie jechało po trawie. */
+export function roadFill(path, K, axes, margin = EDGE) {
+  if (!axes) return [];
+  const { pts, along } = path; const runs = [];
+  // 0,1 m zapasu: obrys jezdni na mapie jest uproszczony inaczej niż osie
+  const ok = (p) => { const r = nearestRoad(p, K, axes); return r && r.v <= -margin - 0.1; };
+  for (let i = 0; i < pts.length; i++) {
+    // sprawdzamy też drogę do następnego punktu: przeskok między jezdniami potrafi przeciąć pas trawy
+    const q = pts[Math.min(pts.length - 1, i + 1)]; const p = pts[i];
+    if ([0, 0.25, 0.5, 0.75].every((u) => ok([p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u]))) continue;
+    const a = along[i] - 6; const e = along[i] + 6; const last = runs[runs.length - 1];
+    if (last && a <= last[1]) last[1] = e; else runs.push([a, e]);
+  }
+  return runs;
 }
 
 /** Zwraca tor: punkty w metrach Merkatora i odległość wzdłuż trasy dla każdego z nich. Długości zostają z trasy, więc postęp i dystanse się nie rozjeżdżają.
