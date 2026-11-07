@@ -1,4 +1,5 @@
 import { ribbonMesh, puckMesh, RIB } from './solid.js';
+import { FACADE_M } from './facade-size.js';
 // Własny silnik miasta 3D: rysuje prawdziwe bryły budynków (GUGiK LoD2, tools/build-city.py) wewnątrz mapy.
 // Ściany dostają elewacje z atlasu, dachy kolor wg kształtu. Kafle dociągane wokół punktu przed autem.
 
@@ -19,13 +20,14 @@ void cut(vec3 p){
   float f=smoothstep(r,r+3.0,d);
   if(f<1.0 && f<fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(0.06711056,0.00583715))))) discard;
 }
-uniform sampler2D u_atlas; uniform vec3 u_sun; uniform vec3 u_fog; uniform vec3 u_eye; uniform float u_night; uniform float u_soft;
+uniform sampler2D u_atlas; uniform float u_fm[24]; uniform vec3 u_sun; uniform vec3 u_fog; uniform vec3 u_eye; uniform float u_night; uniform float u_soft;
 out vec4 o;
 void main(){
   cut(v_pos);
-  float c=v_cell; vec2 cell=vec2(mod(c,3.0),floor(c/3.0));
-  vec2 f=fract(v_uv); vec2 s=vec2(1.0/3.0,0.25);
-  vec3 tex=textureGrad(u_atlas,(cell+0.01+f*0.98)*s,dFdx(v_uv)*s,dFdy(v_uv)*s).rgb;
+  float c=v_cell; vec2 cell=vec2(mod(c,4.0),floor(c/4.0));
+  vec2 uv=v_uv/u_fm[int(c+0.5)]; // współrzędne ścian są w metrach, a każda elewacja ma swoją wielkość
+  vec2 f=fract(uv); vec2 s=vec2(0.25,1.0/6.0);
+  vec3 tex=textureGrad(u_atlas,(cell+0.005+f*0.99)*s,dFdx(uv)*s,dFdy(uv)*s).rgb;
   vec3 n=normalize(cross(dFdx(v_pos),dFdy(v_pos)));
   float d=max(dot(n,u_sun),0.0);
   float ao=mix(0.62,1.0,smoothstep(0.0,5.0,v_pos.z));
@@ -60,12 +62,12 @@ void main(){
   if(n.z<0.0) n=-n;
   vec3 t=length(n.xy)>0.05?normalize(vec3(-n.y,n.x,0.0)):vec3(1.0,0.0,0.0);
   vec3 b=cross(n,t);
-  vec2 uv=vec2(dot(v_pos,t),dot(v_pos,b))/(p?5.0:9.0);
-  vec2 g=p?vec2(0.0,0.0):vec2(0.5,0.0);
-  vec2 sc=vec2(0.5,1.0);
+  vec2 uv=vec2(dot(v_pos,t),dot(v_pos,b))/(p?(k==4?6.0:5.0):10.0);
+  vec2 g=vec2(p?(k==4?1.0:0.0):2.0,0.0)/3.0; // dachówka, blacha na rąbek, papa
+  vec2 sc=vec2(1.0/3.0,1.0);
   vec3 tex=textureGrad(u_roofs,g+(0.01+fract(uv)*0.98)*sc,dFdx(uv)*sc,dFdy(uv)*sc).rgb;
-  if(p){ if(k==4) tex=vec3(dot(tex,vec3(.3,.5,.2)))*vec3(.62,.66,.74); else if(k==5) tex*=vec3(.74,.62,.56); }
-  else tex*=(k==1?1.15:k==2?0.9:1.0);
+  if(p){ if(k==5) tex*=vec3(.82,.7,.64); }
+  else tex*=(k==1?1.1:k==2?0.88:1.0);
   float d=max(dot(n,u_sun),0.0);
   if(u_soft>0.5) tex=mix(tex,vec3(dot(tex,vec3(.3,.55,.15))),0.35)*0.92;
   vec3 col=tex*(0.62+0.55*d);
@@ -81,10 +83,14 @@ const vec2 C[6]=vec2[6](vec2(-.5,0.),vec2(.5,0.),vec2(.5,1.),vec2(-.5,0.),vec2(.
 void main(){
   vec2 c=C[gl_VertexID];
   float kind=floor(a_tree.w); float f=fract(a_tree.w);
-  float h=a_tree.z*u_scale; float w=h*(kind<0.5?0.62:0.92);
+  float h=a_tree.z*u_scale;
+  // gatunek: iglaste to sosna, liściaste losowo z pozycji (lipa, dąb, brzoza, klon, topola, młode), niskie to krzew
+  float r=fract(sin(dot(a_tree.xy,vec2(12.9898,78.233)))*43758.5453);
+  float sp=kind<0.5?5.0:(h<4.5?7.0:(r<0.24?0.0:r<0.4?1.0:r<0.56?2.0:r<0.76?3.0:r<0.84?4.0:6.0));
+  if(sp>6.5) h*=0.5;
   float side=f>0.45?1.0:-1.0;
-  vec3 p=vec3(a_tree.xy+u_right*c.x*w,c.y*h);
-  v_uv=vec2((kind+0.5+c.x*side*0.98)*0.5,1.0-c.y*0.99-0.005);
+  vec3 p=vec3(a_tree.xy+u_right*c.x*h,c.y*h); // komórka atlasu jest kwadratowa
+  v_uv=vec2((mod(sp,4.0)+0.5+c.x*side*0.98)*0.25,(floor(sp/4.0)+1.0-c.y*0.99-0.005)*0.5);
   v_tint=f; v_pos=p;
   gl_Position=u_m*vec4(p,1.0);
 }`;
@@ -117,7 +123,8 @@ void main(){
   int k=int(v_k+0.5); vec3 c;
   vec2 m=v_xy/1.6;
   if(k==2||k==5||k==6){ float big=texture(u_asphalt,m/37.0).r; c=texture(u_asphalt,m/6.0).rgb*(0.82+0.42*big); c=mix(c,vec3(dot(c,vec3(.33))),0.6);
-    c=k==2?c*0.8:k==5?c*1.08+vec3(.035):mix(c*1.25,vec3(.42,.42,.41),.45); } // główne ciemne i wyraźne, małe uliczki jasne, żeby schodziły na drugi plan
+    c=k==2?c*0.78:k==5?c*0.86:mix(c*1.15,vec3(.42,.42,.41),.35); } // główne najciemniejsze, zwykłe ulice ciemne, wąskie uliczki jaśniejsze
+  else if(k==7){ c=texture(u_asphalt,m/6.0).rgb*0.95; } // parking
   else if(k==0){ c=texture(u_pave,m/5.0).rgb*0.92; }
   else if(k==3){ c=texture(u_pave,m/3.0).rgb*vec3(.72,.7,.68); }
   else if(k==1){ c=vec3(.76,.76,.72); }
@@ -307,10 +314,11 @@ export class City3D {
       };
       im.src = url;
     };
-    tex(`./icons/city-atlas-${this.night ? 'night' : 'day'}.webp`, 'tex');
-    tex('./icons/city-roofs.webp', 'roofTex');
-    tex('./icons/city-trees.webp', 'treeTex');
-    if (this.soft) { tex('./icons/tx-asphalt.webp', 'asphalt'); tex('./icons/tx-pave.webp', 'pave'); }
+    const v = this.soft ? 'city2' : 'city'; // nowy wygląd: grafiki właściciela (tools/build-owner.py)
+    tex(`./icons/${v}-atlas-${this.night ? 'night' : 'day'}.webp`, 'tex');
+    tex(`./icons/${v}-roofs.webp`, 'roofTex');
+    tex(`./icons/${v}-trees.webp`, 'treeTex');
+    if (this.soft) { tex('./icons/tx2-asphalt.webp', 'asphalt'); tex('./icons/tx2-pave.webp', 'pave'); }
   }
 
   /** Mapa zdejmuje warstwę przy zmianie motywu: zwalniamy pamięć grafiki. */
@@ -478,6 +486,7 @@ export class City3D {
       gl.uniform1f(gl.getUniformLocation(p, 'u_scale'), this.soft ? 1.25 : 1.6);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, atlas);
       gl.uniform1i(gl.getUniformLocation(p, p === this.wall ? 'u_atlas' : p === this.roof ? 'u_roofs' : 'u_trees'), 0);
+      if (p === this.wall) gl.uniform1fv(gl.getUniformLocation(p, 'u_fm[0]'), FACADE_M);
     };
     const br = (this.map.getBearing() * Math.PI) / 180; const right = [Math.cos(br), -Math.sin(br)];
     for (const [p, key, atlas] of [[this.wall, 'w', this.tex], [this.roof, 'r', this.roofTex], [this.tree, 't', this.treeTex]]) {

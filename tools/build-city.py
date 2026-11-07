@@ -2,7 +2,7 @@
 Użycie: python3 tools/build-city.py <powiat_gml.zip> <katalog_wyjściowy> [kontekst.pkl]
 Z kontekstem (tools/road-context.py) pomija budynki z modeli, które leżą na dzisiejszej jezdni i nie istnieją już w OSM: modele są z 2017 r.
 Kafel: siatka 400 m w metrach Web Mercator. Plik: u32 liczba_wierzch_ścian, u32 liczba_wierzch_dachów, potem
-ściany [x,y,z,u,v,cell] f32 i dachy [x,y,z,rodzaj] f32. Pozycje względem narożnika kafla, trójkąty bez indeksów."""
+ściany [x,y,z,u,v,cell] f32 (u, v w metrach; cell = wiersz*4 + wariant atlasu elewacji, patrz FACADE_ROWS) i dachy [x,y,z,rodzaj] f32. Pozycje względem narożnika kafla, trójkąty bez indeksów."""
 import gzip, json, math, os, re, struct, sys, zipfile
 from collections import defaultdict
 import numpy as np
@@ -54,7 +54,14 @@ BLD = re.compile(rb'<bldg:Building .*?</bldg:Building>', re.S)
 SURF = re.compile(rb'<bldg:(RoofSurface|WallSurface)\b.*?</bldg:\1>', re.S)
 RING = re.compile(rb'<gml:exterior>(.*?)</gml:exterior>', re.S)
 POS = re.compile(rb'<gml:pos[^>]*>([^<]+)<')
-WIDTH = [8.0, 12.0, 13.0, 14.0]  # house, tenement, block, office: szerokość jednego powtórzenia tekstury w metrach
+# Wiersze atlasu elewacji (tools/build-owner.py): 0 domy, 1 kamienice i niskie bloki, 2 bloki, 3 biura i usługi publiczne, 4 handel, 5 przemysł i magazyny
+def facade_row(fn, h):
+    fn = fn or ''
+    if 'handlowo' in fn: return 4
+    if any(k in fn for k in ('przemysłowe', 'magazynowe', 'transportu', 'zbiorniki')): return 5
+    if any(k in fn for k in ('biurowe', 'oświaty', 'szpitali', 'kultury', 'zakwaterowania')): return 3
+    if 'mieszkalne' in fn or not fn: return 0 if h < 9 else 1 if h < 16 else 2
+    return 3 if h >= 9 else 0
 walls, roofs = defaultdict(list), defaultdict(list)
 
 def tri(pts):
@@ -89,8 +96,8 @@ for info in z.infolist():
                 continue
         allz = np.concatenate([p[:, 2] for _, p in surfaces])
         base, top = allz.min(), allz.max(); h = top - base
-        kind_i = 0 if h < 9 else 1 if h < 16 else 2 if h < 34 else 3
-        idn = abs(hash(body[:90])) % 3
+        fn_b = ''
+        idn = abs(hash(body[:90])) % 4
         fx0 = None
         if bd is not None:
             allp = np.concatenate([p for _, p in surfaces]); mx0, my0 = to3857.transform(allp[:, 0], allp[:, 1])
@@ -99,8 +106,8 @@ for info in z.infolist():
                 for i in btree.query(fx0):
                     ov = bpoly[i].intersection(fx0).area
                     if ov > 0.3 * bpoly[i].area: bused.add(int(i))
-                    if ov > 0.4 * fx0.area and any(c in binfo[i][0] for c in COMM): kind_i = 3
-        cell = kind_i * 3 + idn
+                    if ov > 0.4 * fx0.area: fn_b = binfo[i][0]
+        cell = facade_row(fn_b, h) * 4 + idn
         c = np.concatenate([p for _, p in surfaces])[:, :2].mean(0)
         cx, cy = to3857.transform(c[0], c[1])
         tile = (int(cx // GRID), int(cy // GRID)); ox, oy = tile[0] * GRID, tile[1] * GRID
@@ -113,8 +120,8 @@ for info in z.infolist():
             if kind == b'WallSurface':
                 d = P[1:] - P[:-1]; k = int(np.argmax(np.hypot(d[:, 0], d[:, 1])))
                 e = d[k, :2]; L = np.hypot(*e) or 1; e = e / L
-                u = ((P[:, 0] - P[0, 0]) * e[0] + (P[:, 1] - P[0, 1]) * e[1]) / MERC / WIDTH[kind_i]
-                v = (pts[:, 2] - base) / WIDTH[kind_i]
+                u = ((P[:, 0] - P[0, 0]) * e[0] + (P[:, 1] - P[0, 1]) * e[1]) / MERC
+                v = (pts[:, 2] - base)
                 for i in idx: walls[tile].append((P[i, 0], P[i, 1], P[i, 2], u[i], v[i], cell))
             else:
                 n = np.cross(P[1] - P[0], P[2] - P[0]); nn = np.linalg.norm(n)
@@ -127,14 +134,13 @@ if bd is not None:
         if i in bused or lv < 1: continue
         if road_tree is not None and len(road_tree.query(q.buffer(-1.5), predicate='intersects')): continue
         h = lv * 3.1 + 0.8
-        kind_i = 3 if any(c in fn for c in COMM) else 0 if h < 9 else 1 if h < 16 else 2 if h < 34 else 3
-        cell = kind_i * 3 + i % 3
+        cell = facade_row(fn, h) * 4 + i % 4
         c = q.centroid; tile = (int(c.x // GRID), int(c.y // GRID)); ox, oy = tile[0] * GRID, tile[1] * GRID
         P = np.array(q.exterior.coords[:-1]); P = P - [ox, oy]
         zt = h * MERC
         u0 = 0.0
         for a in range(len(P)):
-            A = P[a]; B = P[(a + 1) % len(P)]; L = np.hypot(*(B - A)) / MERC / WIDTH[kind_i]; v = h / WIDTH[kind_i]
+            A = P[a]; B = P[(a + 1) % len(P)]; L = np.hypot(*(B - A)) / MERC; v = h
             for (x_, y_, z_, u_, v_) in ((A[0], A[1], 0, u0, 0), (B[0], B[1], 0, u0 + L, 0), (B[0], B[1], zt, u0 + L, v), (A[0], A[1], 0, u0, 0), (B[0], B[1], zt, u0 + L, v), (A[0], A[1], zt, u0, v)):
                 walls[tile].append((x_, y_, z_, u_, v_, cell))
             u0 += L

@@ -27,6 +27,7 @@ export async function loadFacades() {
     }
   }
   for (const n of ['grass', 'pave', 'asphalt']) jobs.push(load(`./icons/tx-${n}.webp`).then((im) => { cache[`tx-${n}`] = im; }));
+  jobs.push(load('./icons/tx2-grass.webp').then((im) => { cache['tx2-grass'] = im; })); // trawa właściciela do nowego wyglądu
   await Promise.race([Promise.all(jobs), new Promise((r) => setTimeout(r, 4000))]);
 }
 
@@ -46,8 +47,8 @@ function ground(im, night, tint) {
 /** Dodaje tekstury do bieżącego stylu mapy (po każdej zmianie motywu trzeba je dodać ponownie). */
 export function addFacades(map, night) {
   // nocą jezdnia i chodnik są dużo jaśniejsze od trawy: układ dróg i skrzyżowań musi być czytelny bez trasy
-  for (const [n, r, tint] of [['grass', 2, '#141f2e'], ['pave', 2, '#4a5a74'], ['asphalt', 1, '#a6b6d4']]) {
-    const id = `tx-${n}`;
+  for (const [n, r, tint] of [['grass', 2, '#141f2e'], ['pave', 2, '#4a5a74'], ['asphalt', 1, '#a6b6d4'], ['2-grass', 2, '#141f2e']]) {
+    const id = n.startsWith('2') ? `tx${n}` : `tx-${n}`;
     if (map.hasImage(id)) map.removeImage(id);
     map.addImage(id, ground(cache[id], night, tint), { pixelRatio: r });
   }

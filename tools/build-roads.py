@@ -1,19 +1,22 @@
 """Siatka dróg z BDOT10k: prawdziwe szerokości, nawierzchnie, chodniki, krawężniki i linie, scalone w czyste skrzyżowania.
-Użycie: python3 tools/build-roads.py <powiat_GML.zip> <katalog_kafli>
+Użycie: python3 tools/build-roads.py <powiat_GML.zip> <katalog_kafli> [osm_przejścia.json] [osm_parkingi.json ...]
+Przejścia dla pieszych i parkingi z OSM (Overpass, out geom) są opcjonalne.
 Kafel <x>_<y>.r.bin (gzip): u32 liczba_trójkątów_wierzch, u32 liczba_wierzch_linii,
- powierzchnie [x,y,rodzaj] f32 (0 chodnik, 1 krawężnik, 2 asfalt główne, 3 kostka, 4 żwir, 5 asfalt zbiorcze i lokalne, 6 asfalt małe uliczki), linie [x,y,u,rodzaj] f32 (0 ciągła, 1 przerywana).
+ powierzchnie [x,y,rodzaj] f32 (0 chodnik, 1 krawężnik, 2 asfalt główne, 3 kostka, 4 żwir, 5 asfalt ulice dwukierunkowe zbiorcze, lokalne i osiedlowe od 5,5 m, 6 asfalt wąskie uliczki, 7 parkingi), linie [x,y,u,rodzaj] f32 (0 ciągła, 1 przerywana).
 Plik axes.bin (gzip): u32 liczba, potem dla każdej osi u32 punkty, f32 szerokość, f32 dwukierunkowa (0/1), u16 długość nazwy, nazwa utf-8, punkty [x,y] f32 względem index.axesOrg. Na niej dopasowuje się tor jazdy."""
-import gzip, json, math, re, struct, sys, zipfile
+import gzip, json, math, os, re, struct, sys, zipfile
 from collections import defaultdict
 import numpy as np
 import mapbox_earcut as earcut
 import shapely
 from pyproj import Transformer
-from shapely.geometry import LineString, MultiLineString, Point, box
+from shapely.geometry import LineString, MultiLineString, Point, Polygon, box
 from shapely.ops import unary_union, linemerge
 from shapely.strtree import STRtree
 SRC, OUT = sys.argv[1:3]; GRID = 400.0; M = 1 / math.cos(math.radians(51.2)); LANE = 3.3
 to = Transformer.from_crs(2180, 3857, always_xy=True)
+_t4 = Transformer.from_crs(4326, 3857, always_xy=True)
+to4326 = lambda lon, lat: _t4.transform(lon, lat)
 z = zipfile.ZipFile(SRC)
 read = lambda k: z.read([i.filename for i in z.infolist() if f'__{k}.xml' in i.filename][0]).decode('utf8', 'ignore')
 FEAT = lambda k: re.finditer(rf'<ot:{k}\s+gml:id.*?</ot:{k}>', read(k), re.S)
@@ -30,10 +33,11 @@ for m in FEAT('OT_SKJZ_L'):
     if L is None or tag(x, 'kategoriaIstnienia') not in ('', 'eksploatowany') or 'tunel' in tag(x, 'polozenie'): continue
     w = float(tag(x, 'szerokoscNawierzchni') or tag(x, 'szerokosc') or 5); w = max(2.8, min(w, 16)); mat = tag(x, 'materialNawierzchni'); cl = tag(x, 'klasaDrogi')
     P = L.buffer(w / 2 * M, quad_segs=6)
-    tier = 0 if any(k in cl for k in MAJOR) else 1 if any(k in cl for k in MID) else 2
+    # wygląd według szerokości: osiedlowa 7-metrowa ulica z dwoma pasami to zwykła ulica, choć w BDOT bywa „wewnętrzna”
+    tier = 0 if any(k in cl for k in MAJOR) else 1 if any(k in cl for k in MID) or w >= 5.5 else 2
     ((asphalt, asphaltMid, asphaltMin)[tier] if 'bitumiczna' in mat else cobble if 'kostka' in mat or 'płyty' in mat else gravel).append(P)
     allAxes.append((L, w, tag(x, 'ulicaNazwa1'), tier))
-    if 'bitumiczna' in mat and tier < 2 and w >= 5: axes.append((L, w, cl))
+    if 'bitumiczna' in mat and tier < 2 and w >= 5: axes.append((L, w, cl if any(k in cl for k in MAJOR + MID) else 'droga lokalna'))
 print('jezdnie', len(asphalt), len(asphaltMid), len(asphaltMin), len(cobble), len(gravel), 'osie', len(axes), flush=True)
 A = unary_union(asphalt); AM = unary_union(asphaltMid).difference(A); AS = unary_union(asphaltMin).difference(unary_union([A, AM])); AALL = unary_union([A, AM, AS])
 C = unary_union(cobble).difference(AALL); G = unary_union(gravel).difference(unary_union([AALL, C]))
@@ -79,6 +83,29 @@ for L, w, c in axes:
             try: g = L2.parallel_offset(abs(o), 'left' if o < 0 else 'right', join_style=1)
             except Exception: continue
         addline(g.difference(J), 1)
+def quad(c, d, n, hl, hw):
+    """Prostokąt: środek c, kierunek d (jednostkowy), normalna n, pół długości hl wzdłuż d i pół szerokości hw wzdłuż n."""
+    p = [c + d * hl + n * hw, c + d * hl - n * hw, c - d * hl - n * hw, c - d * hl + n * hw]
+    k = (int(c[0] // GRID), int(c[1] // GRID)); ox, oy = k[0] * GRID, k[1] * GRID
+    marks[k] += [(q[0] - ox, q[1] - oy, 0.0, 0) for q in (p[0], p[1], p[2], p[0], p[2], p[3])]
+zebras = 0
+if len(sys.argv) > 3 and os.path.exists(sys.argv[3]):
+    at = STRtree([a[0] for a in allAxes])
+    for e in json.load(open(sys.argv[3]))['elements']:
+        if e.get('tags', {}).get('crossing') in ('unmarked', 'informal', 'no'): continue
+        x, y = to4326(e['lon'], e['lat'])
+        P = Point(x, y)
+        if not R.buffer(0.5 * M).contains(P): continue
+        j = at.nearest(P); L, w = allAxes[j][0], allAxes[j][1]
+        s0 = L.project(P); a = L.interpolate(max(0, s0 - 2)); b = L.interpolate(min(L.length, s0 + 2))
+        d = np.array([b.x - a.x, b.y - a.y]); d /= (np.hypot(*d) or 1); n = np.array([-d[1], d[0]])
+        q = L.interpolate(s0); c0 = np.array([q.x, q.y]); half = (w / 2 - 0.4) * M
+        # pasy zebry równoległe do jezdni, ułożone w poprzek: 0,5 m szerokości co 1 m, długość 4 m
+        o = -half + 0.25 * M
+        while o <= half - 0.25 * M:
+            quad(c0 + n * o, d, n, 2.0 * M, 0.25 * M); o += 1.0 * M
+        zebras += 1
+print('przejścia', zebras, flush=True)
 print('linie', sum(len(v) for v in marks.values()) // 6, flush=True)
 idx = json.load(open(f'{OUT}/index.json')); xs = [t[0] for t in idx['tiles']]; ys = [t[1] for t in idx['tiles']]
 # osie do dopasowania toru: jezdnia podwójna (druga równoległa blisko) jest jednokierunkowa
@@ -96,7 +123,19 @@ for i, (L, w, nm, tier) in enumerate(allAxes):
     nb = nm.encode('utf8'); blob += struct.pack('<IffH', len(c), w, two, len(nb)) + nb + c.astype(np.float32).tobytes()
 with gzip.open(f'{OUT}/axes.bin', 'wb', 9) as f: f.write(blob)
 print('osie', len(allAxes), len(blob) // 1024, 'KB', flush=True)
-surf = [(W, 0), (KERB, 1), (A, 2), (AM, 5), (AS, 6), (C, 3), (G, 4)]
+PK = []
+for f in sys.argv[4:]:
+    if not os.path.exists(f): continue
+    for e in json.load(open(f)).get('elements', []):
+        g = e.get('geometry') or []
+        if len(g) < 4: continue
+        try:
+            q = Polygon([to4326(v['lon'], v['lat']) for v in g]).buffer(0)
+            if q.area > 30: PK.append(q)
+        except Exception: pass
+PKU = unary_union(PK).difference(R.buffer(0.3 * M)).difference(W) if PK else Polygon()
+print('parkingi', len(PK), flush=True)
+surf = [(W, 0), (KERB, 1), (A, 2), (AM, 5), (AS, 6), (C, 3), (G, 4), (PKU, 7)]
 parts = [(np.array(g.simplify(0.25).exterior.coords)) for g in []]
 polys = []
 for geom, kind in surf:

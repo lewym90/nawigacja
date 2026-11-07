@@ -65,8 +65,9 @@ function groundNew(mode) {
   const fill = (k, paint) => ({ id: `g-${k}`, type: 'fill', source: 'ground', minzoom: 11, filter: ['==', ['get', 'k'], k], paint });
   return [
     { id: 'ground-land', type: 'background', minzoom: 12, paint: { 'background-color': col.bg, 'background-opacity': ['interpolate', ['linear'], ['zoom'], 12, 0, 13.5, 1] } },
-    ...['field', 'bare', 'house', 'estate', 'paved'].map((k) => fill(k, { 'fill-color': col[k] })),
-    fill('grass', { 'fill-pattern': 'tx-grass', 'fill-opacity': n ? 0.8 : 0.85 }),
+    ...['field', 'bare', 'paved'].map((k) => fill(k, { 'fill-color': col[k] })),
+    // osiedla, zabudowa i trawniki: trawa, a chodniki, jezdnie i parkingi kładzie na niej silnik 3D
+    ...['house', 'estate', 'grass'].map((k) => fill(k, { 'fill-pattern': 'tx2-grass', 'fill-opacity': n ? 0.85 : 1 })),
     fill('wood', { 'fill-color': col.wood }),
     fill('water', { 'fill-color': col.water }),
   ];
