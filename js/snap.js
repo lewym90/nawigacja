@@ -214,7 +214,9 @@ export function roadFill(path, K, axes, margin = EDGE) {
     // sprawdzamy też drogę do następnego punktu: przeskok między jezdniami potrafi przeciąć pas trawy
     const q = pts[Math.min(pts.length - 1, i + 1)]; const p = pts[i];
     if ([0, 0.25, 0.5, 0.75].every((u) => ok([p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u]))) continue;
-    if (!missing(i) && !missing(i + 1) && !missing(i - 1 < 0 ? 0 : i - 1)) continue;
+    // asfalt także w strefie przejścia (±25 m) na drogę spoza BDOT; dalej tor musi leżeć na jezdni sam, inaczej to błąd toru i ma wyjść w teście
+    let near = false; for (let j = Math.max(0, i - 10); j <= Math.min(pts.length - 1, i + 10) && !near; j++) near = missing(j);
+    if (!near) continue;
     const a = along[i] - 6; const e = along[i] + 6; const last = runs[runs.length - 1];
     if (last && a <= last[1]) last[1] = e; else runs.push([a, e]);
   }
