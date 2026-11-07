@@ -84,7 +84,7 @@ export function ribbonMesh(path, turns, { style = 'flat', o = RIB } = {}) {
   const underStrip = (i0, i1) => UI.push(i0, i0 + 1, i1 + 1, i0, i1 + 1, i1);
 
   const up = style === 'up'; const heads = []; const leads = [];
-  const theta = () => 0; // wstęga zawsze płaska; pionowo staje sam grot, jak płetwa, bez skręcania wstęgi przed nim
+  const theta = (s, shaftEnd) => (up ? (Math.PI / 2) * Math.max(0, Math.min(1, (s - (shaftEnd - o.twist)) / (o.twist - 1))) : 0);
   const segs = segments(total, turns, o);
   for (const sg of segs) {
     const shaftEnd = sg.head ? Math.max(sg.a, sg.b - o.head) : sg.b;
@@ -101,7 +101,6 @@ export function ribbonMesh(path, turns, { style = 'flat', o = RIB } = {}) {
     }
     if (!sg.head) { cap(ring(shaftEnd, o.hw, 0, 'back')); continue; }
     heads.push(shaftEnd - o.twist); leads.push(shaftEnd - o.twist - (sg.first + o.exit - o.head - o.twist)); // o ile grot leży za pierwszym skrętem serii
-    if (up) cap(ring(shaftEnd, o.hw, 0, 'back'));
     const th = up ? Math.PI / 2 : 0;
     const b0 = ring(shaftEnd, o.hw, th, 'back'); const b1 = ring(shaftEnd, o.headW, th, 'back'); strip(b0, b1); // ramiona grotu
     const taper = o.headW / o.head;
