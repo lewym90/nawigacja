@@ -45,6 +45,24 @@ for i in range(0, len(xy), 2):
     dd = (np.hypot(A[:, 0] + E[:, 0] * t - x, A[:, 1] + E[:, 1] * t - y)).min() / K
     if dd > 12: far.append(i)
 print(f'odjazd od trasy (>12 m): {len(far)} punktów', far[:20])
+# trzeci test: tor nie może skręcać tam, gdzie trasa jedzie prosto (zygzak na sąsiednią jezdnię, „S” przy zmianie pasa)
+rcum = np.r_[0, np.cumsum(np.hypot(*(rw[1:] - rw[:-1]).T))] / K
+pc = np.array(xy); pcum = np.r_[0, np.cumsum(np.hypot(*(pc[1:] - pc[:-1]).T))] / K
+def head(P, cum, s):
+    i = np.searchsorted(cum, s); i = min(max(i, 1), len(P) - 1); return P[i] - P[i - 1]
+def ang(u, v):
+    return abs((math.degrees(math.atan2(u[1], u[0]) - math.atan2(v[1], v[0])) + 180) % 360 - 180)
+jerk = []
+for i in range(12, len(pc) - 12, 2):
+    s = pcum[i]; tp = ang(pc[i] - pc[i - 8], pc[i + 8] - pc[i])
+    sr = s * rcum[-1] / pcum[-1]; tr = max(ang(head(rw, rcum, sr + o - 8), head(rw, rcum, sr + o + 8)) for o in range(-25, 26, 5))  # prawdziwy zakręt trasy w pobliżu
+    a1 = math.degrees(math.atan2(*(pc[i] - pc[i - 8])[::-1])); a2 = math.degrees(math.atan2(*(pc[i + 8] - pc[i])[::-1]))
+    if tp > 22 and tr < 10: jerk.append(i)
+runs_j = []
+for i in jerk:
+    if runs_j and i - runs_j[-1][1] <= 10: runs_j[-1][1] = i
+    else: runs_j.append([i, i])
+print(f'zygzaki (tor skręca >22° na 16 m, trasa prosto): {len(runs_j)}', [tuple(r) for r in runs_j[:20]])
 skip = int(sys.argv[2]) if len(sys.argv) > 2 else 15
 core = [b for b in bad if skip <= b[0] <= len(xy) - 1 - skip]
 print(f'metrów {known}, poza jezdnią {len(core)} (+{len(bad) - len(core)} przy samym starcie/celu)')
@@ -54,4 +72,4 @@ for i, s in core:
     else: runs.append([i, i])
 print('odcinki [m]:', [(a, b) for a, b in runs][:40])
 json.dump(runs, open(sys.argv[1] + '.bad', 'w'))
-sys.exit(1 if core or far else 0)
+sys.exit(1 if core or far or runs_j else 0)

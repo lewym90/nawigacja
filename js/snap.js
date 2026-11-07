@@ -225,11 +225,13 @@ function snapSeg(p, f, K, axes) {
   let best = null; let bs = Infinity;
   for (const s of axes.near(p[0], p[1])) {
     const ex = s.bx - s.ax; const ey = s.by - s.ay; const l2 = ex * ex + ey * ey; if (!l2) continue;
-    const c = Math.abs(ex * f[0] + ey * f[1]) / Math.sqrt(l2); if (c < 0.7) continue;
+    const c = Math.abs(ex * f[0] + ey * f[1]) / Math.sqrt(l2); if (c < 0.85) continue; // przecznica to nie nasza jezdnia
     const t = Math.max(0, Math.min(1, ((p[0] - s.ax) * ex + (p[1] - s.ay) * ey) / l2));
     const q = [s.ax + ex * t, s.ay + ey * t]; const d = Math.hypot(q[0] - p[0], q[1] - p[1]) / K;
     if (d > s.w / 2 + 6) continue;
-    const score = d + 8 * (1 - c);
+    // jezdnia jednokierunkowa po lewej to przeciwny kierunek drogi dwujezdniowej (OSM rysuje ją czasem jedną linią pośrodku)
+    const left = !s.two && f[0] * (q[1] - p[1]) - f[1] * (q[0] - p[0]) > 0.5 * K;
+    const score = d + 8 * (1 - c) + (left ? 12 : 0);
     if (score < bs) { bs = score; best = { s, q }; }
   }
   return best;
@@ -295,7 +297,7 @@ export function matchPath(raw, K, axes) {
     let piece = null;
     if (A.m && B.m) {
       const c = between(A.m, B.m, (rl * 2 + 30) * K);
-      if (c && plen(c) / K <= rl * 1.6 + 12) piece = c;
+      if (c && plen(c) / K <= rl * 1.15 + 5) piece = c; // objazd dłuższy niż trasa to zygzak przez skrzyżowanie
     }
     tags.push([line.length, A.s]);
     if (piece) {
@@ -312,7 +314,9 @@ export function matchPath(raw, K, axes) {
     map.set(i, L.length); L.push(line[i]); W.push(lw[i]);
   }
   map.set(line.length, L.length - 1);
-  const off = W.map(([w, two]) => laneOffset(w, two, false) * K);
+  const raw0 = W.map(([w, two]) => laneOffset(w, two, false) * K); const lc = [0];
+  for (let i = 1; i < L.length; i++) lc.push(lc[i - 1] + Math.hypot(L[i][0] - L[i - 1][0], L[i][1] - L[i - 1][1]));
+  const off = raw0.map((_, i) => { let a = 0; let n = 0; for (let j = i; j >= 0 && lc[i] - lc[j] < 15 * K; j--) { a += raw0[j]; n++; } for (let j = i + 1; j < L.length && lc[j] - lc[i] < 15 * K; j++) { a += raw0[j]; n++; } return a / n; }); // pas zmienia się łagodnie, bez „S”
   const sh = offsetRight(L, off);
   // tor przez kotwice: długości trasy przypisane do kotwic, między nimi proporcjonalnie do długości toru
   const cum = [0]; for (let i = 1; i < sh.length; i++) cum.push(cum[i - 1] + Math.hypot(sh[i][0] - sh[i - 1][0], sh[i][1] - sh[i - 1][1]));
