@@ -44,7 +44,7 @@ for m in FEAT('OT_SKJZ_L'):
 print('jezdnie', len(asphalt), len(asphaltMid), len(asphaltMin), len(cobble), len(gravel), 'osie', len(axes), flush=True)
 A = unary_union(asphalt); AM = unary_union(asphaltMid).difference(A); AS = unary_union(asphaltMin).difference(unary_union([A, AM])); AALL = unary_union([A, AM, AS])
 C = unary_union(cobble).difference(AALL); G = unary_union(gravel).difference(unary_union([AALL, C]))
-R = unary_union([AALL, C, G]); KERB = R.buffer(0.3 * M, quad_segs=3).difference(R)
+R = unary_union([AALL, C, G]); KERB = R.buffer(0.4 * M, quad_segs=3).difference(R)
 print('scalone', flush=True)
 paths = []
 for m in FEAT('OT_SKRP_L'):
@@ -145,7 +145,7 @@ PKU = unary_union(PK).difference(R.buffer(0.3 * M)).difference(W) if PK else Pol
 print('parkingi', len(PK), flush=True)
 # krawężnik: pionowy bok od jezdni do chodnika i miękki cień na jezdni przy nim
 from shapely.geometry.polygon import orient
-CURB_H = 0.15 * M; SHADE = 0.4 * M
+CURB_H = 0.25 * M; SHADE = 0.5 * M  # 25 cm: wyżej niż w rzeczywistości, żeby z kamery było widać bryłę
 curbs = defaultdict(list)
 for poly in getattr(R, 'geoms', [R]):
     if poly.geom_type != 'Polygon': continue

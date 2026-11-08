@@ -421,6 +421,26 @@ export function drivePath(raw, K = 1, axes = null, { lefts = [], turns = [], leg
   return { pts: contain(smooth(contain(pts, K, axes), 2), K, axes), along };
 }
 
+/** Punkt przy prawej krawędzi jezdni (w kierunku jazdy f), gap metrów za krawężnikiem. Bez danych: 4 m w prawo od toru. */
+export function roadsideRight(p, f, K, axes, gap = 0.8) {
+  const r = [f[1], -f[0]]; const best = axes ? nearestRoad(p, K, axes, f) : null;
+  if (!best || best.d / K > best.w / 2 + 3) return [p[0] + r[0] * 4 * K, p[1] + r[1] * 4 * K];
+  return [best.qx + r[0] * (best.w / 2 + gap) * K, best.qy + r[1] * (best.w / 2 + gap) * K];
+}
+
+/** Znaki ograniczenia prędkości: w każdym miejscu trasy, gdzie zmienia się limit, po prawej stronie jezdni, tarczą do nadjeżdżających. */
+export function speedSigns(path, limits, axes) {
+  const { pts, along, K } = path; const out = []; let prev = null;
+  for (const l of limits || []) {
+    if (!l.kmh || l.kmh === prev || l.kmh < 20 || l.kmh > 140) { prev = l.kmh || prev; continue; }
+    prev = l.kmh;
+    let i = along.findIndex((v) => v >= l.from + 8); if (i < 2) i = 2; if (i > pts.length - 3) continue; // kilka metrów za początkiem odcinka
+    const f = unit(pts[i - 2], pts[i + 2]); const p = roadsideRight(pts[i], f, K, axes);
+    out.push({ x: p[0], y: p[1], ang: Math.atan2(-f[1], -f[0]), kmh: l.kmh, at: along[i] });
+  }
+  return out;
+}
+
 /** Przecznice na torze: po jednej na ulicę, z nazwą z BDOT. */
 export function crossings(path, K, axes) {
   if (!axes) return [];

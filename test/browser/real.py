@@ -146,6 +146,13 @@ with sync_playwright() as p:
         page.evaluate("window.__rot = setInterval(() => { const N = window.__nav; N.S.city.carHd = N.map.getBearing() + 60; }, 1)")
         page.evaluate("(() => { const N = window.__nav; const f = N.S.city.drawPuck.bind(N.S.city); N.S.city.drawPuck = (gl) => { N.S.city.carHd = N.map.getBearing() + 60; f(gl); }; })()")
         page.wait_for_timeout(2500); page.screenshot(path=f'{OUT}/{THEME}-rot.png')
+    if os.environ.get('SIGNS'):
+        page.wait_for_timeout(6000)
+        sg = page.evaluate("(() => { const S = window.__nav.S; return (S.city.signList || []).map((s) => [Math.round(s.at), s.kmh]); })()")
+        print('ZNAKI', sg, flush=True)
+        if sg:
+            page.evaluate("(a) => { const S = window.__nav.S; S.sim.setSpeed(3); S.sim.along = a - 45; }", sg[int(os.environ['SIGNS'])][0])
+            page.wait_for_timeout(9000); page.screenshot(path=f'{OUT}/{THEME}-sign.png')
     if os.environ.get('LOOKAT'):
         x = json.loads(os.environ['LOOKAT'])
         page.evaluate("(x) => { const S = window.__nav.S; S.follow = false; S.sim.setSpeed(0.1); const m = window.__nav.map; m.setMaxZoom(24); m.jumpTo({ center: [x[0], x[1]], zoom: x[2], pitch: x[3], bearing: x[4] }); }", x)

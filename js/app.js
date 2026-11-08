@@ -8,7 +8,7 @@ import { unpackFuel, candidatesAhead, fuelDetours, bestStation, fmtExtra } from 
 import { explainRoute } from './explain.js';
 import { TripRecorder, TRIP, speedStops, revealStops, replayFrames, drawPoster, fmtTripTime } from './trip.js';
 import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
-import { drivePath, parseAxes, pathAt, crossings, roadFill } from './snap.js';
+import { drivePath, parseAxes, pathAt, crossings, roadFill, speedSigns } from './snap.js';
 import { CAMERA_PROFILES, QUALITY_PROFILES, CLOSE_CAM, RIBBON_WIDE, cameraProfile, qualityProfile, lerp, zoomForDistance, closeUntil } from './profiles.js';
 import { Compass } from './compass.js';
 import { buildRoadItems, unpackRoadPoints, RoadWatch, describe as describeRoad } from './roadwise.js';
@@ -790,6 +790,12 @@ function cityRoute() {
   cam.path = (s) => pathAt(path, s, fromMerc);
   S.nav.cross = crossings(path, K, S.axes).map((q) => ({ ...q, point: fromMerc(q.x, q.y) }));
   S.city.setRoute(path, turns);
+  citySigns();
+}
+/** Znaki ograniczeń: po każdej nowej trasie i po dociągnięciu limitów. */
+function citySigns() {
+  if (!NEW || !S.city || !S.city.path || !S.nav) return;
+  S.city.setSigns(speedSigns(S.city.path, S.nav.route.limits, S.axes));
 }
 if (NEW) loadAxes();
 async function loadAxes() {
@@ -844,7 +850,7 @@ function startNav({ sim = false } = {}) {
     ...new Set((route.steps || []).map((st) => st.short || st.text).filter(Boolean))]);
   if (travel().limits && !route.limitsTried) {
     route.limitsTried = true;
-    loadRouteLimits(CONFIG.limitsUrl, route).then((r) => { hd.status = { ...hd.status, limits: r.ok ? `ok (${Math.round(r.covered * 100)}% trasy ma znany limit)` : 'niedostępne' }; if (r.ok && S.nav && S.nav.route === route) paintRoute(S.nav.paintedAlong || 0); }).catch(() => {});
+    loadRouteLimits(CONFIG.limitsUrl, route).then((r) => { hd.status = { ...hd.status, limits: r.ok ? `ok (${Math.round(r.covered * 100)}% trasy ma znany limit)` : 'niedostępne' }; if (r.ok && S.nav && S.nav.route === route) citySigns(); if (r.ok && S.nav && S.nav.route === route) paintRoute(S.nav.paintedAlong || 0); }).catch(() => {});
   }
   if (!route.hz) applyHazards([route]);
 
@@ -1177,7 +1183,7 @@ function updateRoadArrow(N, g) {
   const src = map.getSource('arrow');
   if (!src) return;
   const nx = g.next;
-  if (NEW) { turnChip(N, nx, g); crossChips(N, nx, g); }
+  if (NEW) turnChip(N, nx, g); // tabliczki przecznic na jezdni myliły (właściciel): zostaje tylko nazwa ulicy, w którą skręcamy
   const want = !NEW && wantsArrow(nx) && g.distToNext < 220 && g.distToNext > 6; // w nowym wyglądzie zakręt pokazuje sama wstęga
   const key = want ? g.nextIdx : null;
   if (key === N.arrowIdx) return;

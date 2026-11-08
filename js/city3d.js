@@ -119,7 +119,7 @@ const VS_ROAD = `#version 300 es
 in vec3 a_pos;
 uniform mat4 u_m; uniform vec2 u_org;
 out vec2 v_xy; out vec2 v_p; flat out float v_k;
-void main(){ v_xy=a_pos.xy+u_org; v_p=a_pos.xy; v_k=a_pos.z; float k=floor(a_pos.z+0.5); gl_Position=u_m*vec4(a_pos.xy,(k==0.0||k==1.0)?0.24:0.0,1.0); }`; // chodnik i krawężnik 15 cm nad jezdnią
+void main(){ v_xy=a_pos.xy+u_org; v_p=a_pos.xy; v_k=a_pos.z; float k=floor(a_pos.z+0.5); gl_Position=u_m*vec4(a_pos.xy,(k==0.0||k==1.0)?0.4:0.0,1.0); }`; // chodnik i krawężnik 25 cm nad jezdnią: wyżej niż w rzeczywistości, żeby było widać z kamery
 const FS_ROAD = `#version 300 es
 precision highp float;
 in vec2 v_xy; in vec2 v_p; flat in float v_k;
@@ -133,7 +133,7 @@ void main(){
   else if(k==7){ c=texture(u_asphalt,m/6.0).rgb*0.95; } // parking
   else if(k==0){ c=texture(u_pave,m/5.0).rgb*0.92; }
   else if(k==3){ c=texture(u_pave,m/3.0).rgb*vec3(.72,.7,.68); }
-  else if(k==1){ c=vec3(.76,.76,.72); }
+  else if(k==1){ c=vec3(.9,.9,.87); } // górna płaszczyzna krawężnika: jasny beton
   else { c=vec3(.6,.57,.5); }
   if(u_night>0.5) c*=vec3(.3,.34,.44);
   float fog=smoothstep(900.0,2600.0,distance(vec3(v_p,0.0),u_eye));
@@ -186,8 +186,8 @@ void main(){
   float fade=1.0-smoothstep(350.0,900.0,distance(vec3(v_p.xy,0.0),u_eye));
   if(v_s<0.0){ float a=-v_s; o=vec4(0.0,0.0,0.0,a*a*0.5*fade); return; } // cień: najciemniej przy krawężniku
   if(dot(v_n,u_cam.xy-v_p.xy)<0.0) discard; // bok zwrócony od kamery zasłania chodnik
-  vec2 L=normalize(vec2(-0.35,-0.45)); float lit=0.62+0.38*max(dot(v_n,L),0.0);
-  vec3 c=vec3(0.88,0.87,0.84)*lit*mix(0.8,1.0,v_s);
+  vec2 L=normalize(vec2(-0.35,-0.45)); float lit=0.7+0.35*max(dot(v_n,L),0.0);
+  vec3 c=vec3(0.86,0.86,0.84)*lit*mix(0.62,1.08,v_s); // jasna górna krawędź, ciemniej przy jezdni
   if(u_night>0.5) c*=vec3(.3,.34,.44);
   o=vec4(c,fade);
 }`;
@@ -228,6 +228,28 @@ void main(){
   float fog=smoothstep(800.0,2500.0,distance(v_pos,u_eye));
   o=vec4(mix(c,u_fog,fog*0.72),1.0);
 }`;
+// Cyfra na tarczy znaku: kwadrat przed białą tarczą modelu, komórka z atlasu cyfr rysowanego w przeglądarce.
+const VS_NUM = `#version 300 es
+in vec4 a_inst;
+uniform mat4 u_m; uniform float u_k;
+out vec2 v_uv; out vec3 v_pos;
+const vec2 C[6]=vec2[6](vec2(-1.,-1.),vec2(1.,-1.),vec2(1.,1.),vec2(-1.,-1.),vec2(1.,1.),vec2(-1.,1.));
+void main(){
+  vec2 c=C[gl_VertexID]; float cs=cos(a_inst.z); float sn=sin(a_inst.z);
+  // patrząc na tarczę od przodu prawa strona to +y modelu
+  vec2 loc=vec2(0.075,c.x*0.21);
+  vec2 xy=vec2(loc.x*cs-loc.y*sn,loc.x*sn+loc.y*cs)*u_k; // tarcza modelu: x=0,07 m, środek na 2,48 m
+  vec3 p=vec3(a_inst.xy+xy,(2.48+c.y*0.21)*u_k);
+  float cell=a_inst.w; v_uv=vec2((mod(cell,4.0)+(c.x*0.5+0.5))/4.0,(floor(cell/4.0)+(0.5-c.y*0.5))/4.0); v_pos=p;
+  gl_Position=u_m*vec4(p,1.0);
+}`;
+const FS_NUM = `#version 300 es
+precision highp float;
+in vec2 v_uv; in vec3 v_pos; uniform sampler2D u_num; uniform float u_night;
+out vec4 o;
+void main(){ vec4 t=texture(u_num,v_uv); if(t.a<0.5) discard; o=vec4(vec3(0.05)*(u_night>0.5?0.5:1.0),1.0); }`;
+const SIGN_KMH = [20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140];
+
 const TREE_NEAR = 420; // m Merkatora (ok. 260 m): bliżej drzewa jako modele, dalej jako płaszczyzny
 
 const VS_SHQ = `#version 300 es
@@ -715,7 +737,7 @@ export class City3D {
   /** Modele właściciela: bufory wierzchołków i tekstura tablicowa. Bez nich zostają proste bryły i płaskie drzewa. */
   async loadModels() {
     try {
-      const gl = this.gl; const base = './city/models/'; const names = ['lipa', 'dab', 'brzoza', 'sosna', 'krzew', 'latarnia', 'sygnalizator'];
+      const gl = this.gl; const base = './city/models/'; const names = ['lipa', 'dab', 'brzoza', 'sosna', 'krzew', 'latarnia', 'sygnalizator', 'znak'];
       const bufs = await Promise.all(names.map((n) => fetch(`${base}${n}.bin`).then((r) => { if (!r.ok) throw new Error(n); return r.arrayBuffer(); })));
       const img = await fetch(`${base}tex.webp`).then((r) => r.blob()).then((b) => createImageBitmap(b));
       const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D_ARRAY, tex);
@@ -725,10 +747,34 @@ export class City3D {
       const m = { tex };
       names.forEach((n, i) => { const d = new Float32Array(bufs[i]); const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, d, gl.STATIC_DRAW); let h = 0; for (let k = 2; k < d.length; k += 13) h = Math.max(h, d[k]); m[n] = { b, n: d.length / 13, h }; });
       this.models = m;
+      if (this.signList) this.setSigns(this.signList);
       // kafle wczytane przed modelami
       for (const t of this.tiles.values()) { if (t.tinst) t.treeM = this.treeModels(t.tinst); if (t.pinst) t.props = this.propsFrom(t.pinst); }
       this.map.triggerRepaint();
     } catch (e) { this.models = null; }
+  }
+
+  /** Znaki ograniczeń przy trasie: [{ x, y, ang, kmh }] w metrach Merkatora. */
+  setSigns(list) {
+    this.signList = list; const gl = this.gl;
+    if (!gl || !this.models || !this.models.znak) return;
+    for (const o of [this.signs, this.signNums]) if (o) { gl.deleteBuffer(o.b); gl.deleteVertexArray(o.v); }
+    this.signs = null; this.signNums = null;
+    if (!list || !list.length) return;
+    const org = [list[0].x, list[0].y];
+    this.signs = { ...this.modelVao(this.models.znak, new Float32Array(list.flatMap((s) => [s.x - org[0], s.y - org[1], 0, s.ang]))), org };
+    if (!this.numP) {
+      this.numP = prog(gl, VS_NUM, FS_NUM);
+      const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d');
+      g.fillStyle = '#000'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      SIGN_KMH.forEach((k, i) => { const s = String(k); g.font = `bold ${s.length > 2 ? 62 : 84}px Arial, sans-serif`; g.fillText(s, (i % 4) * 128 + 64, Math.floor(i / 4) * 128 + 68); });
+      const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+      gl.generateMipmap(gl.TEXTURE_2D); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); this.numTex = t;
+    }
+    const v = gl.createVertexArray(); gl.bindVertexArray(v); const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(list.flatMap((s) => [s.x - org[0], s.y - org[1], s.ang, Math.max(0, SIGN_KMH.indexOf(s.kmh))])), gl.STATIC_DRAW);
+    const l = gl.getAttribLocation(this.numP, 'a_inst'); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 4, gl.FLOAT, false, 16, 0); gl.vertexAttribDivisor(l, 1);
+    gl.bindVertexArray(null); this.signNums = { v, b, n: list.length, org };
   }
 
   /** VAO modelu z buforem instancji [x, y, z lub wysokość, obrót]. */
@@ -798,6 +844,15 @@ export class City3D {
         gl.uniform1f(umode, 1);
         for (const o of t.treeM) { gl.uniform1f(umh, o.h); gl.uniform1f(usx, o.sx); gl.bindVertexArray(o.v); gl.drawArraysInstanced(gl.TRIANGLES, 0, o.verts, o.n); }
       }
+    }
+    gl.disable(gl.CULL_FACE);
+    if (this.signs && this.drive) {
+      const k = 1 / Math.cos((this.map.getCenter().lat * Math.PI) / 180); const M = this.tileM(this.signs.org[0], this.signs.org[1]);
+      gl.uniformMatrix4fv(um, false, M); gl.uniform3f(ue, this.eye[0] - this.signs.org[0], this.eye[1] - this.signs.org[1], 0); gl.uniform1f(umode, 0);
+      gl.bindVertexArray(this.signs.v); gl.drawArraysInstanced(gl.TRIANGLES, 0, this.signs.verts, this.signs.n);
+      gl.disable(gl.CULL_FACE); const q = this.numP; gl.useProgram(q); gl.uniformMatrix4fv(gl.getUniformLocation(q, 'u_m'), false, M); gl.uniform1f(gl.getUniformLocation(q, 'u_k'), k); gl.uniform1f(gl.getUniformLocation(q, 'u_night'), this.night ? 1 : 0);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.numTex); gl.uniform1i(gl.getUniformLocation(q, 'u_num'), 0);
+      gl.bindVertexArray(this.signNums.v); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, this.signNums.n);
     }
     gl.bindVertexArray(null); gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
   }
