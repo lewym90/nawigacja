@@ -12,7 +12,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ribbonMesh, puckMesh, RIB, PN } from './solid.js';
 import { FACADE_M } from './facade-size.js';
-import { VS_SOL, FS_SOL, FS_UNDER, VS_PUCK, FS_PUCK, SIGN_KMH, W } from './city3d.js';
+import { VS_SOL, FS_SOL, VS_PUCK, FS_PUCK, SIGN_KMH, W } from './city3d.js';
 
 const SUN = new THREE.Vector3(-0.35, -0.45, 0.82).normalize(); // kierunek do słońca, ten sam co w starym silniku
 const mercX = (lng) => (lng * W) / 360;
@@ -36,6 +36,21 @@ vec3 untone(vec3 c){
   if(pk>0.76){ float d=0.24; float p0=d*d/(1.0-pk)-d+0.76; y*=p0/pk; }
   float m=min(y.r,min(y.g,y.b)); float x=m<0.04?sqrt(m/6.25):m+0.04;
   return y+(x-m);
+}`;
+
+// Cień i poświata pod wstęgą: łagodnie zanikają na brzegach i na początku pod autem (w starym shaderze kończyły się ostrą krawędzią,
+// a przy mieszaniu w świetle liniowym robiły jasny prostokąt wokół wstęgi).
+const FS_UNDER3 = `#version 300 es
+precision highp float;
+in vec3 v_nrm; in vec3 v_pos; in float v_l; in float v_u;
+uniform float u_from; uniform float u_hw; uniform float u_night;
+out vec4 o;
+void main(){
+  if(v_l<u_from) discard;
+  float d=abs(v_u); float st=smoothstep(u_from,u_from+4.0,v_l);
+  float sh=(1.0-smoothstep(u_hw-0.6,u_hw+0.5,d))*0.2*st;
+  float g=exp(-(d-u_hw)*(d-u_hw)*3.0)*(u_night>0.5?0.3:0.1)*step(u_hw,d)*(1.0-smoothstep(u_hw+0.5,u_hw+0.95,d))*st;
+  o=vec4(vec3(0.0,0.75,1.0)*(g/(sh+g+1e-4)),min(1.0,sh+g));
 }`;
 
 /** Shader z city3d.js jako materiał Three.js: macierz u_m składa Three, a kolor wraca do przestrzeni przed obróbką. */
@@ -70,7 +85,7 @@ export class Nav3D {
     this.hemi = new THREE.HemisphereLight(0xb8c8e6, 0x81796a, 1.15); this.hemi.position.set(0, 0, 1); scene.add(this.hemi);
     const sun = new THREE.DirectionalLight(0xfff1dc, 2.6); sun.castShadow = true; sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.35;
     scene.add(sun); scene.add(sun.target); this.sun = sun;
-    scene.fog = new THREE.Fog(0xa8c2d6, 900, 3400);
+    scene.fog = new THREE.Fog(0x9dc8e7, 900, 3400);
     // niebo właściciela: kopuła wokół kamery i odbicia w szybach, wodzie i wstędze
     const sky = new THREE.TextureLoader().load('./icons/t3-niebo.webp', (t) => {
       const g = new THREE.PMREMGenerator(r); scene.environment = g.fromEquirectangular(t).texture; g.dispose();
@@ -86,6 +101,10 @@ export class Nav3D {
     scene.environmentRotation.set(Math.PI / 2, 0, 0);
     this.world = new THREE.Group(); scene.add(this.world);
     this.mats = this.materials();
+    // nawierzchnie na tej samej wysokości nachodzą na siebie: stały porządek zamiast migotania (jezdnia nad parkingiem i placem, krawężnik nad chodnikiem)
+    for (const [k, f] of [['asphalt', -1], ['kerb', -1], ['asphaltOld', 0], ['slabs', 0], ['kostka', 1], ['gravel', 1.5]]) {
+      const m = this.mats[k]; if (!f) continue; m.polygonOffset = true; m.polygonOffsetFactor = f; m.polygonOffsetUnits = f * 2;
+    }
     this.inst = new Map(); this.instDirty = true;
     // wygładzanie krawędzi: wielopróbkowy bufor (WebGL2), bo zwykłe antialias nie działa przy obróbce obrazu
     this.composer = new EffectComposer(r, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
@@ -108,7 +127,13 @@ export class Nav3D {
       this.ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
       this.ao.blendIntensity = 0.85; this.composer.addPass(this.ao);
     }
-    if (q.bloom) { this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.32, 0.35, 0.92); this.composer.addPass(this.bloom); }
+    if (q.bloom) {
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.18, 0.3, 0.95);
+      // poświata dodaje tylko kolor: przezroczystość nieba (dawne niebo pod mapą) zostaje nietknięta
+      const bm = this.bloom.blendMaterial; bm.blending = THREE.CustomBlending; bm.blendEquation = THREE.AddEquation;
+      bm.blendSrc = THREE.OneFactor; bm.blendDst = THREE.OneFactor; bm.blendSrcAlpha = THREE.ZeroFactor; bm.blendDstAlpha = THREE.OneFactor;
+      this.composer.addPass(this.bloom);
+    }
     this.composer.addPass(new OutputPass());
     this.size = null; this.instDirty = true;
   }
@@ -168,6 +193,7 @@ void cutAway(vec3 p){
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 v_mk;').replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif(v_mk.y>0.5 && fract(v_mk.x/9.0)>0.42) discard;');
     };
     return {
+      fill: (() => { const m = surf('asfalt', 0.9, 0.6); m.polygonOffset = true; m.polygonOffsetFactor = 2; m.polygonOffsetUnits = 4; return m; })(),
       asphalt: surf('asfalt', 0.9, 0.6), asphaltOld: surf('asfalt-stary', 0.92, 0.7), slabs: surf('plyty', 0.85, 0.8), kostka: surf('kostka', 0.85, 0.9),
       kerb: surf('kraweznik', 0.8, 0.6, 0xf2f2ee), gravel: surf('asfalt-stary', 1, 0.9, 0xc8b89a), mark,
       curb: surf('kraweznik', 0.78, 0.7, 0xf4f4f0),
@@ -273,7 +299,8 @@ void cutAway(vec3 p){
           // metry Merkatora: płyta 50 cm, kostka i krawężnik ok. 1 m, asfalt 2,5 m na powtórzenie
           const sc = kind === 0 || kind === 1 || kind === 3 ? 1.6 : 4;
           uv.set([(x + wx) / sc, (y + wy) / sc], v * 2);
-          const c = kind === 2 ? [0.9, 0.9, 0.9] : kind === 5 ? [1, 1, 1] : kind === 7 ? [1.06, 1.06, 1.06] : [1, 1, 1];
+          // jeden odcień na materiał: nachodzące trójkąty różnych rodzajów nie mogą migać dwoma kolorami
+          const c = [1, 1, 1];
           col.set(c, v * 3);
         }
         add(geo([['position', p, 3], ['normal', nr, 3], ['uv', uv, 2], ['color', col, 3]]), this.mats[name]);
@@ -406,7 +433,8 @@ void cutAway(vec3 p){
       const d = await fetch(`${city.base}ground.json`).then((x) => x.json());
       const O = this.O; const ox = O[0] % 4000; const oy = O[1] % 4000;
       const KIND = { grass: ['grass', [1, 1, 1], 4.8], house: ['grass', [1, 1, 1], 4.8], estate: ['grass', [0.97, 1, 0.95], 4.8], wood: ['grass', [0.55, 0.68, 0.5], 4.8],
-        field: ['grass', [1.0, 0.98, 0.8], 6], bare: ['gravel', [1, 1, 1], 4], paved: ['kostka', [1, 1, 1], 1.6], water: ['water', [1, 1, 1], 8] };
+        field: ['grass', [1.0, 0.98, 0.8], 6], // pasy drogowe (PTKM), place i tereny handlowe z BDOT to w praktyce trawniki i pobocza wokół jezdni: same jezdnie, parkingi i chodniki są w .r.bin
+        bare: ['grass', [0.98, 0.96, 0.8], 4.8], paved: ['grass', [0.95, 0.98, 0.9], 4.8], water: ['water', [1, 1, 1], 8] };
       const acc = {};
       for (const f of d.features) {
         const k = KIND[f.properties.k]; if (!k) continue;
@@ -446,7 +474,7 @@ void cutAway(vec3 p){
     };
     const u = this.ribUni || (this.ribUni = { u_from: { value: 0 }, u_heads: { value: new Float32Array(4) }, u_leads: { value: new Float32Array(4) }, u_t: { value: 0 }, u_night: { value: 0 }, u_jam: { value: new Float32Array(18) }, u_eye: { value: new THREE.Vector3() }, u_hw: { value: RIB.hw } });
     const pos = (m, order) => { m.position.set(org[0] - this.O[0], org[1] - this.O[1], 0); m.renderOrder = order; m.frustumCulled = false; this.scene.add(m); return m; };
-    this.ribU = pos(new THREE.Mesh(mk(mesh.under.data, mesh.under.index), rawMat(VS_SOL, FS_UNDER, u, { transparent: true, depthWrite: false, apow: 1.7 })), 20);
+    this.ribU = pos(new THREE.Mesh(mk(mesh.under.data, mesh.under.index), rawMat(VS_SOL, FS_UNDER3, u, { transparent: true, depthWrite: false })), 20);
     this.ribG = pos(new THREE.Mesh(mk(mesh.data, mesh.index), rawMat(VS_SOL, FS_SOL, { ...u, u_ghost: { value: 1 } }, { transparent: true, depthWrite: false, depthFunc: THREE.GreaterDepth })), 21);
     this.rib = pos(new THREE.Mesh(this.ribG.geometry, rawMat(VS_SOL, FS_SOL, { ...u, u_ghost: { value: 0 } }, { transparent: true, depthWrite: true })), 22);
     const fan = []; for (let j = 1; j < PN - 1; j++) fan.push(0, j + 1, j);
@@ -472,7 +500,7 @@ void cutAway(vec3 p){
     }
     if (!P.length) return null;
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
-    g.computeVertexNormals(); const m = new THREE.Mesh(g, this.mats.asphaltOld); m.receiveShadow = true; this.scene.add(m); return m;
+    g.computeVertexNormals(); const m = new THREE.Mesh(g, this.mats.fill); m.receiveShadow = true; this.scene.add(m); return m;
   }
 
   puck() {
@@ -547,7 +575,7 @@ void cutAway(vec3 p){
     this.sun.target.updateMatrixWorld();
     this.sky.position.copy(C); this.sky.scale.setScalar(300); this.sky.material.color.set(this.night ? 0x141c2c : 0xffffff);
     const day = !this.night;
-    this.sun.intensity = day ? 2.6 : 0.05; this.hemi.intensity = day ? 1.15 : 0.25; this.scene.fog.color.set(day ? 0xa8c2d6 : 0x101e30);
+    this.sun.intensity = day ? 2.6 : 0.05; this.hemi.intensity = day ? 1.15 : 0.25; this.scene.fog.color.set(day ? 0x9dc8e7 : 0x101e30);
     if (this.lampGlass) this.lampGlass.emissiveIntensity = day ? 0 : 2.2;
     // wycinanie budynków między kamerą a autem, jak w starym silniku
     this.cut.u_camp.value.set(C.x, C.y); this.cut.u_car.value.set(L[0], L[1]); this.cut.u_camz.value = C.z;
@@ -568,7 +596,7 @@ void cutAway(vec3 p){
       this.puckUni.u_night.value = this.night ? 1 : 0; this.puckUni.u_eye.value.set(C.x - L[0], C.y - L[1], C.z);
       for (const m of [this.puckBody, this.puckShadow]) m.position.set(L[0], L[1], 0);
     }
-    if (this.bloom) this.bloom.strength = this.night ? 0.6 : 0.32;
+    if (this.bloom) this.bloom.strength = this.night ? 0.45 : 0.18;
     this.composer.render();
   }
 
