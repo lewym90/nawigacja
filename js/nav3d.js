@@ -70,7 +70,7 @@ export class Nav3D {
     this.hemi = new THREE.HemisphereLight(0xb8c8e6, 0x81796a, 1.15); this.hemi.position.set(0, 0, 1); scene.add(this.hemi);
     const sun = new THREE.DirectionalLight(0xfff1dc, 2.6); sun.castShadow = true; sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.35;
     scene.add(sun); scene.add(sun.target); this.sun = sun;
-    scene.fog = new THREE.Fog(0xa9c8e4, 900, 3400);
+    scene.fog = new THREE.Fog(0xa8c2d6, 900, 3400);
     // niebo właściciela: kopuła wokół kamery i odbicia w szybach, wodzie i wstędze
     const sky = new THREE.TextureLoader().load('./icons/t3-niebo.webp', (t) => {
       const g = new THREE.PMREMGenerator(r); scene.environment = g.fromEquirectangular(t).texture; g.dispose();
@@ -82,7 +82,7 @@ export class Nav3D {
       for (let i = 0; i < P.count; i++) { const e = Math.asin(Math.max(-1, Math.min(1, P.getZ(i)))) / (Math.PI / 2); U.setY(i, 1 - (e >= 0 ? 0.89 * (1 - e) : 0.89 - 0.11 * e)); } }
     this.sky = new THREE.Mesh(dome, new THREE.MeshBasicMaterial({ map: sky, side: THREE.BackSide, fog: false, depthWrite: false, depthTest: false }));
     // słońce z panoramy obrócone w stronę światła sceny
-    this.sky.rotation.z = Math.atan2(SUN.y, SUN.x) - 1.257; this.sky.renderOrder = -100; this.sky.frustumCulled = false; scene.add(this.sky);
+    this.sky.rotation.z = Math.atan2(SUN.y, SUN.x) - 1.257; this.sky.renderOrder = -100; this.sky.frustumCulled = false; this.sky.visible = false; scene.add(this.sky);
     scene.environmentRotation.set(Math.PI / 2, 0, 0);
     this.world = new THREE.Group(); scene.add(this.world);
     this.mats = this.materials();
@@ -406,7 +406,7 @@ void cutAway(vec3 p){
       const d = await fetch(`${city.base}ground.json`).then((x) => x.json());
       const O = this.O; const ox = O[0] % 4000; const oy = O[1] % 4000;
       const KIND = { grass: ['grass', [1, 1, 1], 4.8], house: ['grass', [1, 1, 1], 4.8], estate: ['grass', [0.97, 1, 0.95], 4.8], wood: ['grass', [0.55, 0.68, 0.5], 4.8],
-        field: ['grass', [1.08, 1.02, 0.66], 6], bare: ['gravel', [1, 1, 1], 4], paved: ['kostka', [1, 1, 1], 1.6], water: ['water', [1, 1, 1], 8] };
+        field: ['grass', [1.0, 0.98, 0.8], 6], bare: ['gravel', [1, 1, 1], 4], paved: ['kostka', [1, 1, 1], 1.6], water: ['water', [1, 1, 1], 8] };
       const acc = {};
       for (const f of d.features) {
         const k = KIND[f.properties.k]; if (!k) continue;
@@ -547,7 +547,7 @@ void cutAway(vec3 p){
     this.sun.target.updateMatrixWorld();
     this.sky.position.copy(C); this.sky.scale.setScalar(300); this.sky.material.color.set(this.night ? 0x141c2c : 0xffffff);
     const day = !this.night;
-    this.sun.intensity = day ? 2.6 : 0.05; this.hemi.intensity = day ? 1.15 : 0.25; this.scene.fog.color.set(day ? 0xa9c8e4 : 0x101e30);
+    this.sun.intensity = day ? 2.6 : 0.05; this.hemi.intensity = day ? 1.15 : 0.25; this.scene.fog.color.set(day ? 0xa8c2d6 : 0x101e30);
     if (this.lampGlass) this.lampGlass.emissiveIntensity = day ? 0 : 2.2;
     // wycinanie budynków między kamerą a autem, jak w starym silniku
     this.cut.u_camp.value.set(C.x, C.y); this.cut.u_car.value.set(L[0], L[1]); this.cut.u_camz.value = C.z;
