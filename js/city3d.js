@@ -1,4 +1,4 @@
-import { ribbonMesh, puckMesh, RIB } from './solid.js';
+import { ribbonMesh, puckMesh, RIB, lampMesh, signalMesh } from './solid.js';
 import { FACADE_M } from './facade-size.js';
 // Własny silnik miasta 3D: rysuje prawdziwe bryły budynków (GUGiK LoD2, tools/build-city.py) wewnątrz mapy.
 // Ściany dostają elewacje z atlasu, dachy kolor wg kształtu. Kafle dociągane wokół punktu przed autem.
@@ -77,11 +77,12 @@ void main(){
 }`;
 const VS_TREE = `#version 300 es
 in vec4 a_tree;
-uniform mat4 u_m; uniform vec2 u_right; uniform float u_scale;
-out vec2 v_uv; out float v_tint; out vec3 v_pos;
+uniform mat4 u_m; uniform vec2 u_right; uniform float u_scale; uniform float u_cross; uniform vec3 u_eye; uniform float u_near;
+out vec2 v_uv; out float v_tint; out vec3 v_pos; out float v_lit;
 const vec2 C[6]=vec2[6](vec2(-.5,0.),vec2(.5,0.),vec2(.5,1.),vec2(-.5,0.),vec2(.5,1.),vec2(-.5,1.));
 void main(){
-  vec2 c=C[gl_VertexID];
+  vec2 c=C[gl_VertexID%6];
+  if(u_near>0.0 && distance(a_tree.xy,u_eye.xy)<u_near){ gl_Position=vec4(2.0,2.0,2.0,1.0); return; }
   float kind=floor(a_tree.w); float f=fract(a_tree.w);
   float h=a_tree.z*u_scale;
   // gatunek: iglaste to sosna, liściaste losowo z pozycji (lipa, dąb, brzoza, klon, topola, młode), niskie to krzew
@@ -89,20 +90,25 @@ void main(){
   float sp=kind<0.5?5.0:(h<4.5?7.0:(r<0.24?0.0:r<0.4?1.0:r<0.56?2.0:r<0.76?3.0:r<0.84?4.0:6.0));
   if(sp>6.5) h*=0.5;
   float side=f>0.45?1.0:-1.0;
-  vec3 p=vec3(a_tree.xy+u_right*c.x*h,c.y*h); // komórka atlasu jest kwadratowa
+  // nowy wygląd: dwie skrzyżowane płaszczyzny pod stałym kątem, więc drzewo stoi w świecie i nie obraca się za kamerą
+  float th=r*6.2832; vec2 ax=gl_VertexID<6?vec2(cos(th),sin(th)):vec2(-sin(th),cos(th));
+  if(gl_VertexID>=6) side=-side;
+  vec2 dir=u_cross>0.5?ax:u_right;
+  v_lit=u_cross>0.5?0.78+0.3*abs(dot(vec2(-dir.y,dir.x),normalize(vec2(-0.35,-0.45)))):1.0;
+  vec3 p=vec3(a_tree.xy+dir*c.x*h,c.y*h); // komórka atlasu jest kwadratowa
   v_uv=vec2((mod(sp,4.0)+0.5+c.x*side*0.98)*0.25,(floor(sp/4.0)+1.0-c.y*0.99-0.005)*0.5);
   v_tint=f; v_pos=p;
   gl_Position=u_m*vec4(p,1.0);
 }`;
 const FS_TREE = `#version 300 es
 precision highp float;
-in vec2 v_uv; in float v_tint; in vec3 v_pos;
+in vec2 v_uv; in float v_tint; in vec3 v_pos; in float v_lit;
 uniform sampler2D u_trees; uniform vec3 u_fog; uniform vec3 u_eye; uniform float u_night;
 out vec4 o;
 void main(){
   vec4 t=texture(u_trees,v_uv);
   if(t.a<0.5) discard;
-  vec3 col=t.rgb*mix(vec3(.82,.88,.8),vec3(1.05,1.02,.92),v_tint);
+  vec3 col=t.rgb*mix(vec3(.82,.88,.8),vec3(1.05,1.02,.92),v_tint)*v_lit;
   col*=mix(0.72,1.0,smoothstep(0.0,6.0,v_pos.z));
   if(u_night>0.5) col*=0.2;
   float fog=smoothstep(800.0,2500.0,distance(v_pos,u_eye));
@@ -113,7 +119,7 @@ const VS_ROAD = `#version 300 es
 in vec3 a_pos;
 uniform mat4 u_m; uniform vec2 u_org;
 out vec2 v_xy; out vec2 v_p; flat out float v_k;
-void main(){ v_xy=a_pos.xy+u_org; v_p=a_pos.xy; v_k=a_pos.z; gl_Position=u_m*vec4(a_pos.xy,0.0,1.0); }`;
+void main(){ v_xy=a_pos.xy+u_org; v_p=a_pos.xy; v_k=a_pos.z; float k=floor(a_pos.z+0.5); gl_Position=u_m*vec4(a_pos.xy,(k==0.0||k==1.0)?0.24:0.0,1.0); }`; // chodnik i krawężnik 15 cm nad jezdnią
 const FS_ROAD = `#version 300 es
 precision highp float;
 in vec2 v_xy; in vec2 v_p; flat in float v_k;
@@ -148,6 +154,82 @@ void main(){
   float a=(1.0-smoothstep(350.0,1100.0,distance(vec3(v_p,0.0),u_eye)))*0.82;
   o=vec4(vec3(u_night>0.5?0.72:0.93),a);
 }`;
+// Cień pod drzewem: miękka elipsa na ziemi, przesunięta od słońca.
+const VS_TSH = `#version 300 es
+in vec4 a_tree;
+uniform mat4 u_m; uniform float u_scale;
+out vec2 v_q; out vec3 v_pos;
+const vec2 C[6]=vec2[6](vec2(-1.,-1.),vec2(1.,-1.),vec2(1.,1.),vec2(-1.,-1.),vec2(1.,1.),vec2(-1.,1.));
+void main(){
+  vec2 c=C[gl_VertexID]; float h=a_tree.z*u_scale; if(h<4.5*u_scale) h*=0.5;
+  float rr=h*0.32; vec2 p=a_tree.xy+vec2(0.35,0.45)*h*0.22+c*rr;
+  v_q=c; v_pos=vec3(p,0.0); gl_Position=u_m*vec4(p,0.0,1.0);
+}`;
+const FS_TSH = `#version 300 es
+precision highp float;
+in vec2 v_q; in vec3 v_pos; uniform vec3 u_eye;
+out vec4 o;
+void main(){ float d=length(v_q); o=vec4(0.0,0.03,0.0,(1.0-smoothstep(0.35,1.0,d))*0.42*(1.0-smoothstep(300.0,700.0,distance(v_pos,u_eye)))); }`;
+
+// Bok krawężnika i cień przy nim na jezdni.
+const VS_CURB = `#version 300 es
+in vec4 a_pos; in vec2 a_n;
+uniform mat4 u_m;
+out vec3 v_p; out float v_s; out vec2 v_n;
+void main(){ v_p=a_pos.xyz; v_s=a_pos.w; v_n=a_n; gl_Position=u_m*vec4(a_pos.xyz,1.0); }`;
+const FS_CURB = `#version 300 es
+precision highp float;
+in vec3 v_p; in float v_s; in vec2 v_n;
+uniform vec3 u_cam; uniform float u_night; uniform vec3 u_eye;
+out vec4 o;
+void main(){
+  float fade=1.0-smoothstep(350.0,900.0,distance(vec3(v_p.xy,0.0),u_eye));
+  if(v_s<0.0){ float a=-v_s; o=vec4(0.0,0.0,0.0,a*a*0.5*fade); return; } // cień: najciemniej przy krawężniku
+  if(dot(v_n,u_cam.xy-v_p.xy)<0.0) discard; // bok zwrócony od kamery zasłania chodnik
+  vec2 L=normalize(vec2(-0.35,-0.45)); float lit=0.62+0.38*max(dot(v_n,L),0.0);
+  vec3 c=vec3(0.88,0.87,0.84)*lit*mix(0.8,1.0,v_s);
+  if(u_night>0.5) c*=vec3(.3,.34,.44);
+  o=vec4(c,fade);
+}`;
+
+// Modele 3D właściciela (tools/build-models.py): latarnie, sygnalizatory i drzewa blisko auta.
+const VS_MODEL = `#version 300 es
+in vec3 a_p; in vec3 a_n; in vec2 a_uv; in float a_layer; in vec3 a_col; in float a_kind; in vec4 a_inst;
+uniform mat4 u_m; uniform float u_k; uniform float u_mode; uniform float u_mh; uniform float u_sx; uniform vec3 u_eye; uniform float u_near;
+out vec3 v_n; out vec3 v_pos; out vec2 v_uv; flat out float v_layer; out vec3 v_col; flat out float v_kind;
+void main(){
+  float ang=a_inst.w; vec3 sc=vec3(u_k);
+  if(u_mode>0.5){ // drzewo: [x, y, docelowa wysokość, obrót]; tylko blisko auta, dalej rysują je płaszczyzny
+    if(distance(a_inst.xy,u_eye.xy)>u_near){ gl_Position=vec4(2.0,2.0,2.0,1.0); return; }
+    float s=a_inst.z/u_mh; sc=vec3(s*u_sx,s*u_sx,s);
+  }
+  float c=cos(ang); float sn=sin(ang); mat2 R=mat2(c,sn,-sn,c);
+  vec3 p=vec3(a_inst.xy+R*(a_p.xy*sc.xy),a_p.z*sc.z);
+  v_n=normalize(vec3(R*a_n.xy,a_n.z)); v_pos=p; v_uv=a_uv; v_layer=a_layer; v_col=a_col; v_kind=a_kind;
+  gl_Position=u_m*vec4(p,1.0);
+}`;
+const FS_MODEL = `#version 300 es
+precision highp float; precision highp sampler2DArray;
+in vec3 v_n; in vec3 v_pos; in vec2 v_uv; flat in float v_layer; in vec3 v_col; flat in float v_kind;
+uniform sampler2DArray u_tex; uniform vec3 u_eye; uniform vec3 u_fog; uniform float u_night;
+out vec4 o;
+void main(){
+  int k=int(v_kind+0.5);
+  // liście: ostrzejsza tekstura i niższy próg, bo przy oddaleniu drobne listki rozmywały się w przezroczystość i drzewo wyglądało na łyse
+  vec4 t=v_layer>=0.0?(k==1?texture(u_tex,vec3(v_uv,v_layer),-1.5):texture(u_tex,vec3(v_uv,v_layer))):vec4(1.0);
+  if(k==1 && t.a<0.28) discard;
+  if(k==1) t.rgb/=max(t.a,0.35);
+  vec3 N=normalize(v_n); vec3 L=normalize(vec3(-0.35,-0.45,0.82));
+  float d=k==1?0.55+0.45*(dot(N,L)*0.5+0.5):0.55+0.55*max(dot(N,L),0.0); // liście: światło miękko przechodzi
+  vec3 c=t.rgb*v_col*d*mix(0.75,1.0,smoothstep(0.0,5.0,v_pos.z));
+  if(u_night>0.5) c*=0.22;
+  if(k==2) c=u_night>0.5?vec3(1.,.93,.75)*1.6:vec3(.85,.86,.82);
+  if(k==3) c=vec3(.98,.14,.1); if(k==4) c=vec3(.35,.25,.05); if(k==5) c=vec3(.05,.28,.12);
+  float fog=smoothstep(800.0,2500.0,distance(v_pos,u_eye));
+  o=vec4(mix(c,u_fog,fog*0.72),1.0);
+}`;
+const TREE_NEAR = 420; // m Merkatora (ok. 260 m): bliżej drzewa jako modele, dalej jako płaszczyzny
+
 const VS_SHQ = `#version 300 es
 uniform mat4 u_m;
 out vec2 v;
@@ -290,7 +372,9 @@ export class City3D {
   onAdd(map, gl) {
     this.gl = gl;
     if (!(gl instanceof WebGL2RenderingContext)) return;
-    this.headStyle = 'up'; this.sol = prog(gl, VS_SOL, FS_SOL); this.solU = prog(gl, VS_SOL, FS_UNDER); this.puckP = prog(gl, VS_PUCK, FS_PUCK); this.wall = prog(gl, VS_WALL, FS_WALL); this.roof = prog(gl, VS_ROOF, FS_ROOF); this.tree = prog(gl, VS_TREE, FS_TREE); if (this.soft) { this.road = prog(gl, VS_ROAD, FS_ROAD); this.mark = prog(gl, VS_MARK, FS_MARK); this.shq = prog(gl, VS_SHQ, FS_SHQ); this.rib = prog(gl, VS_RIB, FS_RIB); this.dummy = gl.createVertexArray(); } 
+    this.headStyle = 'up'; this.sol = prog(gl, VS_SOL, FS_SOL); this.solU = prog(gl, VS_SOL, FS_UNDER); this.puckP = prog(gl, VS_PUCK, FS_PUCK); this.wall = prog(gl, VS_WALL, FS_WALL); this.roof = prog(gl, VS_ROOF, FS_ROOF); this.tree = prog(gl, VS_TREE, FS_TREE); if (this.soft) { this.road = prog(gl, VS_ROAD, FS_ROAD); this.mark = prog(gl, VS_MARK, FS_MARK); this.shq = prog(gl, VS_SHQ, FS_SHQ); this.curb = prog(gl, VS_CURB, FS_CURB); this.tsh = prog(gl, VS_TSH, FS_TSH);
+      gl.bindAttribLocation(this.tsh, gl.getAttribLocation(this.tree, 'a_tree'), 'a_tree'); gl.linkProgram(this.tsh);
+      this.modelP = prog(gl, VS_MODEL, FS_MODEL); this.loadModels(); this.rib = prog(gl, VS_RIB, FS_RIB); this.dummy = gl.createVertexArray(); } 
     fetch(`${this.base}index.json`).then((r) => r.json()).then((d) => {
       this.grid = d.grid; this.bld = new Set(d.tiles.map((t) => `${t[0]}_${t[1]}`)); this.index = new Set(this.bld); this.treeIndex = new Set((d.trees || []).map((t) => `${t[0]}_${t[1]}`)); this.roadIndex = new Set((d.roads || []).map((t) => `${t[0]}_${t[1]}`)); this.shIndex = new Set((d.shadows || []).map((t) => `${t[0]}_${t[1]}`));
       for (const k of [...this.treeIndex, ...this.roadIndex, ...this.shIndex]) this.index.add(k);
@@ -355,6 +439,10 @@ export class City3D {
       };
       if (n) tile.road = { ...mk(new Uint8Array(r, 8, n * 12), 12, [[0, 3]]), n };
       if (m) tile.markv = { ...mk(new Uint8Array(r, 8 + n * 12, m * 16), 16, [[0, 3], [gl.getAttribLocation(this.mark, 'a_k'), 1]]), n: m };
+      const co = 8 + n * 12 + m * 16; let c = 0;
+      if (r.byteLength >= co + 4) { c = new Uint32Array(r.slice(co, co + 4))[0]; if (c) tile.curbv = { ...mk(new Uint8Array(r, co + 4, c * 24), 24, [[gl.getAttribLocation(this.curb, 'a_pos'), 4], [gl.getAttribLocation(this.curb, 'a_n'), 2]]), n: c }; }
+      const po = co + 4 + c * 24;
+      if (r.byteLength >= po + 4) { const np = new Uint32Array(r.slice(po, po + 4))[0]; tile.pinst = new Float32Array(r.slice(po + 4, po + 4 + np * 16)); tile.props = this.propsFrom(tile.pinst); }
     }
     if (sh) {
       const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
@@ -366,7 +454,7 @@ export class City3D {
   }
 
   upload(key, buf, t) {
-    const gl = this.gl; const h = buf ? new Uint32Array(buf, 0, 2) : [0, 0]; let treeObj = null;
+    const gl = this.gl; const h = buf ? new Uint32Array(buf, 0, 2) : [0, 0]; let treeObj = null; let treeInst = null;
     const vao = (prg, attrs, bytes, n, stride) => {
       const v = gl.createVertexArray(); gl.bindVertexArray(v);
       const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, bytes, gl.STATIC_DRAW);
@@ -382,10 +470,11 @@ export class City3D {
       const l = gl.getAttribLocation(this.tree, 'a_tree'); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 4, gl.FLOAT, false, 16, 0); gl.vertexAttribDivisor(l, 1);
       gl.bindVertexArray(null);
       treeObj = { v, b, n: t.byteLength / 16 };
+      treeInst = new Float32Array(t instanceof ArrayBuffer ? t.slice(0) : t.buffer.slice(t.byteOffset, t.byteOffset + t.byteLength));
     }
     const wbytes = buf && new Uint8Array(buf, 8, nw * 24); const rbytes = buf && new Uint8Array(buf, 8 + nw * 24, nr * 16);
     const prev = this.tiles.get(key) || {};
-    this.tiles.set(key, { ...prev, wraw: nw ? new Float32Array(buf, 8, nw * 6) : null, occ: null, w: nw ? vao(this.wall, [['a_pos', 3], ['a_uv', 2], ['a_cell', 1]], wbytes, nw, 24) : null, r: nr ? vao(this.roof, [['a_pos', 3], ['a_kind', 1]], rbytes, nr, 16) : null, t: treeObj, k: key.split('_').map(Number) });
+    this.tiles.set(key, { ...prev, wraw: nw ? new Float32Array(buf, 8, nw * 6) : null, occ: null, w: nw ? vao(this.wall, [['a_pos', 3], ['a_uv', 2], ['a_cell', 1]], wbytes, nw, 24) : null, r: nr ? vao(this.roof, [['a_pos', 3], ['a_kind', 1]], rbytes, nr, 16) : null, t: treeObj, k: key.split('_').map(Number) , tinst: treeInst, treeM: treeInst && this.models ? this.treeModels(treeInst) : null });
   }
 
   /** Wysokości zabudowy w kratkach 8 m, liczone przy pierwszym pytaniu o dany kafel. */
@@ -426,7 +515,7 @@ export class City3D {
   drop(key) {
     const t = this.tiles.get(key); const gl = this.gl;
     if (t.sh) gl.deleteTexture(t.sh);
-    for (const o of [t.w, t.r, t.t, t.road, t.markv]) if (o) { gl.deleteBuffer(o.b); gl.deleteVertexArray(o.v); if (o.s) gl.deleteVertexArray(o.s); }
+    for (const o of [t.w, t.r, t.t, t.road, t.markv, t.curbv, ...(t.props || []), ...(t.treeM || [])]) if (o) { gl.deleteBuffer(o.b); gl.deleteVertexArray(o.v); if (o.s) gl.deleteVertexArray(o.s); }
     this.tiles.delete(key);
   }
 
@@ -506,14 +595,15 @@ export class City3D {
         }
         if (key === 't') {
           if (Math.hypot(ox + g / 2 - this.eye[0], oy + g / 2 - this.eye[1]) > 1100) continue;
-          gl.uniform2fv(gl.getUniformLocation(p, 'u_right'), right);
-          gl.bindVertexArray(o.v); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, o.n);
+          gl.uniform2fv(gl.getUniformLocation(p, 'u_right'), right); gl.uniform1f(gl.getUniformLocation(p, 'u_cross'), this.soft ? 1 : 0); gl.uniform1f(gl.getUniformLocation(p, 'u_near'), this.models ? TREE_NEAR : 0);
+          gl.bindVertexArray(o.v); gl.drawArraysInstanced(gl.TRIANGLES, 0, this.soft ? 12 : 6, o.n);
           continue;
         }
         gl.bindVertexArray(o.v); gl.drawArrays(gl.TRIANGLES, 0, o.n);
       }
     }
     gl.bindVertexArray(null);
+    if (this.soft) this.drawModels(gl);
     this.drawRibbon(gl);
   }
 
@@ -561,6 +651,11 @@ export class City3D {
       gl.bindVertexArray(f.v); gl.drawArrays(gl.TRIANGLES, 0, f.n);
     }
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(this.curb); gl.uniform1f(gl.getUniformLocation(this.curb, 'u_night'), this.night ? 1 : 0);
+    const ucam = gl.getUniformLocation(this.curb, 'u_cam');
+    each(this.curb, (t) => { if (t.curbv) { gl.uniform3f(ucam, this.cam[0] - t.k[0] * g, this.cam[1] - t.k[1] * g, this.camZ); gl.bindVertexArray(t.curbv.v); gl.drawArrays(gl.TRIANGLES, 0, t.curbv.n); } });
+    gl.useProgram(this.tsh); gl.uniform1f(gl.getUniformLocation(this.tsh, 'u_scale'), 1.25);
+    each(this.tsh, (t) => { if (t.t && Math.hypot(t.k[0] * g + g / 2 - this.eye[0], t.k[1] * g + g / 2 - this.eye[1]) < 900) { gl.bindVertexArray(t.t.v); gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, t.t.n); } });
     gl.useProgram(this.mark); gl.uniform1f(gl.getUniformLocation(this.mark, 'u_night'), this.night ? 1 : 0);
     each(this.mark, (t) => { if (t.markv) { gl.bindVertexArray(t.markv.v); gl.drawArrays(gl.TRIANGLES, 0, t.markv.n); } });
     if (!this.night) {
@@ -616,6 +711,97 @@ export class City3D {
   }
 
   setHeadStyle(style) { this.headStyle = style; if (this.path) this.setRoute(this.path, this.turns); }
+
+  /** Modele właściciela: bufory wierzchołków i tekstura tablicowa. Bez nich zostają proste bryły i płaskie drzewa. */
+  async loadModels() {
+    try {
+      const gl = this.gl; const base = './city/models/'; const names = ['lipa', 'dab', 'sosna', 'krzew', 'latarnia', 'sygnalizator'];
+      const bufs = await Promise.all(names.map((n) => fetch(`${base}${n}.bin`).then((r) => { if (!r.ok) throw new Error(n); return r.arrayBuffer(); })));
+      const img = await fetch(`${base}tex.webp`).then((r) => r.blob()).then((b) => createImageBitmap(b));
+      const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D_ARRAY, tex);
+      gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA, 512, 512, img.height / 512, 0, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      gl.generateMipmap(gl.TEXTURE_2D_ARRAY); gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+      const m = { tex };
+      names.forEach((n, i) => { const d = new Float32Array(bufs[i]); const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, d, gl.STATIC_DRAW); let h = 0; for (let k = 2; k < d.length; k += 13) h = Math.max(h, d[k]); m[n] = { b, n: d.length / 13, h }; });
+      this.models = m;
+      // kafle wczytane przed modelami
+      for (const t of this.tiles.values()) { if (t.tinst) t.treeM = this.treeModels(t.tinst); if (t.pinst) t.props = this.propsFrom(t.pinst); }
+      this.map.triggerRepaint();
+    } catch (e) { this.models = null; }
+  }
+
+  /** VAO modelu z buforem instancji [x, y, z lub wysokość, obrót]. */
+  modelVao(model, inst) {
+    const gl = this.gl; const p = this.modelP; const v = gl.createVertexArray(); gl.bindVertexArray(v);
+    gl.bindBuffer(gl.ARRAY_BUFFER, model.b);
+    for (const [name, size, off] of [['a_p', 3, 0], ['a_n', 3, 12], ['a_uv', 2, 24], ['a_layer', 1, 32], ['a_col', 3, 36], ['a_kind', 1, 48]]) { const l = gl.getAttribLocation(p, name); if (l < 0) continue; gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 52, off); }
+    const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, inst, gl.STATIC_DRAW);
+    const l = gl.getAttribLocation(p, 'a_inst'); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 4, gl.FLOAT, false, 16, 0); gl.vertexAttribDivisor(l, 1);
+    gl.bindVertexArray(null); return { v, b, n: inst.length / 4, verts: model.n, h: model.h };
+  }
+
+  /** Drzewa kafla rozdzielone na gatunki tak samo, jak robi to shader płaszczyzn (VS_TREE). */
+  treeModels(t) {
+    const M = this.models; const buckets = new Map(); const fr = (x) => x - Math.floor(x);
+    for (let i = 0; i < t.length; i += 4) {
+      const x = t[i]; const y = t[i + 1]; let h = t[i + 2] * 1.25; const kind = Math.floor(t[i + 3]);
+      const r = fr(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453);
+      const sp = kind < 0.5 ? 5 : h < 4.5 ? 7 : r < 0.24 ? 0 : r < 0.4 ? 1 : r < 0.56 ? 2 : r < 0.76 ? 3 : r < 0.84 ? 4 : 6;
+      if (sp === 7) h *= 0.5;
+      // klon i młode drzewo jako lipa, topola jako zwężona lipa
+      // brzoza z modelu jest z daleka łysa (rzadkie listki), więc do czasu gęstszego modelu stoi zamiast niej zwężona lipa
+      const [name, sx] = [['lipa', 1], ['dab', 1], ['lipa', 0.7], ['lipa', 1], ['lipa', 0.55], ['sosna', 1], ['lipa', 0.8], ['krzew', 1]][sp];
+      const key = `${name}:${sx}`; if (!buckets.has(key)) buckets.set(key, { name, sx, a: [] });
+      buckets.get(key).a.push(x, y, h, r * 6.2832);
+    }
+    return [...buckets.values()].map((b) => ({ ...this.modelVao(M[b.name], new Float32Array(b.a)), sx: b.sx }));
+  }
+
+  /** Latarnie i sygnalizatory kafla [x, y, rodzaj, kierunek]: modele właściciela, a bez nich proste bryły. */
+  propsFrom(all) {
+    const np = all.length / 4;
+    return [0, 1].map((kind) => {
+      const sel = []; for (let i = 0; i < np; i++) if (all[i * 4 + 2] === kind) sel.push(all[i * 4], all[i * 4 + 1], 0, all[i * 4 + 3]);
+      if (!sel.length) return null;
+      return this.models ? this.modelVao(this.models[kind ? 'sygnalizator' : 'latarnia'], new Float32Array(sel)) : this.simpleVao(kind, new Float32Array(sel));
+    });
+  }
+
+  /** Zapasowe proste bryły (solid.js) w tym samym układzie wierzchołków co modele: bez tekstury, kolor z materiału. */
+  simpleVao(kind, inst) {
+    this.simple = this.simple || [];
+    if (!this.simple[kind]) {
+      const src = kind ? signalMesh() : lampMesh(); const d = new Float32Array((src.length / 7) * 13);
+      const COL = { 0: [0.62, 0.64, 0.66], 1: [0.1, 0.11, 0.12], 2: [1, 1, 1], 6: [0.92, 0.92, 0.9] };
+      for (let i = 0, j = 0; i < src.length; i += 7, j += 13) { const m = src[i + 6]; d.set([src[i], src[i + 1], src[i + 2], src[i + 3], src[i + 4], src[i + 5], 0, 0, -1, ...(COL[m] || [1, 1, 1]), m === 2 ? 2 : m >= 3 && m <= 5 ? m : 0], j); }
+      const b = this.gl.createBuffer(); this.gl.bindBuffer(this.gl.ARRAY_BUFFER, b); this.gl.bufferData(this.gl.ARRAY_BUFFER, d, this.gl.STATIC_DRAW); this.simple[kind] = { b, n: d.length / 13, h: 1 };
+    }
+    return this.modelVao(this.simple[kind], inst);
+  }
+
+  /** Latarnie i sygnalizatory do 600 m od auta, drzewa jako modele do TREE_NEAR. */
+  drawModels(gl) {
+    if (!this.modelP) return;
+    const p = this.modelP; const g = this.grid; gl.useProgram(p);
+    gl.uniform1f(gl.getUniformLocation(p, 'u_k'), 1 / Math.cos((this.map.getCenter().lat * Math.PI) / 180));
+    gl.uniform1f(gl.getUniformLocation(p, 'u_night'), this.night ? 1 : 0); gl.uniform1f(gl.getUniformLocation(p, 'u_near'), TREE_NEAR);
+    gl.uniform3fv(gl.getUniformLocation(p, 'u_fog'), this.night ? [0.063, 0.133, 0.243] : [0.66, 0.76, 0.84]);
+    if (this.models) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.models.tex); gl.uniform1i(gl.getUniformLocation(p, 'u_tex'), 0); }
+    const um = gl.getUniformLocation(p, 'u_m'); const ue = gl.getUniformLocation(p, 'u_eye'); const umode = gl.getUniformLocation(p, 'u_mode'); const umh = gl.getUniformLocation(p, 'u_mh'); const usx = gl.getUniformLocation(p, 'u_sx');
+    for (const t of this.tiles.values()) {
+      const ox = t.k[0] * g; const oy = t.k[1] * g; const dist = Math.hypot(ox + g / 2 - this.eye[0], oy + g / 2 - this.eye[1]);
+      if (dist > 600 + g) continue;
+      gl.uniformMatrix4fv(um, false, this.tileM(ox, oy)); gl.uniform3f(ue, this.eye[0] - ox, this.eye[1] - oy, 0);
+      gl.uniform1f(umode, 0);
+      for (const o of t.props || []) if (o) { gl.bindVertexArray(o.v); gl.drawArraysInstanced(gl.TRIANGLES, 0, o.verts, o.n); }
+      if (t.treeM && dist < TREE_NEAR + g) {
+        gl.uniform1f(umode, 1);
+        for (const o of t.treeM) { gl.uniform1f(umh, o.h); gl.uniform1f(usx, o.sx); gl.bindVertexArray(o.v); gl.drawArraysInstanced(gl.TRIANGLES, 0, o.verts, o.n); }
+      }
+    }
+    gl.bindVertexArray(null); gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+  }
 
   /** Znacznik auta w świecie: stała wielkość na ekranie, kierunek jazdy. */
   drawPuck(gl) {

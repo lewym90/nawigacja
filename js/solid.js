@@ -138,3 +138,40 @@ export function puckMesh() {
   for (const [x, y] of [[-1.1, -1.1], [1.1, -1.1], [1.1, 1.3], [-1.1, -1.1], [1.1, 1.3], [-1.1, 1.3]]) out.push(x, y, 0.01, 0, 0, 1, 2);
   return new Float32Array(out);
 }
+
+/** Prosty kloc: środek, połowy wymiarów, materiał. Trójkąty [x,y,z,nx,ny,nz,mat]. */
+function box(out, [cx, cy, cz], [hx, hy, hz], mat) {
+  const F = [[[1, 0, 0], [0, 1, 0], [0, 0, 1]], [[-1, 0, 0], [0, -1, 0], [0, 0, 1]], [[0, 1, 0], [-1, 0, 0], [0, 0, 1]], [[0, -1, 0], [1, 0, 0], [0, 0, 1]], [[0, 0, 1], [1, 0, 0], [0, 1, 0]], [[0, 0, -1], [0, 1, 0], [1, 0, 0]]];
+  const h = [hx, hy, hz];
+  for (const [n, u, v] of F) {
+    const c = [cx + n[0] * hx, cy + n[1] * hy, cz + n[2] * hz]; const U = u.map((x, i) => x * h[i]); const V = v.map((x, i) => x * h[i]);
+    const P = (a, b) => [c[0] + U[0] * a + V[0] * b, c[1] + U[1] * a + V[1] * b, c[2] + U[2] * a + V[2] * b];
+    for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, -1], [1, 1], [-1, 1]]) out.push(...P(a, b), ...n, mat);
+  }
+}
+
+/** Słup: ośmiokąt od z0 do z1, promień r0 na dole i r1 na górze. */
+function pole(out, x, y, z0, z1, r0, r1, mat) {
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * 2 * Math.PI; const b = ((i + 1) / 8) * 2 * Math.PI; const m = (a + b) / 2; const n = [Math.cos(m), Math.sin(m), 0];
+    const p = (t, r, z) => [x + Math.cos(t) * r, y + Math.sin(t) * r, z];
+    for (const q of [p(a, r0, z0), p(b, r0, z0), p(b, r1, z1), p(a, r0, z0), p(b, r1, z1), p(a, r1, z1)]) out.push(...q, ...n, mat);
+  }
+}
+
+/** Latarnia uliczna w metrach: słup 9 m, ramię nad jezdnię w stronę +x, płaska oprawa LED. Materiały: 0 stal, 2 klosz. */
+export function lampMesh() {
+  const o = []; pole(o, 0, 0, 0, 9, 0.11, 0.06, 0);
+  box(o, [0.75, 0, 8.95], [0.75, 0.04, 0.04], 0);
+  box(o, [1.5, 0, 8.92], [0.32, 0.13, 0.06], 0); box(o, [1.5, 0, 8.855], [0.28, 0.1, 0.005], 2);
+  return new Float32Array(o);
+}
+
+/** Sygnalizator: słup 3,5 m, komora z trzema światłami zwrócona w stronę +x, tablica z białym obrzeżem. Materiały: 0 stal, 1 obudowa, 3/4/5 czerwone, żółte, zielone, 6 obrzeże. */
+export function signalMesh() {
+  const o = []; pole(o, 0, 0, 0, 3.5, 0.06, 0.05, 1);
+  box(o, [0.03, 0, 3.0], [0.012, 0.36, 0.62], 6); box(o, [0.04, 0, 3.0], [0.012, 0.32, 0.58], 1);
+  box(o, [0.12, 0, 3.0], [0.1, 0.16, 0.5], 1);
+  [[3.36, 3], [3.0, 4], [2.64, 5]].forEach(([z, m]) => { box(o, [0.225, 0, z], [0.006, 0.1, 0.1], m); box(o, [0.27, 0, z + 0.11], [0.05, 0.12, 0.012], 1); });
+  return new Float32Array(o);
+}

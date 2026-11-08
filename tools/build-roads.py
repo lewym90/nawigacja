@@ -1,8 +1,11 @@
 """Siatka dróg z BDOT10k: prawdziwe szerokości, nawierzchnie, chodniki, krawężniki i linie, scalone w czyste skrzyżowania.
-Użycie: python3 tools/build-roads.py <powiat_GML.zip> <katalog_kafli> [osm_przejścia.json] [osm_parkingi.json ...]
+Użycie: python3 tools/build-roads.py <powiat_GML.zip> <katalog_kafli> [crossing.json] [signals.json] [lamps.json] [parkingi.json ...]
 Przejścia dla pieszych i parkingi z OSM (Overpass, out geom) są opcjonalne.
 Kafel <x>_<y>.r.bin (gzip): u32 liczba_trójkątów_wierzch, u32 liczba_wierzch_linii,
- powierzchnie [x,y,rodzaj] f32 (0 chodnik, 1 krawężnik, 2 asfalt główne, 3 kostka, 4 żwir, 5 asfalt ulice dwukierunkowe zbiorcze, lokalne i osiedlowe od 5,5 m, 6 asfalt wąskie uliczki, 7 parkingi), linie [x,y,u,rodzaj] f32 (0 ciągła, 1 przerywana).
+ powierzchnie [x,y,rodzaj] f32 (0 chodnik, 1 krawężnik, 2 asfalt główne, 3 kostka, 4 żwir, 5 asfalt ulice dwukierunkowe zbiorcze, lokalne i osiedlowe od 5,5 m, 6 asfalt wąskie uliczki, 7 parkingi), linie [x,y,u,rodzaj] f32 (0 ciągła, 1 przerywana), potem opcjonalnie u32 liczba i krawężniki [x,y,z,s,nx,ny] f32:
+ bok krawężnika (s 0..1 od dołu, normalna w stronę jezdni) i cień na jezdni przy nim (s<0, normalna 0),
+ potem opcjonalnie u32 liczba i obiekty przy drodze [x,y,rodzaj,kierunek] f32 (0 latarnia, 1 sygnalizator; kierunek w radianach, w stronę, w którą patrzy).
+Argumenty z OSM rozpoznawane po nazwie pliku: signals.json, lamps.json, crossing.json, reszta to parkingi.
 Plik axes.bin (gzip): u32 liczba, potem dla każdej osi u32 punkty, f32 szerokość, f32 dwukierunkowa (0/1), u16 długość nazwy, nazwa utf-8, punkty [x,y] f32 względem index.axesOrg. Na niej dopasowuje się tor jazdy."""
 import gzip, json, math, os, re, struct, sys, zipfile
 from collections import defaultdict
@@ -93,9 +96,10 @@ def quad(c, d, n, hl, hw):
     k = (int(c[0] // GRID), int(c[1] // GRID)); ox, oy = k[0] * GRID, k[1] * GRID
     marks[k] += [(q[0] - ox, q[1] - oy, 0.0, 0) for q in (p[0], p[1], p[2], p[0], p[2], p[3])]
 zebras = 0
-if len(sys.argv) > 3 and os.path.exists(sys.argv[3]):
+ARG = {os.path.basename(a): a for a in sys.argv[3:]}
+if 'crossing.json' in ARG:
     at = STRtree([a[0] for a in allAxes])
-    for e in json.load(open(sys.argv[3]))['elements']:
+    for e in json.load(open(ARG['crossing.json']))['elements']:
         if e.get('tags', {}).get('crossing') in ('unmarked', 'informal', 'no'): continue
         x, y = to4326(e['lon'], e['lat'])
         P = Point(x, y)
@@ -128,8 +132,8 @@ for i, (L, w, nm, tier) in enumerate(allAxes):
 with gzip.open(f'{OUT}/axes.bin', 'wb', 9) as f: f.write(blob)
 print('osie', len(allAxes), len(blob) // 1024, 'KB', flush=True)
 PK = []
-for f in sys.argv[4:]:
-    if not os.path.exists(f): continue
+for f in sys.argv[3:]:
+    if os.path.basename(f) in ('crossing.json', 'signals.json', 'lamps.json') or not os.path.exists(f): continue
     for e in json.load(open(f)).get('elements', []):
         g = e.get('geometry') or []
         if len(g) < 4: continue
@@ -139,7 +143,66 @@ for f in sys.argv[4:]:
         except Exception: pass
 PKU = unary_union(PK).difference(R.buffer(0.3 * M)).difference(W) if PK else Polygon()
 print('parkingi', len(PK), flush=True)
-surf = [(W, 0), (KERB, 1), (A, 2), (AM, 5), (AS, 6), (C, 3), (G, 4), (PKU, 7)]
+# krawężnik: pionowy bok od jezdni do chodnika i miękki cień na jezdni przy nim
+from shapely.geometry.polygon import orient
+CURB_H = 0.15 * M; SHADE = 0.4 * M
+curbs = defaultdict(list)
+for poly in getattr(R, 'geoms', [R]):
+    if poly.geom_type != 'Polygon': continue
+    o = orient(poly.simplify(0.2), 1.0)  # zewnętrzny obrys przeciwnie do zegara: jezdnia zawsze po lewej
+    for ring in [o.exterior, *o.interiors]:
+        c = np.array(ring.coords)
+        for i in range(len(c) - 1):
+            a, b = c[i], c[i + 1]; L = np.hypot(*(b - a))
+            if L < 0.05: continue
+            d = (b - a) / L; n = np.array([-d[1], d[0]])  # do środka jezdni
+            k = (int(((a[0] + b[0]) / 2) // GRID), int(((a[1] + b[1]) / 2) // GRID)); ox, oy = k[0] * GRID, k[1] * GRID
+            A0 = (a[0] - ox, a[1] - oy); B0 = (b[0] - ox, b[1] - oy); A1 = (A0[0] + n[0] * SHADE, A0[1] + n[1] * SHADE); B1 = (B0[0] + n[0] * SHADE, B0[1] + n[1] * SHADE)
+            v = lambda P, z, s_, nn=n: (P[0], P[1], z, s_, nn[0], nn[1])
+            curbs[k] += [v(A0, 0, 0), v(B0, 0, 0), v(B0, CURB_H, 1), v(A0, 0, 0), v(B0, CURB_H, 1), v(A0, CURB_H, 1)]
+            z0 = (0, 0)
+            curbs[k] += [v(A0, 0, -1, z0), v(B0, 0, -1, z0), v(B1, 0, -0.001, z0), v(A0, 0, -1, z0), v(B1, 0, -0.001, z0), v(A1, 0, -0.001, z0)]
+print('krawężniki', sum(len(x) for x in curbs.values()) // 12, flush=True)
+# obiekty przy drodze: sygnalizatory z OSM (po jednym na prawej krawędzi dla każdego kierunku) i latarnie (OSM, a przy głównych ulicach co 35 m)
+props = defaultdict(list)
+def put(x, y, kind, ang):
+    k = (int(x // GRID), int(y // GRID)); props[k].append((x - k[0] * GRID, y - k[1] * GRID, kind, ang))
+atree = STRtree([a[0] for a in allAxes])
+def frame(P):
+    j = atree.nearest(P); L, w = allAxes[j][0], allAxes[j][1]; s0 = L.project(P)
+    a = L.interpolate(max(0, s0 - 3)); b = L.interpolate(min(L.length, s0 + 3)); d = np.array([b.x - a.x, b.y - a.y]); d /= (np.hypot(*d) or 1)
+    q = L.interpolate(s0); return np.array([q.x, q.y]), d, np.array([-d[1], d[0]]), w, L.distance(P)
+nsig = 0
+if 'signals.json' in ARG:
+    for e in json.load(open(ARG['signals.json']))['elements']:
+        P = Point(*to4326(e['lon'], e['lat'])); c, d, n, w, dist = frame(P)
+        if dist > 12 * M: continue
+        off = (w / 2 + 0.7) * M
+        for sg in (1, -1):  # ruch wzdłuż sg*d: sygnalizator po jego prawej, zwrócony do nadjeżdżających
+            p = c - n * sg * off; put(p[0], p[1], 1, math.atan2(-d[1] * sg, -d[0] * sg)); nsig += 1
+lamp_pts = []
+if 'lamps.json' in ARG:
+    for e in json.load(open(ARG['lamps.json']))['elements']:
+        P = Point(*to4326(e['lon'], e['lat'])); c, d, n, w, dist = frame(P)
+        if dist > 15 * M: continue
+        side = 1 if np.dot(np.array([P.x, P.y]) - c, n) > 0 else -1
+        lamp_pts.append((P.x, P.y)); put(P.x, P.y, 0, math.atan2(-n[1] * side, -n[0] * side))
+ltree = STRtree([Point(p) for p in lamp_pts]) if lamp_pts else None
+added_l = 0
+for L, w, cl in axes:
+    main = 'główna' in cl or 'przyśpieszonego' in cl or 'ekspresowa' in cl
+    sides = (1, -1) if main else (1,)
+    for sg in sides:
+        t = 17.5 * M if sg < 0 else 0.0
+        while t < L.length:
+            q = L.interpolate(t); q2 = L.interpolate(min(L.length, t + 2)); d = np.array([q2.x - q.x, q2.y - q.y]); d /= (np.hypot(*d) or 1); n = np.array([-d[1], d[0]])
+            p = np.array([q.x, q.y]) + n * sg * (w / 2 + 0.8) * M; P = Point(p)
+            if not (ltree is not None and len(ltree.query(P.buffer(20 * M)))):
+                put(p[0], p[1], 0, math.atan2(-n[1] * sg, -n[0] * sg)); added_l += 1
+            t += 35 * M
+print('sygnalizatory', nsig, 'latarnie OSM', len(lamp_pts), 'dostawione', added_l, flush=True)
+# kolejność rysowania: najpierw nawierzchnie na poziomie jezdni, na końcu podniesione chodniki i krawężniki
+surf = [(A, 2), (AM, 5), (AS, 6), (C, 3), (G, 4), (PKU, 7), (W, 0), (KERB, 1)]
 parts = [(np.array(g.simplify(0.25).exterior.coords)) for g in []]
 polys = []
 for geom, kind in surf:
@@ -157,10 +220,10 @@ for tx in range(x0, x1 + 1):
                 rings = [np.array(g.exterior.coords)[:-1]] + [np.array(r.coords)[:-1] for r in g.interiors]
                 pts = np.concatenate(rings); ends = np.cumsum([len(r) for r in rings]).astype(np.uint32)
                 for k in earcut.triangulate_float64(pts, ends): v.append((pts[k, 0] - b[0], pts[k, 1] - b[1], kind))
-        m = marks.get((tx, ty), [])
-        if not v and not m: continue
+        m = marks.get((tx, ty), []); cb = curbs.get((tx, ty), []); pr = props.get((tx, ty), [])
+        if not v and not m and not cb and not pr: continue
         a = np.array(v, dtype=np.float32).reshape(-1, 3); l = np.array(m, dtype=np.float32).reshape(-1, 4)
-        with gzip.open(f'{OUT}/{tx}_{ty}.r.bin', 'wb', 9) as f: f.write(struct.pack('<II', len(a), len(l)) + a.tobytes() + l.tobytes())
+        with gzip.open(f'{OUT}/{tx}_{ty}.r.bin', 'wb', 9) as f: f.write(struct.pack('<II', len(a), len(l)) + a.tobytes() + l.tobytes() + struct.pack('<I', len(cb)) + np.array(cb, dtype=np.float32).reshape(-1, 6).tobytes() + struct.pack('<I', len(pr)) + np.array(pr, dtype=np.float32).reshape(-1, 4).tobytes())
         tot += len(a) + len(l); done.append([tx, ty])
 idx['roads'] = done; idx['axesOrg'] = [ax0, ay0]; json.dump(idx, open(f'{OUT}/index.json', 'w'), separators=(',', ':'))
 print('kafli dróg', len(done), 'wierzchołków', tot)
