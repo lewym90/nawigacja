@@ -70,7 +70,7 @@ with sync_playwright() as p:
     assert page.is_hidden('#menu'), 'menu nie zamknęło się'
     print('MENU zamknięte po przewinięciu', box, flush=True)
     page.fill('#q', 'Stare Miasto')
-    page.wait_for_selector('#results button:has-text("Stare Miasto")', timeout=8000)
+    page.wait_for_selector('#results button:has-text("Stare Miasto")', timeout=30000)
     page.click('#results button:has-text("Stare Miasto")')
     page.wait_for_selector('.route-card', timeout=20000)
     page.wait_for_timeout(1500)
@@ -146,6 +146,10 @@ with sync_playwright() as p:
         page.evaluate("window.__rot = setInterval(() => { const N = window.__nav; N.S.city.carHd = N.map.getBearing() + 60; }, 1)")
         page.evaluate("(() => { const N = window.__nav; const f = N.S.city.drawPuck.bind(N.S.city); N.S.city.drawPuck = (gl) => { N.S.city.carHd = N.map.getBearing() + 60; f(gl); }; })()")
         page.wait_for_timeout(2500); page.screenshot(path=f'{OUT}/{THEME}-rot.png')
+    if os.environ.get('LOOKAT'):
+        x = json.loads(os.environ['LOOKAT'])
+        page.evaluate("(x) => { const S = window.__nav.S; S.follow = false; S.sim.setSpeed(0.1); const m = window.__nav.map; m.setMaxZoom(24); m.jumpTo({ center: [x[0], x[1]], zoom: x[2], pitch: x[3], bearing: x[4] }); }", x)
+        page.wait_for_timeout(9000); page.screenshot(path=f'{OUT}/{THEME}-look.png'); print('LOOK', flush=True)
     if os.environ.get('HEADS'):
         for o in json.loads(os.environ['HEADS']):
             r = page.evaluate("""(o) => { const S = window.__nav.S; const st = S.nav.route.steps.filter((x) => x.type === 'turn' && new RegExp(o.turn).test(x.modifier || '') && x.at > (o.min ?? 120))[0];

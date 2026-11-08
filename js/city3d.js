@@ -715,7 +715,7 @@ export class City3D {
   /** Modele właściciela: bufory wierzchołków i tekstura tablicowa. Bez nich zostają proste bryły i płaskie drzewa. */
   async loadModels() {
     try {
-      const gl = this.gl; const base = './city/models/'; const names = ['lipa', 'dab', 'sosna', 'krzew', 'latarnia', 'sygnalizator'];
+      const gl = this.gl; const base = './city/models/'; const names = ['lipa', 'dab', 'brzoza', 'sosna', 'krzew', 'latarnia', 'sygnalizator'];
       const bufs = await Promise.all(names.map((n) => fetch(`${base}${n}.bin`).then((r) => { if (!r.ok) throw new Error(n); return r.arrayBuffer(); })));
       const img = await fetch(`${base}tex.webp`).then((r) => r.blob()).then((b) => createImageBitmap(b));
       const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D_ARRAY, tex);
@@ -750,8 +750,7 @@ export class City3D {
       const sp = kind < 0.5 ? 5 : h < 4.5 ? 7 : r < 0.24 ? 0 : r < 0.4 ? 1 : r < 0.56 ? 2 : r < 0.76 ? 3 : r < 0.84 ? 4 : 6;
       if (sp === 7) h *= 0.5;
       // klon i młode drzewo jako lipa, topola jako zwężona lipa
-      // brzoza z modelu jest z daleka łysa (rzadkie listki), więc do czasu gęstszego modelu stoi zamiast niej zwężona lipa
-      const [name, sx] = [['lipa', 1], ['dab', 1], ['lipa', 0.7], ['lipa', 1], ['lipa', 0.55], ['sosna', 1], ['lipa', 0.8], ['krzew', 1]][sp];
+      const [name, sx] = [['lipa', 1], ['dab', 1], ['brzoza', 1], ['lipa', 1], ['lipa', 0.55], ['sosna', 1], ['lipa', 0.8], ['krzew', 1]][sp];
       const key = `${name}:${sx}`; if (!buckets.has(key)) buckets.set(key, { name, sx, a: [] });
       buckets.get(key).a.push(x, y, h, r * 6.2832);
     }
