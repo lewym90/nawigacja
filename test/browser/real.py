@@ -120,6 +120,9 @@ with sync_playwright() as p:
     page.wait_for_timeout(7000)
     print('A', page.evaluate("(() => { const e = document.getElementById('m-lanes'); const S = window.__nav.S; return { widoczne: !e.hidden, n: e.querySelectorAll('.lane').length, on: e.querySelectorAll('.lane.on').length, along: Math.round(S.nav.along) }; })()"), flush=True)
     page.screenshot(path=f'{OUT}/{THEME}-a.png')
+    if os.environ.get('JS'): print('JS', page.evaluate(os.environ['JS']), flush=True)
+    if os.environ.get('JS'): page.wait_for_timeout(1500); page.screenshot(path=f'{OUT}/{THEME}-js.png')
+    if os.environ.get('ERRS'): print('WSZYSTKIE BŁĘDY', [e[:1500] for e in errors if '503' not in e and 'CORS' not in e][:8], flush=True)
     if os.environ.get('CAMS'):
         for name, H, D, AX in json.loads(os.environ['CAMS']):
             page.evaluate("""([H, D, AX]) => { const S = window.__nav.S; const m = window.__nav.map; S.follow = false; S.sim.setSpeed(0.1); m.setMaxZoom(24);

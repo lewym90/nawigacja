@@ -156,6 +156,7 @@
   <div class="m-row"><span>Ostrzeżenia głosowe</span><button class="switch" role="switch" aria-label="Ostrzeżenia głosowe" data-sw="hazardsVoice"><i></i></button></div>
   <div class="m-row"><span>Widok 3D</span><button class="switch" role="switch" aria-label="Widok 3D" data-sw="tilt"><i></i></button></div>
   <div class="m-row"><span>Nowy wygląd (próbka, Lublin)</span><button class="switch" role="switch" aria-label="Nowy wygląd" data-sw="newLook"><i></i></button></div>
+  <div class="m-row" data-new><span>Silnik 3D Three.js (próba)</span><button class="switch" role="switch" aria-label="Silnik Three.js" data-sw="engine3"><i></i></button></div>
   <div class="m-row"><span>Kamera</span><div class="seg" data-seg="cameraProfile"></div></div>
   <div class="m-row"><span>Jakość</span><div class="seg" data-seg="quality"></div></div>
   <div class="m-row"><span>Zdjęcia lotnicze</span><button class="switch" role="switch" aria-label="Zdjęcia lotnicze" data-sw="ortho"><i></i></button></div>
@@ -172,6 +173,7 @@
   <div class="m-row"><span>Ostrzeżenia głosowe</span><button id="sw-hz" class="switch" role="switch" aria-label="Ostrzeżenia głosowe" data-sw="hazardsVoice"><i></i></button></div>
   <div class="m-row"><span>Widok 3D w jeździe</span><button id="sw-tilt" class="switch" role="switch" aria-label="Widok 3D" data-sw="tilt"><i></i></button></div>
   <div class="m-row"><span>Nowy wygląd (próbka, Lublin)</span><button class="switch" role="switch" aria-label="Nowy wygląd" data-sw="newLook"><i></i></button></div>
+  <div class="m-row" data-new><span>Silnik 3D Three.js (próba)</span><button class="switch" role="switch" aria-label="Silnik Three.js" data-sw="engine3"><i></i></button></div>
   <div class="m-row"><span>Kamera</span><div class="seg" data-seg="cameraProfile"></div></div>
   <div class="m-row"><span>Jakość</span><div class="seg" data-seg="quality"></div></div>
   <div class="m-row"><span>Zdjęcia lotnicze</span><button class="switch" role="switch" aria-label="Zdjęcia lotnicze" data-sw="ortho"><i></i></button></div>
@@ -194,6 +196,7 @@
 <section id="faster" class="glass" hidden role="status"><div class="f-text"><b id="f-title"></b><small id="f-sub"></small></div><button id="f-no" class="btn-ghost">Zostań</button><button id="f-yes" class="btn-go">Jedź</button></section>
 <div id="toast" class="glass" hidden role="status"></div>
 
+<script type="importmap">{ "imports": { "three": "./vendor/three/three.module.min.js", "three/addons/": "./vendor/three/addons/" } }</script>
 <script src="./vendor/maplibre-gl.js"></script>
 <script type="module" src="./js/app.js"></script>
 </body>

@@ -102,8 +102,13 @@ document.body.classList.toggle('day', !night);
 
 if (new URLSearchParams(location.search).has('nowy')) { settings.newLook = true; saveSettings(settings); }
 const NEW = !!settings.newLook;
+if (new URLSearchParams(location.search).has('three')) { settings.engine3 = true; saveSettings(settings); }
+// Silnik Three.js (próba): w jeździe całą scenę 3D rysuje nav3d.js, mapa daje tylko ziemię i kamerę
+const ENGINE3 = NEW && !!settings.engine3;
 CONFIG.newLook = NEW;
 if (NEW) CONFIG.cityBase = CONFIG.cityBaseNew;
+// moduł wczytany przed mapą: zdarzenie „load” mapy nie może przyjść, zanim aplikacja zacznie go słuchać
+const Nav3DClass = ENGINE3 ? await import('./nav3d.js').then((m) => m.Nav3D).catch((e) => { console.warn('nav3d', e); return null; }) : null;
 await loadFacades(); // tekstury muszą być gotowe, zanim mapa zbuduje kafelki
 const map = new maplibregl.Map({
   container: 'map',
@@ -118,6 +123,8 @@ const map = new maplibregl.Map({
   pitchWithRotate: false,
 });
 map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
+let nav3d = null;
+if (Nav3DClass) { try { nav3d = new Nav3DClass(map, () => S.city, { quality: settings.quality }); window.__nav3d = nav3d; } catch (e) { console.warn('nav3d', e); nav3d = null; } }
 { const fold = () => document.querySelectorAll('.maplibregl-ctrl-attrib').forEach((el) => { el.classList.remove('maplibregl-compact-show'); el.removeAttribute('open'); });
   map.on('load', fold); map.on('resize', fold); setTimeout(fold, 300); }
 
@@ -155,6 +162,7 @@ function installLayers() {
     if (NEW) map.addLayer(new CityGround(S.city), before);
     if (S.nav) { S.city.drive = true; cityRoute(); }
   }
+  if (nav3d && !map.getLayer('nav3d-sync')) map.addLayer(nav3d.layer);
   if (!map.getSource('lanes')) map.addSource('lanes', { type: 'geojson', data: emptyFC() });
   add({ id: 'alt-line', type: 'line', source: 'alt', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': night ? '#8FA8C4' : '#5F7690', 'line-width': 7, 'line-opacity': 0.95 } });
   add({ id: 'alt-hit', type: 'line', source: 'alt', paint: { 'line-color': '#000', 'line-opacity': 0.01, 'line-width': 30 } });
@@ -1737,6 +1745,7 @@ const SWITCHES = {
   hazardsVoice: (v) => { settings.hazardsVoice = v; },
   tilt: (v) => { settings.tilt = v; },
   roadAlerts: (v) => { settings.roadAlerts = v; if (!v) $('banner').hidden = true; },
+  engine3: (v) => { settings.engine3 = v; saveSettings(settings); setTimeout(() => location.replace(location.pathname), 150); },
   newLook: (v) => { settings.newLook = v; saveSettings(settings); setTimeout(() => location.replace(location.pathname), 150); },
   ortho: (v) => { settings.ortho = v; for (const id of ['orto', 'orto-base']) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v ? 'visible' : 'none'); },
   routeColor: (v) => { settings.routeColor = v; paintRoute(S.nav ? S.nav.paintedAlong || 0 : 0); },
@@ -1765,7 +1774,8 @@ function applyProfiles() {
   const q = qualityProfile(settings.quality);
   map.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatio));
   if (S.city) S.city.setQuality(q);
-  if (NEW) { if (!bloom && settings.quality === 'ultra') bloom = new Bloom(map); if (bloom) bloom.enable(settings.quality === 'ultra'); } // poświata tylko na Ultra
+  if (nav3d) nav3d.setQuality(settings.quality);
+  if (NEW && !nav3d) { if (!bloom && settings.quality === 'ultra') bloom = new Bloom(map); if (bloom) bloom.enable(settings.quality === 'ultra'); } // poświata tylko na Ultra
 }
 for (const [seg, list] of [['cameraProfile', CAMERA_PROFILES], ['quality', QUALITY_PROFILES]]) {
   document.querySelectorAll(`[data-seg=${seg}]`).forEach((el) => {
@@ -1775,6 +1785,7 @@ for (const [seg, list] of [['cameraProfile', CAMERA_PROFILES], ['quality', QUALI
   });
 }
 applyProfiles();
+document.querySelectorAll('[data-new]').forEach((el) => (el.hidden = !NEW));
 $('btn-menu').onclick = () => { syncMenu(); show('menu', true); };
 $('btn-menu-x').onclick = () => show('menu', false);
 $('btn-quick').innerHTML = icon.tune(24);

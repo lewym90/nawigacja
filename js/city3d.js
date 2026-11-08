@@ -602,6 +602,8 @@ export class City3D {
     if (now - this.t > 400) { this.t = now; this.update(); }
     if ((this.texReady || 0) < (this.soft ? 5 : 3)) return;
     this.frame(args);
+    // silnik Three.js (nav3d.js) rysuje wtedy wszystko sam: tu zostaje tylko wczytywanie kafli dla kamery i przeszkód
+    if (this.hidden) return;
     const M = this.M;
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     gl.disable(gl.STENCIL_TEST);
@@ -670,6 +672,7 @@ export class City3D {
     if (!this.ready || !this.drive || (this.texReady || 0) < 5) return;
     this.frame(args);
     if (performance.now() - this.t > 400) { this.t = performance.now(); this.update(); }
+    if (this.hidden) return;
     gl.disable(gl.DEPTH_TEST); gl.depthMask(false); gl.disable(gl.CULL_FACE); gl.disable(gl.STENCIL_TEST); gl.disable(gl.BLEND);
     const g = this.grid; const fog = this.night ? [0.063, 0.133, 0.243] : [0.66, 0.76, 0.84];
     gl.useProgram(this.road);
@@ -925,3 +928,5 @@ export class City3D {
   }
 
 }
+
+export { VS_SOL, FS_SOL, FS_UNDER, VS_PUCK, FS_PUCK, SIGN_KMH, TREE_NEAR, W };
