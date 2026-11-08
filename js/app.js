@@ -8,6 +8,7 @@ import { unpackFuel, candidatesAhead, fuelDetours, bestStation, fmtExtra } from 
 import { explainRoute } from './explain.js';
 import { TripRecorder, TRIP, speedStops, revealStops, replayFrames, drawPoster, fmtTripTime } from './trip.js';
 import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
+import { Bloom } from './bloom.js';
 import { drivePath, parseAxes, pathAt, crossings, roadFill, speedSigns } from './snap.js';
 import { CAMERA_PROFILES, QUALITY_PROFILES, CLOSE_CAM, RIBBON_WIDE, cameraProfile, qualityProfile, lerp, zoomForDistance, closeUntil } from './profiles.js';
 import { Compass } from './compass.js';
@@ -1755,6 +1756,7 @@ document.querySelectorAll('[data-seg=engine]').forEach((el) => {
   el.innerHTML = VOICES.map((v) => `<button data-v="${v.id}"${v.enabled ? '' : ' disabled title="Niedostępna"'}>${v.label}</button>`).join('');
 });
 // Kamera i jakość mają sens tylko w nowym wyglądzie.
+let bloom = null;
 function applyProfiles() {
   if (settings.cameraProfile === 'cinematic') settings.cameraProfile = 'close';
   S.closeUntil = null;
@@ -1763,6 +1765,7 @@ function applyProfiles() {
   const q = qualityProfile(settings.quality);
   map.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatio));
   if (S.city) S.city.setQuality(q);
+  if (NEW) { if (!bloom && settings.quality === 'ultra') bloom = new Bloom(map); if (bloom) bloom.enable(settings.quality === 'ultra'); } // poświata tylko na Ultra
 }
 for (const [seg, list] of [['cameraProfile', CAMERA_PROFILES], ['quality', QUALITY_PROFILES]]) {
   document.querySelectorAll(`[data-seg=${seg}]`).forEach((el) => {

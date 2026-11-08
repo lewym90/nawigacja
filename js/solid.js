@@ -18,11 +18,19 @@ function sampler(path) {
 }
 
 /** Przekrój: boki pionowe, zaokrąglone górne krawędzie. [w bok, w górę, normalna w bok, normalna w górę] dla połowy szerokości w. */
+export const PN = 15; // punktów przekroju
+
+/** Przekrój: gładki superelipsowy grzbiet (jak poduszka), bez ostrych załamań, które dawały twarde linie. r zostaje dla zgodności. */
 function profile(w, h, r) {
-  const out = [[-w, 0, -1, 0]];
-  for (const deg of [0, 30, 60, 90]) { const a = (deg * Math.PI) / 180; out.push([-w + r * (1 - Math.cos(a)), h - r + r * Math.sin(a), -Math.cos(a), Math.sin(a)]); }
-  for (const p of out.slice().reverse()) out.push([-p[0], p[1], -p[2], p[3]]);
-  return out; // 10 punktów
+  const out = [[-w, 0, -1, 0]]; const P = 0.38;
+  for (let k = 0; k <= 12; k++) {
+    const th = Math.PI * (1 - k / 12); const c = Math.cos(th); const s = Math.sin(th);
+    const x = w * Math.sign(c) * Math.abs(c) ** P; const y = h * Math.max(Math.abs(s), 0.02) ** P;
+    const q = 2 / P - 1; let nx = (Math.sign(x) * Math.abs(x / w) ** q) / w; let ny = (Math.abs(y / h) ** q) / h; const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
+    out.push([x, y, nx, ny]);
+  }
+  out.push([w, 0, 1, 0]);
+  return out;
 }
 
 /** Odcinki wstęgi: każdy kończy się grotem tuż za skrętem, następny zaczyna się chwilę dalej. */
@@ -78,8 +86,8 @@ export function ribbonMesh(path, turns, { style = 'flat', o = RIB } = {}) {
     }
     return first;
   };
-  const strip = (r0, r1) => { for (let j = 0; j < 9; j++) I.push(r0 + j, r0 + j + 1, r1 + j + 1, r0 + j, r1 + j + 1, r1 + j); };
-  const cap = (r) => { for (let j = 1; j < 9; j++) I.push(r, r + j + 1, r + j); };
+  const strip = (r0, r1) => { for (let j = 0; j < PN - 1; j++) I.push(r0 + j, r0 + j + 1, r1 + j + 1, r0 + j, r1 + j + 1, r1 + j); };
+  const cap = (r) => { for (let j = 1; j < PN - 1; j++) I.push(r, r + j + 1, r + j); };
   const under = (s, w) => { const { c, t } = at(s); const n = [-t[1], t[0]]; const W = w + 1.0; const i = U.length / STRIDE; for (const sg of [-1, 1]) U.push(c[0] - org[0], c[1] - org[1], n[0], n[1], sg * W * K, 0.03 * K, 0, 0, 1, s, sg * W, 0, sg * W * K, 0.03 * K, 0, 0, 1); return i; };
   const underStrip = (i0, i1) => UI.push(i0, i0 + 1, i1 + 1, i0, i1 + 1, i1);
 

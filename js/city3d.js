@@ -1,8 +1,17 @@
-import { ribbonMesh, puckMesh, RIB, lampMesh, signalMesh } from './solid.js';
+import { ribbonMesh, puckMesh, RIB, PN, lampMesh, signalMesh } from './solid.js';
 import { FACADE_M } from './facade-size.js';
 // Własny silnik miasta 3D: rysuje prawdziwe bryły budynków (GUGiK LoD2, tools/build-city.py) wewnątrz mapy.
 // Ściany dostają elewacje z atlasu, dachy kolor wg kształtu. Kafle dociągane wokół punktu przed autem.
 
+// Wspólne oświetlenie nowego wyglądu: światło nieba z góry, ciepłe odbicie od ziemi, słońce i łagodna obróbka kolorów (ACES).
+const ENV = `
+vec3 tonemap(vec3 c){ c*=0.98; c=(c*(2.51*c+0.03))/(c*(2.43*c+0.59)+0.14); return clamp(c,0.0,1.0); }
+vec3 envLight(vec3 base, vec3 N, float ao){
+  vec3 L=normalize(vec3(-0.35,-0.45,0.82));
+  vec3 hemi=mix(vec3(.50,.47,.42),vec3(.70,.78,.90),N.z*0.5+0.5);
+  vec3 sun=vec3(1.0,.95,.86)*max(dot(N,L),0.0);
+  return base*(hemi*0.78+sun*0.72)*ao;
+}`;
 const VS_WALL = `#version 300 es
 in vec3 a_pos; in vec2 a_uv; in float a_cell;
 uniform mat4 u_m;
@@ -20,6 +29,7 @@ void cut(vec3 p){
   float f=smoothstep(r,r+3.0,d);
   if(f<1.0 && f<fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(0.06711056,0.00583715))))) discard;
 }
+${ENV}
 uniform sampler2D u_atlas; uniform float u_fm[24]; uniform vec3 u_sun; uniform vec3 u_fog; uniform vec3 u_eye; uniform float u_night; uniform float u_soft;
 out vec4 o;
 void main(){
@@ -32,7 +42,7 @@ void main(){
   float d=max(dot(n,u_sun),0.0);
   float ao=mix(0.62,1.0,smoothstep(0.0,5.0,v_pos.z));
   if(u_soft>0.5){ ao=mix(0.5,1.0,smoothstep(0.0,9.0,v_pos.z)); tex=mix(tex,vec3(dot(tex,vec3(.3,.55,.15))),0.22); }
-  vec3 col=tex*(u_night>0.5?1.0:(u_soft>0.5?(0.7+0.38*d):(0.62+0.5*d)))*ao;
+  vec3 col=u_soft>0.5&&u_night<0.5?tonemap(envLight(tex,n,mix(0.6,1.0,ao))):tex*(u_night>0.5?1.0:(u_soft>0.5?(0.7+0.38*d):(0.62+0.5*d)))*ao;
   float fog=smoothstep(800.0,2500.0,distance(v_pos,u_eye));
   o=vec4(mix(col,u_fog,fog*0.72),1.0);
 }`;
@@ -53,6 +63,7 @@ void cut(vec3 p){
   float f=smoothstep(r,r+3.0,d);
   if(f<1.0 && f<fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(0.06711056,0.00583715))))) discard;
 }
+${ENV}
 uniform sampler2D u_roofs; uniform vec3 u_sun; uniform vec3 u_fog; uniform vec3 u_eye; uniform float u_night; uniform float u_soft;
 out vec4 o;
 void main(){
@@ -70,7 +81,7 @@ void main(){
   else tex*=(k==1?1.1:k==2?0.88:1.0);
   float d=max(dot(n,u_sun),0.0);
   if(u_soft>0.5) tex=mix(tex,vec3(dot(tex,vec3(.3,.55,.15))),0.35)*0.92;
-  vec3 col=tex*(0.62+0.55*d);
+  vec3 col=u_soft>0.5&&u_night<0.5?tonemap(envLight(tex*1.1,n,1.0)):tex*(0.62+0.55*d);
   if(u_night>0.5) col*=0.15;
   float fog=smoothstep(800.0,2500.0,distance(v_pos,u_eye));
   o=vec4(mix(col,u_fog,fog*0.72),1.0);
@@ -103,6 +114,7 @@ void main(){
 const FS_TREE = `#version 300 es
 precision highp float;
 in vec2 v_uv; in float v_tint; in vec3 v_pos; in float v_lit;
+${ENV}
 uniform sampler2D u_trees; uniform vec3 u_fog; uniform vec3 u_eye; uniform float u_night;
 out vec4 o;
 void main(){
@@ -110,6 +122,7 @@ void main(){
   if(t.a<0.5) discard;
   vec3 col=t.rgb*mix(vec3(.82,.88,.8),vec3(1.05,1.02,.92),v_tint)*v_lit;
   col*=mix(0.72,1.0,smoothstep(0.0,6.0,v_pos.z));
+  if(u_night<0.5) col=tonemap(col*1.05);
   if(u_night>0.5) col*=0.2;
   float fog=smoothstep(800.0,2500.0,distance(v_pos,u_eye));
   o=vec4(mix(col,u_fog,fog*0.72),1.0);
@@ -124,6 +137,7 @@ const FS_ROAD = `#version 300 es
 precision highp float;
 in vec2 v_xy; in vec2 v_p; flat in float v_k;
 uniform sampler2D u_asphalt; uniform sampler2D u_pave; uniform vec3 u_fog; uniform vec3 u_eye; uniform float u_night;
+${ENV}
 out vec4 o;
 void main(){
   int k=int(v_k+0.5); vec3 c;
@@ -137,6 +151,7 @@ void main(){
   else { c=vec3(.6,.57,.5); }
   if(u_night>0.5) c*=vec3(.3,.34,.44);
   float fog=smoothstep(900.0,2600.0,distance(vec3(v_p,0.0),u_eye));
+  if(u_night<0.5) c=tonemap(c*0.92);
   o=vec4(mix(c,u_fog,fog*0.8),1.0);
 }`;
 const VS_MARK = `#version 300 es
@@ -212,6 +227,7 @@ const FS_MODEL = `#version 300 es
 precision highp float; precision highp sampler2DArray;
 in vec3 v_n; in vec3 v_pos; in vec2 v_uv; flat in float v_layer; in vec3 v_col; flat in float v_kind;
 uniform sampler2DArray u_tex; uniform vec3 u_eye; uniform vec3 u_fog; uniform float u_night;
+${ENV}
 out vec4 o;
 void main(){
   int k=int(v_kind+0.5);
@@ -221,7 +237,7 @@ void main(){
   if(k==1) t.rgb/=max(t.a,0.35);
   vec3 N=normalize(v_n); vec3 L=normalize(vec3(-0.35,-0.45,0.82));
   float d=k==1?0.55+0.45*(dot(N,L)*0.5+0.5):0.55+0.55*max(dot(N,L),0.0); // liście: światło miękko przechodzi
-  vec3 c=t.rgb*v_col*d*mix(0.75,1.0,smoothstep(0.0,5.0,v_pos.z));
+  vec3 c=u_night<0.5?tonemap(envLight(t.rgb*v_col,k==1?normalize(N+vec3(0.,0.,0.6)):N,mix(0.7,1.0,smoothstep(0.0,5.0,v_pos.z)))):t.rgb*v_col*d*mix(0.75,1.0,smoothstep(0.0,5.0,v_pos.z));
   if(u_night>0.5) c*=0.22;
   if(k==2) c=u_night>0.5?vec3(1.,.93,.75)*1.6:vec3(.85,.86,.82);
   if(k==3) c=vec3(.98,.14,.1); if(k==4) c=vec3(.35,.25,.05); if(k==5) c=vec3(.05,.28,.12);
@@ -329,7 +345,12 @@ void main(){
   float up=smoothstep(0.55,0.9,v_top); vec3 c=shade(N,V,top,side,u_night,up); float u=abs(v_u);
   float flow=pow(0.5+0.5*sin((v_l-u_t*16.0)*0.2),10.0);
   float ch=fract((v_l-u_t*4.0)/26.0); float arrow=smoothstep(0.03,0.0,abs(ch-0.22+u*0.3)-0.025)*(1.0-smoothstep(0.55,0.65,u));
-  c+=up*(vec3(0.85,0.98,1.0)*(exp(-u*u*10.0)*0.18+flow*0.35+arrow*0.3)+vec3(0.55,0.95,1.0)*smoothstep(0.8,0.97,u)*0.7);
+  // szkło: odbicie nieba zależne od kąta (Fresnel), miękki połysk wzdłuż grzbietu, spokojny przepływ światła
+  vec3 R=reflect(-V,N); vec3 sky=mix(vec3(0.55,0.85,1.0),vec3(0.95,0.99,1.0),smoothstep(0.0,0.8,R.z));
+  float fr=pow(1.0-max(dot(N,V),0.0),2.5);
+  c=mix(c,sky,fr*0.55*(u_night>0.5?0.4:1.0));
+  c+=vec3(0.9,0.98,1.0)*pow(max(dot(R,normalize(vec3(-0.35,-0.45,0.82))),0.0),24.0)*0.45;
+  c+=up*(vec3(0.85,0.98,1.0)*(exp(-u*u*6.0)*0.12+flow*0.22+arrow*0.12)+vec3(0.6,0.95,1.0)*smoothstep(0.85,0.99,u)*0.35);
   if(u_night>0.5) c*=1.15;
   o=vec4(c,u_ghost>0.5?0.3:1.0);
 }`;
@@ -340,7 +361,7 @@ uniform float u_from; uniform float u_hw; uniform float u_night;
 out vec4 o;
 void main(){
   if(v_l<u_from) discard;
-  float d=abs(v_u); float sh=(1.0-smoothstep(u_hw-0.3,u_hw+0.8,d))*0.38; float g=exp(-(d-u_hw)*(d-u_hw)*3.0)*(u_night>0.5?0.4:0.22)*step(u_hw,d);
+  float d=abs(v_u); float sh=(1.0-smoothstep(u_hw-0.4,u_hw+0.6,d))*0.32; float g=exp(-(d-u_hw)*(d-u_hw)*1.4)*(u_night>0.5?0.45:0.26)*step(u_hw,d);
   o=vec4(mix(vec3(0.0),vec3(0.0,0.8,1.0),step(sh,g)),max(sh,g));
 }`;
 const VS_PUCK = `#version 300 es
@@ -415,7 +436,7 @@ export class City3D {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         const an = gl.getExtension('EXT_texture_filter_anisotropic');
-        if (an) gl.texParameterf(gl.TEXTURE_2D, an.TEXTURE_MAX_ANISOTROPY_EXT, 4);
+        if (an) gl.texParameterf(gl.TEXTURE_2D, an.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(16, gl.getParameter(an.MAX_TEXTURE_MAX_ANISOTROPY_EXT))); // ostre tekstury drogi i ścian oglądanych pod kątem
         this.texReady = (this.texReady || 0) + 1; map.triggerRepaint();
       };
       im.src = url;
@@ -707,8 +728,8 @@ export class City3D {
       gl.bindVertexArray(null); return { v, b, ib, n: idx.length };
     };
     this.ribbon = { ...up(mesh.data, mesh.index, this.sol), org, heads: mesh.heads, leads: mesh.leads, capAt: mesh.capAt };
-    const fan = []; for (let j = 1; j < 9; j++) fan.push(0, j + 1, j);
-    this.cap = up(new Float32Array(170), new Uint32Array(fan), this.sol); this.under = { ...up(mesh.under.data, mesh.under.index, this.solU), org };
+    const fan = []; for (let j = 1; j < PN - 1; j++) fan.push(0, j + 1, j);
+    this.cap = up(new Float32Array(PN * 17), new Uint32Array(fan), this.sol); this.under = { ...up(mesh.under.data, mesh.under.index, this.solU), org };
   }
 
   /** Asfalt pod torem tam, gdzie BDOT nie ma jezdni (path.fill: odcinki w metrach trasy). 3 m w każdą stronę od toru. */
@@ -743,6 +764,7 @@ export class City3D {
       const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D_ARRAY, tex);
       gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA, 512, 512, img.height / 512, 0, gl.RGBA, gl.UNSIGNED_BYTE, img);
       gl.generateMipmap(gl.TEXTURE_2D_ARRAY); gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      { const an = gl.getExtension('EXT_texture_filter_anisotropic'); if (an) gl.texParameterf(gl.TEXTURE_2D_ARRAY, an.TEXTURE_MAX_ANISOTROPY_EXT, 8); }
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
       const m = { tex };
       names.forEach((n, i) => { const d = new Float32Array(bufs[i]); const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, d, gl.STATIC_DRAW); let h = 0; for (let k = 2; k < d.length; k += 13) h = Math.max(h, d[k]); m[n] = { b, n: d.length / 13, h }; });

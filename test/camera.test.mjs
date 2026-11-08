@@ -227,7 +227,7 @@ test('wstęga: denko pod autem tylko na prostym odcinku', async () => {
   const { ribbonMesh } = await import('../js/solid.js');
   const pts = []; const along = []; for (let i = 0; i <= 200; i++) { pts.push([i * 2.5, 0]); along.push(i * 2.5); }
   const m = ribbonMesh({ pts, along, K: 1 }, [200], { style: 'up' });
-  assert.equal(m.capAt(100).length, 170);
+  assert.equal(m.capAt(100).length, 15 * 17);
   assert.equal(m.capAt(212), null); // grot
   assert.equal(m.capAt(219), null); // przerwa za skrętem
 });
