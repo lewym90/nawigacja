@@ -10,9 +10,9 @@ import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { ribbonMesh, RIB, PN } from './solid.js';
+import { ribbonMesh, puckMesh, RIB, PN } from './solid.js';
 import { FACADE_M } from './facade-size.js';
-import { VS_SOL, FS_SOL, SIGN_KMH, W } from './city3d.js';
+import { VS_SOL, FS_SOL, VS_PUCK, FS_PUCK, SIGN_KMH, W } from './city3d.js';
 
 const SUN = new THREE.Vector3(-0.35, -0.45, 0.82).normalize(); // kierunek do słońca, ten sam co w starym silniku
 const mercX = (lng) => (lng * W) / 360;
@@ -20,7 +20,7 @@ const mercY = (lat) => (Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) 
 
 // Ustawienia jakości silnika Three.js (obok QUALITY_PROFILES z profiles.js).
 const Q3 = {
-  ultra: { shadow: 4096, shadowR: 320, ao: true, bloom: false, trees: 700 },
+  ultra: { shadow: 4096, shadowR: 320, ao: true, bloom: true, trees: 700 },
   high: { shadow: 2048, shadowR: 260, ao: true, bloom: false, trees: 520 },
   eco: { shadow: 1024, shadowR: 200, ao: false, bloom: false, trees: 360 },
 };
@@ -38,18 +38,19 @@ vec3 untone(vec3 c){
   return y+(x-m);
 }`;
 
-// Pod wstęgą tylko miękki cień kontaktowy, bez poświaty po bokach (właściciel: poświata wyglądała tandetnie).
-// Wstęga zostaje też za autem (prośba właściciela): bez cięcia pod znacznikiem.
-const FS_SOL3 = FS_SOL.replace(/if\(v_l<u_from\) discard;[^\n]*/, '');
+// Cień i poświata pod wstęgą: łagodnie zanikają na brzegach i na początku pod autem (w starym shaderze kończyły się ostrą krawędzią,
+// a przy mieszaniu w świetle liniowym robiły jasny prostokąt wokół wstęgi).
 const FS_UNDER3 = `#version 300 es
 precision highp float;
 in vec3 v_nrm; in vec3 v_pos; in float v_l; in float v_u;
 uniform float u_from; uniform float u_hw; uniform float u_night;
 out vec4 o;
 void main(){
-  float d=abs(v_u);
-  float sh=(1.0-smoothstep(u_hw-0.5,u_hw+0.35,d))*0.24;
-  o=vec4(vec3(0.0),sh);
+  if(v_l<u_from) discard;
+  float d=abs(v_u); float st=smoothstep(u_from,u_from+4.0,v_l);
+  float sh=(1.0-smoothstep(u_hw-0.6,u_hw+0.5,d))*0.2*st;
+  float g=exp(-(d-u_hw)*(d-u_hw)*3.0)*(u_night>0.5?0.3:0.1)*step(u_hw,d)*(1.0-smoothstep(u_hw+0.5,u_hw+0.95,d))*st;
+  o=vec4(vec3(0.0,0.75,1.0)*(g/(sh+g+1e-4)),min(1.0,sh+g));
 }`;
 
 /** Shader z city3d.js jako materiał Three.js: macierz u_m składa Three, a kolor wraca do przestrzeni przed obróbką. */
@@ -474,8 +475,8 @@ void cutAway(vec3 p){
     const u = this.ribUni || (this.ribUni = { u_from: { value: 0 }, u_heads: { value: new Float32Array(4) }, u_leads: { value: new Float32Array(4) }, u_t: { value: 0 }, u_night: { value: 0 }, u_jam: { value: new Float32Array(18) }, u_eye: { value: new THREE.Vector3() }, u_hw: { value: RIB.hw } });
     const pos = (m, order) => { m.position.set(org[0] - this.O[0], org[1] - this.O[1], 0); m.renderOrder = order; m.frustumCulled = false; this.scene.add(m); return m; };
     this.ribU = pos(new THREE.Mesh(mk(mesh.under.data, mesh.under.index), rawMat(VS_SOL, FS_UNDER3, u, { transparent: true, depthWrite: false })), 20);
-    this.ribG = pos(new THREE.Mesh(mk(mesh.data, mesh.index), rawMat(VS_SOL, FS_SOL3, { ...u, u_ghost: { value: 1 } }, { transparent: true, depthWrite: false, depthFunc: THREE.GreaterDepth })), 21);
-    this.rib = pos(new THREE.Mesh(this.ribG.geometry, rawMat(VS_SOL, FS_SOL3, { ...u, u_ghost: { value: 0 } }, { transparent: true, depthWrite: true })), 22);
+    this.ribG = pos(new THREE.Mesh(mk(mesh.data, mesh.index), rawMat(VS_SOL, FS_SOL, { ...u, u_ghost: { value: 1 } }, { transparent: true, depthWrite: false, depthFunc: THREE.GreaterDepth })), 21);
+    this.rib = pos(new THREE.Mesh(this.ribG.geometry, rawMat(VS_SOL, FS_SOL, { ...u, u_ghost: { value: 0 } }, { transparent: true, depthWrite: true })), 22);
     const fan = []; for (let j = 1; j < PN - 1; j++) fan.push(0, j + 1, j);
     this.capData = new Float32Array(PN * 17);
     this.capM = pos(new THREE.Mesh(mk(this.capData, new Uint32Array(fan)), this.rib.material), 23);
@@ -502,32 +503,18 @@ void cutAway(vec3 p){
     g.computeVertexNormals(); const m = new THREE.Mesh(g, this.mats.fill); m.receiveShadow = true; this.scene.add(m); return m;
   }
 
-  /** Znacznik auta: biała bryła 3D o łagodnych, zaokrąglonych krawędziach, unosi się nad wstęgą (lekko faluje). */
   puck() {
     if (this.puckBody) return;
-    // obrys strzałki w jednostkach rozmiaru znacznika (szpic z przodu, dwa skrzydła, wcięcie z tyłu), rogi zaokrąglone
-    const pts = [[0, 0.9], [0.52, -0.62], [0, -0.32], [-0.52, -0.62]]; const rad = [0.16, 0.14, 0.12, 0.14];
-    const sh = new THREE.Shape(); const n = pts.length;
-    const at = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-    for (let k = 0; k < n; k++) {
-      const p = pts[k]; const prev = pts[(k + n - 1) % n]; const next = pts[(k + 1) % n];
-      const lp = Math.hypot(prev[0] - p[0], prev[1] - p[1]); const ln = Math.hypot(next[0] - p[0], next[1] - p[1]);
-      const a = at(p, prev, Math.min(0.45, rad[k] / lp)); const b = at(p, next, Math.min(0.45, rad[k] / ln));
-      if (k === 0) sh.moveTo(a[0], a[1]); else sh.lineTo(a[0], a[1]);
-      sh.quadraticCurveTo(p[0], p[1], b[0], b[1]);
-    }
-    sh.closePath();
-    const g = new THREE.ExtrudeGeometry(sh, { depth: 0.12, bevelEnabled: true, bevelThickness: 0.09, bevelSize: 0.08, bevelSegments: 8, curveSegments: 10 });
-    g.translate(0, 0, 0.09); g.computeVertexNormals();
-    this.puckMat = new THREE.MeshPhysicalMaterial({ color: 0xf6f8fa, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.12, emissive: 0x000000, transparent: true, opacity: 1 });
-    this.puckBody = new THREE.Mesh(g, this.puckMat); this.puckBody.castShadow = true; this.puckBody.renderOrder = 40; this.puckBody.frustumCulled = false;
-    // miękki cień na wstędze pod znacznikiem (wstęga nie przyjmuje cieni słońca)
-    const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
-    const gr = x.createRadialGradient(64, 64, 4, 64, 64, 62); gr.addColorStop(0, 'rgba(0,20,40,0.42)'); gr.addColorStop(0.55, 'rgba(0,20,40,0.22)'); gr.addColorStop(1, 'rgba(0,20,40,0)');
-    x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
-    this.puckShadow = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.9), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, fog: false }));
-    this.puckShadow.renderOrder = 35; this.puckShadow.frustumCulled = false;
-    this.scene.add(this.puckBody); this.scene.add(this.puckShadow);
+    const d = puckMesh(); const n = d.length / 7;
+    const mk = (from, count) => {
+      const g = new THREE.BufferGeometry(); const ib = new THREE.InterleavedBuffer(d.slice(from * 7, (from + count) * 7), 7);
+      g.setAttribute('a_p', new THREE.InterleavedBufferAttribute(ib, 3, 0)); g.setAttribute('a_nrm', new THREE.InterleavedBufferAttribute(ib, 3, 3)); g.setAttribute('a_k', new THREE.InterleavedBufferAttribute(ib, 1, 6));
+      g.setAttribute('position', new THREE.InterleavedBufferAttribute(ib, 3, 0)); return g;
+    };
+    this.puckUni = { u_rot: { value: 0 }, u_size: { value: 1 }, u_eye: { value: new THREE.Vector3() }, u_night: { value: 0 } };
+    this.puckShadow = new THREE.Mesh(mk(n - 6, 6), rawMat(VS_PUCK, FS_PUCK, this.puckUni, { transparent: true, depthWrite: false }));
+    this.puckBody = new THREE.Mesh(mk(0, n - 6), rawMat(VS_PUCK, FS_PUCK, this.puckUni, { transparent: true, depthTest: false, depthWrite: false }));
+    for (const [m, o] of [[this.puckShadow, 30], [this.puckBody, 31]]) { m.renderOrder = o; m.frustumCulled = false; this.scene.add(m); }
   }
 
   /** Kamera Three.js z macierzy mapy: ta sama perspektywa (z przesunięciem środka przez marginesy), sztywny widok z położenia kamery. */
@@ -600,19 +587,14 @@ void cutAway(vec3 p){
       u.u_eye.value.set(C.x - this.rib.position.x, C.y - this.rib.position.y, C.z);
       const vis = !city.ribbonOff; this.rib.visible = this.ribG.visible = this.ribU.visible = vis;
       const cd = this.ribMesh.capAt(from + 0.01);
-      this.capM.visible = false; if (cd) { this.capData.set(cd); this.capM.geometry.attributes.a_c.data.needsUpdate = true; }
+      this.capM.visible = vis && !!cd; if (cd) { this.capData.set(cd); this.capM.geometry.attributes.a_c.data.needsUpdate = true; }
     }
     this.puck();
     const hd = city.carHd; this.puckBody.visible = this.puckShadow.visible = hd != null;
     if (hd != null) {
-      const size = (city.puckPx || 58) * (W / (512 * 2 ** this.map.getZoom())); const top = RIB.h * (city.path ? city.path.K || this.K : this.K);
-      const rot = (-hd * Math.PI) / 180;
-      // unosi się nad wstęgą: ok. 1/6 długości znacznika nad jej grzbietem, spokojne falowanie
-      this.puckBody.position.set(L[0], L[1], top + size * (0.17 + 0.025 * Math.sin(now / 650)));
-      this.puckBody.rotation.set(0, 0, rot); this.puckBody.scale.setScalar(size);
-      this.puckShadow.position.set(L[0], L[1], top + 0.02); this.puckShadow.rotation.set(0, 0, rot); this.puckShadow.scale.setScalar(size * (1 - 0.06 * Math.sin(now / 650)));
-      // lekkie własne światło: z każdej strony czytelnie biały, także pod słońce
-      this.puckMat.emissive.set(this.night ? 0x3a4654 : 0x5a6068);
+      this.puckUni.u_rot.value = (hd * Math.PI) / 180; this.puckUni.u_size.value = (city.puckPx || 58) * (W / (512 * 2 ** this.map.getZoom()));
+      this.puckUni.u_night.value = this.night ? 1 : 0; this.puckUni.u_eye.value.set(C.x - L[0], C.y - L[1], C.z);
+      for (const m of [this.puckBody, this.puckShadow]) m.position.set(L[0], L[1], 0);
     }
     if (this.bloom) this.bloom.strength = this.night ? 0.45 : 0.18;
     this.composer.render();
